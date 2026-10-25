@@ -118,27 +118,10 @@
           <!-- 轮播图 -->
           <div class="recommended-swipe">
             <div class="recommended-swipe-core">
-              <!-- 骨架屏 -->
-              <div class="recommended-swipe-shim">
-                <div class="video-card" v-for="index in 2" :key="index">
-                  <div class="video-card__skeleton">
-                    <div class="video-card__skeleton--cover"></div>
-                    <div class="video-card__skeleton--info">
-                      <div class="video-card__skeleton--right">
-                        <p class="video-card__skeleton--text"></p>
-                        <p class="video-card__skeleton--text short"></p>
-                        <p class="video-card__skeleton--light"></p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div class="shim-card"></div>
-                <div class="shim-card"></div>
-              </div>
               <!-- 轮播图主体 -->
               <div class="recommended-swipe-body">
                 <div class="carousel-area">
-                  <CarouselIndex></CarouselIndex>
+                  <CarouselIndex :videos="cateVideoList"></CarouselIndex>
                 </div>
               </div>
             </div>
@@ -744,6 +727,8 @@ header .window-cover {
 }
 
 .recommended-swipe {
+  min-width: 0;
+  min-height: 320px;
   position: relative;
   grid-column: 1/3;
   /* 跨越从第1列到第3列，占据两个网格列的宽度，等价于 grid-column: span 2; */
@@ -752,31 +737,12 @@ header .window-cover {
 }
 
 .recommended-swipe-core {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
 }
 
-.recommended-swipe-shim {
-  opacity: 0;
-  visibility: hidden;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  pointer-events: none;
-  grid-column: span 2;
-  grid-row: span 2;
-  grid-template-columns: repeat(2, 1fr);
-  grid-gap: 20px;
-  width: 100%;
-  display: grid;
-}
-
-.shim-card {
-  width: 100%;
-  height: 0;
-  padding-top: 56.25%;
-}
 
 .recommended-swipe-body {
   position: absolute;

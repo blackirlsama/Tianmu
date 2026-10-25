@@ -1,166 +1,50 @@
 <template>
-  <el-carousel trigger="click" arrow="always">
-    <el-carousel-item v-for="(item, index) in carousels" :key="index">
-      <a class="carousel-inner" :href="item.target" target="_blank">
-        <img :src="mediaUrl(item.url)" alt="" @error="useFallbackImage" />
-        <div class="carousel-footer">
-          <div class="carousel-title">
-            {{ item.title }}
-          </div>
-          <div class="carousel-mask"></div>
-        </div>
-      </a>
+  <el-carousel v-if="carousels.length" class="featured-carousel" height="100%" trigger="click" arrow="always"
+    :interval="5000" :autoplay="carousels.length > 1" :pause-on-hover="true" aria-label="推荐视频轮播">
+    <el-carousel-item v-for="item in carousels" :key="item.videoId">
+      <router-link class="carousel-inner" :to="`/video/${item.videoId}`">
+        <img :src="mediaUrl(item.coverUrl)" :alt="item.title" @error="useFallbackImage" />
+        <div class="carousel-footer"><span class="carousel-label">精选推荐</span><div class="carousel-title">{{ item.title }}</div></div>
+      </router-link>
     </el-carousel-item>
   </el-carousel>
+  <div v-else class="carousel-empty" aria-live="polite">精彩内容，即将呈现</div>
 </template>
-
 <script>
-import carouselJson from "@/assets/json/carousel.json";
 import { mediaUrl } from "@/lib/media";
 import videoPlaceholder from "@/assets/img/bilibili/video-placeholder.png";
-
 export default {
   name: "CarouselIndex",
-  data() {
-    return {
-      // 轮播图列表el-carousel__button
-      carousels: [],
-    };
+  props: { videos: { type: Array, default: () => [] } },
+  computed: {
+    carousels() {
+      const seen = new Set();
+      return this.videos.filter(item => {
+        if (!item || !item.videoId || seen.has(item.videoId)) return false;
+        seen.add(item.videoId);
+        return true;
+      }).slice(0, 6);
+    },
   },
   methods: {
     mediaUrl,
-    useFallbackImage(event) {
-      event.target.src = videoPlaceholder;
-    },
-    // 请求
-    getCarousels() {
-      this.carousels = carouselJson;
-    },
+    useFallbackImage(event) { event.target.onerror = null; event.target.src = videoPlaceholder; },
   },
-  created() {
-    this.getCarousels();
-  },
-  mounted() {},
-  beforeMount() {},
 };
 </script>
-
 <style scoped>
-.carousel-inner {
-  height: 100%;
-  width: 100%;
-  position: relative;
-  display: inline-block;
-  line-height: 1;
-  vertical-align: middle;
-  background-color: var(--graph_bg_regular);
-  cursor: pointer;
-}
-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover; /* 确保图片覆盖整个容器 */
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-::v-deep.el-carousel.el-carousel--horizontal {
-  height: 100%;
-}
-::v-deep .el-carousel__container {
-  height: 100%;
-}
-::v-deep .el-carousel__arrow {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background-color: rgba(255, 255, 255, 0.1);
-}
-::v-deep .el-carousel__arrow:hover {
-  background-color: rgba(255, 255, 255, 0.2);
-}
-::v-deep .el-carousel__arrow.el-carousel__arrow--right {
-  top: unset;
-  bottom: 7%;
-}
-::v-deep .el-carousel__arrow.el-carousel__arrow--left {
-  top: unset;
-  bottom: 7%;
-  left: unset;
-  right: 56px;
-}
-.carousel-footer {
-  position: absolute;
-  bottom: 0;
-  width: 100%;
-  height: 80px;
-  z-index: 2; /* 确保文字在图片上方 */
-}
-.carousel-title {
-  width: calc(100% - 120px);
-  position: relative;
-  left: 15px;
-  top: 15px;
-  z-index: 9;
-  color: #fff;
-  font-size: 18px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.carousel-footer .carousel-mask {
-  width: 100%;
-  content: "";
-  display: block;
-  transition: translate 0s;
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  user-select: none;
-  pointer-events: none;
-  background: transparent; /* 改为透明 */
-}
-@media (min-width: 1367px) and (max-width: 1700.9px) {
-  .carousel-footer .carousel-mask {
-    height: 810px;
-  }
-}
-::v-deep .el-carousel__indicators--horizontal {
-  position: absolute;
-  left: 15px;
-  bottom: 20px;
-  margin: -1.5px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  transform: unset;
-}
-::v-deep .el-carousel__indicator.el-carousel__indicator--horizontal {
-  margin: 4px;
-}
-::v-deep .el-carousel__button {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  transition: all 0.4s;
-}
-::v-deep .el-carousel__indicator.is-active button {
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background-color: #fff;
-}
-@media (max-width: 1700.9px) {
-  .title span {
-    font-size: 18px;
-  }
-}
-
-@media (min-width: 1701px) {
-  .title span {
-    font-size: 20px;
-  }
-}
+.featured-carousel, .carousel-empty { width: 100%; height: 100%; min-width: 0; }
+.featured-carousel :deep(.el-carousel__container) { height: 100%; }
+.carousel-inner { display: block; position: relative; width: 100%; height: 100%; overflow: hidden; background: #202332; }
+.carousel-inner img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.carousel-footer { position: absolute; inset: auto 0 0; padding: 64px 100px 52px 20px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.78)); pointer-events: none; }
+.carousel-label { display: inline-block; margin-bottom: 8px; font-size: 12px; opacity: .85; }
+.carousel-title { font-size: clamp(16px, 1.3vw, 22px); line-height: 1.45; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.featured-carousel :deep(.el-carousel__arrow) { top: auto; bottom: 14px; transform: none; width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.22); }
+.featured-carousel :deep(.el-carousel__arrow--right) { right: 16px; }
+.featured-carousel :deep(.el-carousel__arrow--left) { left: auto; right: 54px; }
+.featured-carousel :deep(.el-carousel__indicators--horizontal) { left: 14px; bottom: 16px; transform: none; }
+.featured-carousel :deep(.el-carousel__button) { width: 7px; height: 7px; border-radius: 50%; }
+.featured-carousel :deep(.is-active .el-carousel__button) { width: 20px; border-radius: 6px; }
+.carousel-empty { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #e9e9f1, #f8eef4); color: #777b8a; font-size: 18px; }
 </style>

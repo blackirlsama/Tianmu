@@ -107,7 +107,7 @@
           class="header-avatar-wrap--container mini-avatar--small"
         >
           <picture class="v-img">
-            <img :src="user.avatar" :alt="`${user.nickname}的头像`" />
+            <img :src="headerAvatarUrl" :alt="`${user.nickname}的头像`" @error="headerAvatarFailed = true" />
           </picture>
         </a>
         <div class="v-popover to-bottom">
@@ -345,6 +345,8 @@ let outTimer;
 import VPopover from "@/components/popover/VPopover.vue";
 import LoginRegister from "@/components/loginRegister/LoginRegister.vue";
 import { handleNum } from "@/lib/utils.js";
+import { mediaUrl } from "@/lib/media";
+import defaultAvatar from "@/assets/img/default-avatar.svg";
 import { useUserStore } from "@/store/user.js";
 import { mapState, mapActions } from "pinia";
 import { fetchLogout } from "@/api/user.js";
@@ -371,6 +373,7 @@ export default {
       isSearchPopShow: false,
       coltVideoList: [],
       submitVideoList: [],
+      headerAvatarFailed: false,
     };
   },
   props: {
@@ -392,6 +395,11 @@ export default {
   computed: {
     ...mapState(useUserStore, ["user", "isLogin", "dialogVisible"]),
     ...mapState(useSearchStore, ["searchHistories"]),
+    headerAvatarUrl() {
+      return this.user?.avatar && !this.headerAvatarFailed
+        ? mediaUrl(this.user.avatar)
+        : defaultAvatar;
+    },
     // 创建计算属性实现双向绑定
     dialogVisibleComputed: {
       get() {
@@ -530,7 +538,9 @@ export default {
     window.removeEventListener("click", this.handleOutsideClick);
     window.removeEventListener("resize", this.updateScreenWidth);
   },
-  watch: {},
+  watch: {
+    "user.avatar"() { this.headerAvatarFailed = false; },
+  },
 };
 </script>
 

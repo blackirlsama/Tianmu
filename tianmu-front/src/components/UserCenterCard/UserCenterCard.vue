@@ -1,9 +1,7 @@
 <template>
   <div class="user-card">
     <a :href="`/user/${item.userId}`">
-      <div class="avatar">
-        <img :src="item.avatar" :alt="item.nickname" />
-      </div>
+      <VAvatar :img="item.avatar" :size="80" />
     </a>
 
     <div class="user-info">
@@ -17,8 +15,11 @@
 </template>
 
 <script>
+import VAvatar from "@/components/avatar/VAvatar.vue";
+
 export default {
   name: "UserCenterCard",
+  components: { VAvatar },
   props: {
     item: {
       type: Object,

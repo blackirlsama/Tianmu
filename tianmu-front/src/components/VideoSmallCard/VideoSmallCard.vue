@@ -5,7 +5,7 @@
       <div class="pic-box">
         <a :href="`/video/${item.videoId}`">
           <div class="pic">
-            <img v-if="item.coverUrl" :src="item.coverUrl" alt="" @error="$event.target.style.visibility = 'hidden'" />
+            <img v-if="item.coverUrl" :src="mediaUrl(item.coverUrl)" alt="" @error="useFallbackImage" />
             <span class="duration">{{ handleDuration(item.duration) }}</span>
           </div></a
         >
@@ -87,6 +87,8 @@
 </template>
 <script>
 import { handleNum, handleDuration } from "@/lib/utils";
+import { mediaUrl } from "@/lib/media";
+import videoPlaceholder from "@/assets/img/bilibili/video-placeholder.png";
 
 export default {
   props: {
@@ -96,6 +98,10 @@ export default {
     },
   },
   methods: {
+    mediaUrl,
+    useFallbackImage(event) {
+      event.target.src = videoPlaceholder;
+    },
     // 处理大于1万的数字
     handleNum(number) {
       return handleNum(number);

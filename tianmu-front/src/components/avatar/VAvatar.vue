@@ -26,11 +26,12 @@
 
 <script>
 import defaultAvatar from '@/assets/img/default-avatar.svg';
+import { mediaUrl } from '@/lib/media';
 export default {
     name: "VAvatar",
     data() { return { imageFailed: false }; },
     computed: {
-        avatarUrl() { return this.img && !this.imageFailed ? this.img : defaultAvatar; }
+        avatarUrl() { return this.img && !this.imageFailed ? mediaUrl(this.img) : defaultAvatar; }
     },
     watch: {
         img() { this.imageFailed = false; }

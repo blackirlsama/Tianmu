@@ -21,7 +21,7 @@
           <VPopover pop-style="padding-top: 10px;" v-else>
             <template #reference>
               <div class="avatar">
-                <img :src="user.avatar" alt="" />
+                <img :src="platformAvatarUrl" alt="" @error="platformAvatarFailed = true" />
               </div>
             </template>
             <template #content>
@@ -144,6 +144,8 @@ import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store/user";
 import { mapState, mapActions } from "pinia";
 import { fetchLogout } from "@/api/user.js";
+import { mediaUrl } from "@/lib/media";
+import defaultAvatar from "@/assets/img/default-avatar.svg";
 
 export default {
   name: "PlatformView",
@@ -161,10 +163,16 @@ export default {
         "/platform/comment",
         "/platform/danmu",
       ],
+      platformAvatarFailed: false,
     };
   },
   computed: {
     ...mapState(useUserStore, ["user", "isLogin"]),
+    platformAvatarUrl() {
+      return this.user?.avatar && !this.platformAvatarFailed
+        ? mediaUrl(this.user.avatar)
+        : defaultAvatar;
+    },
   },
   created() {
     for (let i = 0; i < this.path.length; i++) {

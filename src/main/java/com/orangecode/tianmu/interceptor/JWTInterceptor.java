@@ -47,6 +47,9 @@ public class JWTInterceptor implements HandlerInterceptor {
         String token = request.getHeader("Authorization");
         if (token != null && token.startsWith("Bearer ")) token = token.substring(7);
 
+        // Public image URLs are restricted by MediaController to registered image files.
+        if (request.getRequestURI().startsWith("/api/media/")) return true;
+
         if (excludePaths.contains(request.getRequestURI())) {
             return true;
         }

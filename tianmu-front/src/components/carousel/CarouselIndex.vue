@@ -2,7 +2,7 @@
   <el-carousel trigger="click" arrow="always">
     <el-carousel-item v-for="(item, index) in carousels" :key="index">
       <a class="carousel-inner" :href="item.target" target="_blank">
-        <img :src="item.url" alt="" />
+        <img :src="mediaUrl(item.url)" alt="" @error="useFallbackImage" />
         <div class="carousel-footer">
           <div class="carousel-title">
             {{ item.title }}
@@ -16,6 +16,8 @@
 
 <script>
 import carouselJson from "@/assets/json/carousel.json";
+import { mediaUrl } from "@/lib/media";
+import videoPlaceholder from "@/assets/img/bilibili/video-placeholder.png";
 
 export default {
   name: "CarouselIndex",
@@ -26,6 +28,10 @@ export default {
     };
   },
   methods: {
+    mediaUrl,
+    useFallbackImage(event) {
+      event.target.src = videoPlaceholder;
+    },
     // 请求
     getCarousels() {
       this.carousels = carouselJson;

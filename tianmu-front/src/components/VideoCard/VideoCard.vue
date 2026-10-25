@@ -22,7 +22,7 @@
           <!-- 视频封面 -->
           <div class="video-card__image--wrap">
             <picture class="video-card__cover">
-              <img :src="item.coverUrl" alt="" />
+              <img :src="mediaUrl(item.coverUrl)" alt="" @error="useFallbackImage" />
             </picture>
           </div>
           <!-- 播放数、弹幕数、时长 -->
@@ -95,6 +95,8 @@ import {
   handleDate,
   highlightKeyword,
 } from "@/lib/utils";
+import { mediaUrl } from "@/lib/media";
+import videoPlaceholder from "@/assets/img/bilibili/video-placeholder.png";
 
 export default {
   props: {
@@ -116,6 +118,10 @@ export default {
     },
   },
   methods: {
+    mediaUrl,
+    useFallbackImage(event) {
+      event.target.src = videoPlaceholder;
+    },
     // 处理大于1万的数字
     handleNum(number) {
       return handleNum(number);

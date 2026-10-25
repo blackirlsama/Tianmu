@@ -50,7 +50,7 @@ class DanmakuReportTest {
         run.task(assembler.assemble(run)); return run;
     }
     String artifact(RunState run) {
-        return run.execution().observations().stream().filter(r -> r.tool().equals("create_danmaku_report")).findFirst().orElseThrow().data().get("artifact_id").toString();
+        return run.execution().observations().stream().filter(r -> r.tool().equals("create_danmaku_report") && r.data().containsKey("artifact_id")).findFirst().orElseThrow().data().get("artifact_id").toString();
     }
     @Test void fullOfflinePipelineGeneratesPrivateReportAndOneTerminalAnswer() throws Exception {
         RunState run = runs.create(question(), alice); await(run);
@@ -164,5 +164,36 @@ class DanmakuReportTest {
         RunState run=prepared();
         new AgentRuntime(context->Decision.answer("No report",List.of("invented")),tools,harness).execute(run);
         assertEquals(Status.FAILED,run.snapshot().status());assertEquals("REPORT_REQUIRED",run.snapshot().errorCode());
+    }
+    @Test void invalidReportIsCorrectedWithoutRepeatingTheQuery() {
+        RunState run=prepared();
+        var attempts=new java.util.concurrent.atomic.AtomicInteger();
+        ModelPort model=context->{
+            if(!context.activeSkills().contains("danmaku-analysis")) return Decision.tool("read_skill",Map.of("name","danmaku-analysis"));
+            var evidence=context.observations().stream().filter(r->r.tool().equals("query_danmaku")).findFirst();
+            if(evidence.isEmpty()) return Decision.tool("query_danmaku",run.task().specification().conditions());
+            String refs=attempts.getAndIncrement()==0?"[]":"[\"100000\"]";
+            return Decision.tool("create_danmaku_report",Map.of("evidence_id",evidence.get().evidenceId(),"sections_json",
+                    "[{\"title\":\"咨询线索\",\"observation\":\"片段出现咨询\",\"recommendation\":\"补充说明\",\"sample_ids\":"+refs+"}]"));
+        };
+        new AgentRuntime(model,tools,harness).execute(run);
+        assertEquals(Status.SUCCEEDED,run.snapshot().status(),run.snapshot().errorCode());
+        assertEquals(4,run.snapshot().modelCalls());
+        assertEquals(1,run.execution().observations().stream().filter(r->r.tool().equals("query_danmaku")).count());
+        assertTrue(run.execution().observations().stream().anyMatch(r->"INVALID_REPORT".equals(r.data().get("error_code")) && r.data().containsKey("error_message")));
+        assertTrue(repository.report(run.id,alice,artifact(run)).length>0);
+    }
+    @Test void repeatedInvalidReportsStopAtTheFailureLimit() {
+        RunState run=prepared();
+        ModelPort model=context->{
+            if(!context.activeSkills().contains("danmaku-analysis")) return Decision.tool("read_skill",Map.of("name","danmaku-analysis"));
+            var evidence=context.observations().stream().filter(r->r.tool().equals("query_danmaku")).findFirst();
+            if(evidence.isEmpty()) return Decision.tool("query_danmaku",run.task().specification().conditions());
+            return Decision.tool("create_danmaku_report",Map.of("evidence_id",evidence.get().evidenceId(),"sections_json","[{\"title\":\"无引用说明\"}]"));
+        };
+        new AgentRuntime(model,tools,harness).execute(run);
+        assertEquals(Status.FAILED,run.snapshot().status());
+        assertEquals("TOOL_FAILURE_LIMIT",run.snapshot().errorCode());
+        assertNull(run.snapshot().answer());
     }
 }

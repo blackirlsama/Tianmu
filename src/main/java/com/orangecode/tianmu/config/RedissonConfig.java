@@ -9,6 +9,7 @@ import org.redisson.config.Config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import java.time.Duration;
 
 /**
  * Redisson配置类，用于配置和创建Redisson客户端实例
@@ -26,7 +27,7 @@ public class RedissonConfig {
     // Redis数据库编号，默认为0
     private Integer database = 0;
     private String password = ""; // Supplied by spring.data.redis.password.
-    private Integer timeout = 2000;
+    private Duration timeout = Duration.ofSeconds(2);
 
     @Bean
     public RedissonClient redissonClient() {
@@ -41,7 +42,7 @@ public class RedissonConfig {
         var singleServerConfig = config.useSingleServer()
                 .setAddress("redis://" + host + ":" + port)
                 .setDatabase(database)
-                .setTimeout(timeout);
+                .setTimeout(Math.toIntExact(timeout.toMillis()));
 
         // 关键修复：密码非空（且非空白）时才执行认证
         if (password != null && !password.trim().isEmpty()) {

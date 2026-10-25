@@ -1,0 +1,115 @@
+import { TIANMU_USER } from '@/lib/config'
+import { reportPath, sseDecoder, validRunId } from '@/agent/protocol.mjs'
+
+export function agentUser() {
+  try {
+    return JSON.parse(localStorage.getItem(TIANMU_USER)) || {}
+  } catch {
+    return {}
+  }
+}
+
+function authorization() {
+  const token = agentUser().token
+  if (!token || typeof token !== 'string')
+    throw new Error('请先登录网站后再使用 AI 分析')
+  return token.startsWith('Bearer ') ? token : `Bearer ${token}`
+}
+
+async function request(path, options = {}) {
+  const headers = { Authorization: authorization(), ...options.headers }
+  let response
+  try {
+    response = await fetch(path, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      ...options,
+      headers,
+    })
+  } catch (error) {
+    if (error.name === 'AbortError') throw error
+    throw new Error('无法连接分析服务，请检查网络后重试')
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const messages = {
+      UNAUTHORIZED: '登录已失效，请重新登录',
+      AUTH_CONTEXT_EXPIRED: '登录已失效，请重新登录',
+      FORBIDDEN: '你没有权限分析这个视频或直播间',
+      RUN_NOT_FOUND: '任务不存在或已过期',
+      RESULT_NOT_FOUND: '报告不存在或已过期',
+      DATE_OUT_OF_RANGE: '请选择最近 30 天内已经结束的时段',
+      CAPACITY_EXCEEDED: '当前分析任务较多，请稍后重试',
+      EVENTS_EXPIRED: '进度记录已过期，正在同步任务状态',
+    }
+    const error = new Error(
+      messages[data.code] ||
+        (response.status === 401
+          ? '登录已失效，请重新登录'
+          : `请求未完成（${data.code || response.status}），请稍后重试`)
+    )
+    error.code = data.code
+    error.status = response.status
+    throw error
+  }
+  return response
+}
+
+function runPath(id) {
+  if (!validRunId(id)) throw new Error('无效的任务 ID')
+  return `/api/agent/runs/${id}`
+}
+
+export async function createAgentRun(body, key, signal) {
+  const response = await request('/api/agent/runs', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+    body: JSON.stringify(body),
+  })
+  return response.json()
+}
+export async function getAgentRun(id, signal) {
+  return (await request(runPath(id), { signal })).json()
+}
+export async function cancelAgentRun(id, signal) {
+  return (
+    await request(`${runPath(id)}/cancel`, { method: 'POST', signal })
+  ).json()
+}
+
+export async function readAgentEvents(id, after, signal, consume) {
+  const response = await request(`${runPath(id)}/events`, {
+    signal,
+    headers: { Accept: 'text/event-stream', 'Last-Event-ID': String(after) },
+  })
+  if (
+    !response.headers.get('content-type')?.includes('text/event-stream') ||
+    !response.body
+  )
+    throw new Error('进度连接不可用，正在同步任务状态')
+  const reader = response.body.getReader(),
+    decoder = new TextDecoder()
+  const parser = sseDecoder(consume)
+  try {
+    while (!signal.aborted) {
+      const { done, value } = await reader.read()
+      if (done) {
+        parser.push(decoder.decode())
+        break
+      }
+      parser.push(decoder.decode(value, { stream: true }))
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+}
+
+export async function getAgentReport(runId, path, signal) {
+  if (!reportPath(runId, path)) throw new Error('无效的报告链接')
+  const response = await request(path, { signal })
+  if (!response.headers.get('content-type')?.includes('text/html'))
+    throw new Error('报告格式不正确')
+  return response.text()
+}

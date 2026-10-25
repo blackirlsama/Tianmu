@@ -52,7 +52,7 @@ public final class CreateDanmakuReportTool implements AgentTool {
                 result.add(json.convertValue(node, Map.class));
             }
             return List.copyOf(result);
-        } catch (Exception e) { throw new AgentException("INVALID_REPORT", "Report sections must cite available samples and use the declared structure"); }
+        } catch (Exception e) { throw new AgentException("INVALID_REPORT", "Use at most 6 sections with exactly title, observation, recommendation and sample_ids. Every section needs 1-4 existing sample ID strings. Remove sections with empty references, including standalone metadata or disclaimers; add any necessary context briefly within a supported observation. Correct sections_json and call again."); }
     }
     private static String render(Dataset d, String evidence, List<Map<String, Object>> sections) {
         StringBuilder out = new StringBuilder("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light\"><title>弹幕分析报告</title><style>");

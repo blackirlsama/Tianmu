@@ -1,0 +1,31 @@
+@import url('./normalize.css');
+@import url('../font/font.css');
+@import url('./element.css');
+@import url('./global.css');
+@import url('./videoCard.css');
+/* @import 'https://at.alicdn.com/t/c/font_4179759_9hwhc7qk0zc.css'; */
+
+html {
+  min-width: 1090px;
+}
+
+html {
+  line-height: 1.15;
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+  -ms-overflow-style: scrollbar;
+  -webkit-tap-highlight-color: rgba(0,0,0,0);
+}
+
+body {
+  font-family: 'Harmony Font';
+  font-size: 14px;
+  /* background-color: #fafafa; */
+  min-width: 1090px;
+  line-height: 1.25;
+}
+
+html.agent-workspace-page,
+html.agent-workspace-page body {
+  min-width: 0;
+}

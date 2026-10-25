@@ -4,6 +4,6 @@
   {"id":"preparation.emotion","version":"1.1.0","path":"preparation/emotion.md"},
   {"id":"preparation.intent","version":"1.2.0","path":"preparation/intent.md"},
   {"id":"preparation.understanding","version":"1.2.0","path":"preparation/understanding.md"},
-  {"id":"harness.system","version":"1.1.0","path":"harness/system.md"},
+  {"id":"harness.system","version":"1.2.0","path":"harness/system.md"},
   {"id":"harness.finalize","version":"1.0.0","path":"harness/finalize.md"}
 ]

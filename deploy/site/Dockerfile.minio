@@ -1,0 +1,13 @@
+FROM docker.m.daocloud.io/library/golang:1.24.9 AS build
+ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOFLAGS=-p=2 GOMEMLIMIT=512MiB GOTOOLCHAIN=local
+RUN go install -trimpath -ldflags='-s -w' github.com/minio/minio@RELEASE.2025-10-15T17-29-55Z
+
+FROM eclipse-temurin:17-jre-jammy
+LABEL org.opencontainers.image.source="https://github.com/minio/minio" \
+      org.opencontainers.image.version="RELEASE.2025-10-15T17-29-55Z" \
+      org.opencontainers.image.licenses="AGPL-3.0"
+COPY --from=build /go/bin/minio /usr/local/bin/minio
+RUN mkdir -p /data && chown 10001:10001 /data
+USER 10001:10001
+EXPOSE 9000
+ENTRYPOINT ["/usr/local/bin/minio"]

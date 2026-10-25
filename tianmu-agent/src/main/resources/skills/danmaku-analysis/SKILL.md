@@ -8,4 +8,6 @@
 4. 调用 create_danmaku_report，传 evidence_id 和 sections_json。后者是字符串形式的 JSON 数组，每项严格包含 title、observation、recommendation、sample_ids。没有片段或没有可靠观察时传 "[]"。
 5. 报告由服务端模板生成，无需提交HTML、文件路径或发布短链。工具成功后统一交付并结束任务，不继续回答或再次创建。
 
+所有内容观察的 sample_ids 都必须非空；不要额外添加没有样本引用的“说明”“免责声明”或“模拟数据”章节。用户声明的模拟验收背景可简短注明在已有观察中，不能假称由弹幕证明。收到 INVALID_REPORT 时根据反馈修改 sections_json，删除无引用章节或修正字段后再次调用；不要重复执行已有查询，也不要编造引用。
+
 例：[{"title":"物流咨询线索","observation":"抽样片段中出现关于发货时间的询问，不能据此估计全量占比。","recommendation":"在讲解或置顶信息中明确发货时间。","sample_ids":["123"]}]

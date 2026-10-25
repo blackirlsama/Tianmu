@@ -52,10 +52,15 @@ public class DeliveryService {
             com.tianmu.agent.harness.trace.TraceDetails.input(raw);
             Answer answer = harness.transform(run, TransformPoint.ANSWER, raw);
             if (reason == StopReason.FINALIZED_ANSWER) answer = new Answer("【轮次已达上限，仅基于已获取证据收尾】\n" + answer.text(), answer.evidenceIds());
-            boolean persistedMetric = answer != null && answer.evidenceIds().stream().map(id -> run.execution().evidence().get(id))
-                    .anyMatch(e -> e != null && e.data() != null && "mysql:bullet:retained-persisted-v1".equals(e.data().source()));
-            if (persistedMetric) answer = new Answer(answer.text() + "\n统计口径：按创建日期统计当前已入库且仍保留的弹幕记录；不代表全部已发送弹幕或历史删除记录。", answer.evidenceIds());
             validateAnswer(answer, run);
+            // Notes are derived from validated, owned evidence rather than model-generated metadata.
+            List<AnswerNote> notes = answer.evidenceIds().stream().distinct()
+                    .map(id -> run.execution().evidence().get(id).data())
+                    .filter(data -> data != null && "mysql:bullet:retained-persisted-v1".equals(data.source()))
+                    .map(data -> new AnswerNote("视频" + data.videoId() + " · " + data.date(),
+                            "按创建日期统计当前保留的已入库弹幕；不含已删除记录，也不代表全部已发送弹幕。",
+                            data.dataAsOf(), data.timezone())).toList();
+            answer = new Answer(answer.text(), answer.evidenceIds(), notes);
             run.checkpoint();
             run.succeed(reservation, answer, reason);
             return answer;

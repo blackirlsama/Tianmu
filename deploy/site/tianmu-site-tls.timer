@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Tianmu site certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:10:00
+OnBootSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

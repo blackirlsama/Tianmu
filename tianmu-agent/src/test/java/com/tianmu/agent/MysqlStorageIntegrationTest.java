@@ -111,8 +111,12 @@ class MysqlStorageIntegrationTest {
         assertEquals(data,repository.load(run.id,owner).execution().evidence().get(id).analysis());
         byte[] html="<!doctype html><html>report</html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         var ref=repository.saveReport(run.id,owner,id,html);
+        run.emit("ARTIFACT_READY",Map.of("artifact_id",ref.artifactId(),"url",ref.url(),"media_type","text/html"));
         run.succeed(new Answer("report",List.of(id)));
+        repository.close();
+        repository=new MysqlRunRepository(source,mapper,cache,new FileObjectStore(directory),Duration.ofSeconds(30),16);
         assertArrayEquals(html,repository.report(run.id,owner,ref.artifactId()));
+        assertEquals(1,repository.load(run.id,owner).events().after(0).events().stream().filter(e->e.type().equals("ARTIFACT_READY")).count());
         assertThrows(AgentException.class,()->repository.report(run.id,new AccessScope(owner.tenantId(),"bob",owner.videoIds()),ref.artifactId()));
         repository.deleteSession(run.sessionId,owner); repository.garbageCollect();
         try(var files=java.nio.file.Files.list(directory)) { assertEquals(0,files.count()); }

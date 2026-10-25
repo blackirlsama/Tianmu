@@ -16,18 +16,21 @@ import java.util.*;
 public final class MemoryRunRepository implements RunRepository {
     private final Map<UUID, RunState> runs = new HashMap<>();
     private final Map<String, UUID> keys = new HashMap<>();
+    private final Map<UUID, RequestContext> contexts = new HashMap<>();
     private record Report(UUID runId, byte[] html) {}
     private final Map<String, Report> reports = new HashMap<>();
-    public synchronized Created create(String message, AccessScope owner, UUID session, String key, UUID reply) {
+    public synchronized Created create(String message, AccessScope owner, UUID session, String key, UUID reply, RequestContext context) {
+        String query = com.tianmu.agent.application.RequestMessages.execution(message, context);
         runs.values().removeIf(r -> r.createdAt.isBefore(Instant.now().minusSeconds(3600)) && AgentTypes.terminal(r.snapshot().status()));
         keys.values().removeIf(id -> !runs.containsKey(id));
+        contexts.keySet().removeIf(id -> !runs.containsKey(id));
         reports.values().removeIf(report -> !runs.containsKey(report.runId()));
         if (runs.size() >= 200) throw new AgentException("CAPACITY_EXCEEDED", "Ephemeral run capacity reached");
         if (reply != null) throw new AgentException("STORAGE_REQUIRED", "Clarification resumption requires persistent storage");
         String identity = owner.tenantId() + ":" + owner.userId() + ":" + key;
         if (key != null && keys.containsKey(identity)) {
             RunState existing = load(keys.get(identity), owner);
-            if (!existing.message.equals(message) || session != null && !session.equals(existing.sessionId))
+            if (!existing.message.equals(message) || !Objects.equals(contexts.get(existing.id), context) || !existing.query().equals(query) || session != null && !session.equals(existing.sessionId))
                 throw new AgentException("IDEMPOTENCY_CONFLICT", "Idempotency key has a different request");
             return new Created(existing, false);
         }
@@ -41,10 +44,10 @@ public final class MemoryRunRepository implements RunRepository {
                 .forEach(r -> r.cancel(StopReason.SUPERSEDED));
         long turn = runs.values().stream().filter(r -> r.sessionId.equals(finalSession)).count() + 1;
         Instant now = Instant.now();
-        RunState run = new RunState(UUID.randomUUID(), session, turn, owner, message, message, now, now.plusSeconds(30),
+        RunState run = new RunState(UUID.randomUUID(), session, turn, owner, message, query, now, now.plusSeconds(30),
                 RunBackend.MEMORY, new InMemoryRunEventStore(), new InMemoryEvidenceStore(), false);
         run.emit("PROGRESS", Map.of("stage", "queued", "run_id", run.id.toString()));
-        runs.put(run.id, run); if (key != null) keys.put(identity, run.id);
+        runs.put(run.id, run); if (context != null) contexts.put(run.id, context); if (key != null) keys.put(identity, run.id);
         return new Created(run, true);
     }
     @Override public synchronized Set<Long> resourcesForRun(UUID id, AccessScope caller) {

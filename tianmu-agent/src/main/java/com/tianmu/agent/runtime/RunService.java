@@ -20,7 +20,8 @@ public class RunService {
     private final com.tianmu.agent.runtime.store.RunRepository repository;
     public RunService(RequestOrchestrator orchestrator, RuntimeHarness harness, com.tianmu.agent.runtime.store.RunRepository repository) { this.orchestrator = orchestrator; this.harness = harness; this.repository = repository; }
     public RunState create(String message, AccessScope owner) { return create(message, owner, null, null, null); }
-    public synchronized RunState create(String message, AccessScope owner, UUID session, String key, UUID reply) {
+    public RunState create(String message, AccessScope owner, UUID session, String key, UUID reply) { return create(message, owner, session, key, reply, null); }
+    public synchronized RunState create(String message, AccessScope owner, UUID session, String key, UUID reply, com.tianmu.agent.core.RequestContext context) {
         if (key != null && !key.matches("[A-Za-z0-9_.:-]{1,128}")) throw new AgentException("INVALID_REQUEST", "Invalid Idempotency-Key");
         // Demo retention is lazy and process-local; production must use a persistent RunRepository.
         runs.values().removeIf(run -> {
@@ -30,7 +31,7 @@ public class RunService {
             return expired;
         });
         if (runs.values().stream().filter(r -> !com.tianmu.agent.core.AgentTypes.terminal(r.snapshot().status())).count() >= 200) throw new AgentException("CAPACITY_EXCEEDED", "Demo run capacity reached");
-        var created = repository.create(message, owner, session, key, reply);
+        var created = repository.create(message, owner, session, key, reply, context);
         if (!created.fresh()) return created.run();
         RunState run = created.run();
         runs.put(run.id, run);

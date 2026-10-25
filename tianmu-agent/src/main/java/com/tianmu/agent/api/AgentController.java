@@ -2,6 +2,8 @@ package com.tianmu.agent.api;
 
 import com.tianmu.agent.access.IdentityPort;
 import com.tianmu.agent.core.AgentException;
+import com.tianmu.agent.core.RequestContext;
+import com.tianmu.agent.application.RequestMessages;
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.runtime.*;
 import jakarta.validation.Valid;
@@ -15,8 +17,9 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/agent/runs")
 public class AgentController {
-    public record CreateRun(@NotBlank @Size(max = 2000) String message, UUID sessionId, UUID replyToRunId) {
-        public CreateRun(String message) { this(message, null, null); }
+    public record CreateRun(@NotBlank @Size(max = 2000) String message, UUID sessionId, UUID replyToRunId, RequestContext context) {
+        public CreateRun(String message) { this(message, null, null, null); }
+        public CreateRun(String message, UUID sessionId, UUID replyToRunId) { this(message, sessionId, replyToRunId, null); }
     }
     private final RunService runs;
     private final IdentityPort identity;
@@ -34,7 +37,9 @@ public class AgentController {
     @PostMapping
     public ResponseEntity<Snapshot> create(@RequestHeader(value = "Authorization", required = false) String auth,
                                            @RequestHeader(value = "Idempotency-Key", required = false) String key, @RequestBody @Valid CreateRun input) {
-        RunState run = runs.create(input.message(), identity.forCreate(credential(auth), input.message(), input.replyToRunId()), input.sessionId(), key, input.replyToRunId());
+        var request = RequestMessages.normalize(input.message(), input.context());
+        String execution = RequestMessages.execution(request.message(), request.context());
+        RunState run = runs.create(request.message(), identity.forCreate(credential(auth), execution, input.replyToRunId()), input.sessionId(), key, input.replyToRunId(), request.context());
         return ResponseEntity.accepted().location(URI.create("/api/agent/runs/" + run.id)).body(run.snapshot());
     }
     @GetMapping("/{id}")

@@ -118,8 +118,10 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
         if (!fingerprint.equals(stored.get("request_fingerprint"))) throw new AgentException("IDEMPOTENCY_CONFLICT", "Idempotency-Key has different content");
         return new Created(materialize(row(UUID.fromString(stored.get("run_id").toString()), owner, false), true), false);
     }
-    @Override public Created create(String message, AccessScope owner, UUID requestedSession, String key, UUID reply) {
-        String fingerprint = hash(encode(List.of(message, Objects.toString(requestedSession, ""), Objects.toString(reply, ""))));
+    @Override public Created create(String message, AccessScope owner, UUID requestedSession, String key, UUID reply, RequestContext context) {
+        String fingerprint = hash(encode(context == null
+                ? List.of(message, Objects.toString(requestedSession, ""), Objects.toString(reply, ""))
+                : List.of(message, Objects.toString(requestedSession, ""), Objects.toString(reply, ""), context)));
         try {
             return write(() -> {
                 Created duplicate = duplicate(key, owner, fingerprint); if (duplicate != null) return duplicate;
@@ -130,7 +132,7 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
                     db.update("INSERT INTO agent_session(tenant_id,owner_user_id,session_id,expires_at) VALUES(?,?,?,?)", owner.tenantId(), owner.userId(), sid.toString(), stamp(expiry));
                 }
                 Map<String, Object> sess = session(sid, owner, true);
-                String query = message;
+                String query = RequestMessages.execution(message, context);
                 if (reply != null) {
                     Map<String, Object> origin = row(reply, owner, false);
                     if (!sid.toString().equals(origin.get("session_id")) || !"NEEDS_INPUT".equals(origin.get("status"))) throw new AgentException("CLARIFICATION_CONFLICT", "Clarification does not belong to this session");
@@ -151,7 +153,7 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
                 initial.bindPersistedControl(maxCalls);
                 db.update("INSERT INTO agent_run(tenant_id,owner_user_id,session_id,run_id,turn_seq,session_generation,base_history_version,history_before_turn,idempotency_key,request_fingerprint,request_json,access_scope_json,execution_query,snapshot_json,reply_to_run_id,business_date,business_timezone,deadline_at,created_at,events_expires_at,data_expires_at,lease_owner,lease_token,lease_until,last_event_seq,max_model_calls) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,1,?)",
                         owner.tenantId(), owner.userId(), sid.toString(), id.toString(), turn, generation, version, turn - 1, key, fingerprint,
-                        encode(Map.of("message", message)), encode(owner), query, encode(initial.snapshot()), reply == null ? null : reply.toString(),
+                        encode(context == null ? Map.of("message", message) : Map.of("message", message, "context", context)), encode(owner), query, encode(initial.snapshot()), reply == null ? null : reply.toString(),
                         java.sql.Date.valueOf(initial.businessDate), "Asia/Shanghai", stamp(deadline), stamp(now), stamp(now.plus(Duration.ofDays(7))), stamp(expiry), instance, stamp(deadline), maxCalls);
                 db.update("UPDATE agent_session SET generation=?,next_turn_seq=?,current_run_id=?,updated_at=?,expires_at=?,version=version+1 WHERE tenant_id=? AND session_id=?",
                         generation, turn + 1, id.toString(), stamp(now), stamp(expiry), owner.tenantId(), sid.toString());

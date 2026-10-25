@@ -65,6 +65,22 @@ class MysqlStorageIntegrationTest {
         } finally { db.execute("DROP TRIGGER " + trigger); }
         run.cancel(); assertEquals(Status.CANCELLED, repository.load(run.id, owner).snapshot().status());
     }
+    @Test void pageContextAndOriginalWordsSurviveReloadAndIdempotency() {
+        String key = "context-" + UUID.randomUUID();
+        var page = new RequestContext("1001");
+        RunState run = repository.create("昨天有多少条弹幕？", owner, null, key, null, page).run();
+        sessions.add(run.sessionId);
+        assertEquals("昨天有多少条弹幕？", run.message);
+        assertTrue(run.query().contains("视频1001"));
+        assertEquals("1001", db.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(request_json,'$.context.videoId')) FROM agent_run WHERE run_id=?", String.class, run.id.toString()));
+        faq(run);
+        assertFalse(repository.create("昨天有多少条弹幕？", owner, null, key, null, page).fresh());
+        assertThrows(AgentException.class, () -> repository.create("昨天有多少条弹幕？", owner, null, key, null, new RequestContext("1002")));
+        repository.close(); repository = new MysqlRunRepository(source, mapper, cache, new FileObjectStore(directory), Duration.ofSeconds(30), 16);
+        RunState restored = repository.load(run.id, owner);
+        assertEquals(run.message, restored.message);
+        assertEquals(run.query(), restored.query());
+    }
     @Test void evidenceArtifactAndEventReplaySurviveRepositoryReconstruction() throws Exception {
         RunState run = create("metric"); run.start();
         var data = new MetricData(1001L, run.businessDate.minusDays(1), "bullet_count", 128, "v1", "integration-fixture", Instant.now(), "Asia/Shanghai", true, true);

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 @org.springframework.core.annotation.Order(0)
 public class MetricQueryReadiness implements QueryReadinessPolicy {
     public Optional<Clarification> validate(Input input) {
-        if (DanmakuReportTask.requested(input.query())) return Optional.empty();
+        if (DanmakuReportTask.requested(input.query()) || com.tianmu.agent.core.ConversationTopics.general(input.query())) return Optional.empty();
         if (!input.query().contains("弹幕")) return Optional.empty();
         if (!DanmakuTarget.matcher(input.query()).find()) return ask("请提供要查询的videoId，可写成视频ID或直播间ID。");
         var dates = Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(input.query());

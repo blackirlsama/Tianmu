@@ -28,7 +28,7 @@ public class DeliveryService {
                 com.tianmu.agent.harness.trace.TraceSemantics.faq(faq), () -> {
             com.tianmu.agent.harness.trace.TraceDetails.input(faq);
             Answer answer = harness.transform(run, TransformPoint.ANSWER, new Answer(faq.text(), List.of()));
-            // Only the trusted FAQ route may deliver a static answer without metric evidence.
+            // Static FAQ answers do not make business data claims.
             if (!answer.evidenceIds().isEmpty()) throw new AgentException("INVALID_EVIDENCE", "FAQ cannot invent evidence");
             run.checkpoint();
             run.succeed(reservation, answer, StopReason.FAQ_ANSWER);
@@ -67,8 +67,9 @@ public class DeliveryService {
         });
     }
     private void validateAnswer(Answer answer, RunState run) {
+        boolean conversation = run.task() != null && "conversation".equals(run.task().specification().type());
         if (answer == null || answer.text() == null || answer.text().isBlank() || answer.text().length() > 8000
-                || answer.evidenceIds().isEmpty() || answer.evidenceIds().size() > 10)
+                || (!conversation && answer.evidenceIds().isEmpty()) || answer.evidenceIds().size() > 10)
             throw new AgentException("INVALID_ANSWER", "A bounded answer with evidence is required");
         for (String id : answer.evidenceIds()) {
             Evidence evidence = run.execution().evidence().get(id);

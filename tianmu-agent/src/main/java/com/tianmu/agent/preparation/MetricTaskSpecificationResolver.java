@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 @Component
 public class MetricTaskSpecificationResolver implements TaskSpecificationResolver {
     public Optional<Specification> resolve(String original, LocalDate businessDate) {
-        if (DanmakuReportTask.requested(original)) return Optional.empty();
+        if (DanmakuReportTask.requested(original) || com.tianmu.agent.core.ConversationTopics.general(original)) return Optional.empty();
         var ids = DanmakuTarget.matcher(original).results().map(m -> m.group(1)).toList();
         var dates = Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(original).results().map(m -> m.group()).toList();
         if (original.contains("弹幕") && ids.size() == 1 && (dates.size() == 1 || dates.isEmpty() && original.contains("昨天"))) {

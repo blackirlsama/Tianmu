@@ -4,18 +4,22 @@ export const validRunId = (value) =>
   typeof value === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 
-// Carry the page target without injecting titles or forcing the user's intent.
-export function buildChatMessage(text, videoId = '', clarification = false) {
-  let message = text.trim()
+export function buildChatMessage(text) {
+  const message = text.trim()
   if (!message) throw new Error('先写下你想聊的问题吧')
-  const hasTarget = /(?:(?:视频|直播间)(?:\s*ID)?|\bvideo_?id)\s*[:：=#]?\s*\d+/i.test(message)
-  if (videoId && !clarification && !hasTarget) {
-    if (!/^[1-9]\d{0,18}$/.test(videoId) || (videoId.length === 19 && videoId > '9223372036854775807'))
-      throw new Error('当前视频 ID 无效，请重新打开视频页面')
-    message += `\n\n[页面上下文：当前视频${videoId}。]`
-  }
   if (message.length > 2000) throw new Error('消息太长了，请缩短后再发送')
   return message
+}
+
+// Page selection travels separately; the server validates it before any data query.
+export function buildChatRequest(text, videoId = '') {
+  const body = { message: buildChatMessage(text) }
+  if (videoId) {
+    if (!/^[1-9]\d{0,18}$/.test(videoId) || (videoId.length === 19 && videoId > '9223372036854775807'))
+      throw new Error('当前视频 ID 无效，请重新打开视频页面')
+    body.context = { videoId }
+  }
+  return body
 }
 
 export function answerPresentation(answer) {
@@ -154,8 +158,8 @@ export function progressLabel(data = {}) {
   }
   const stage = {
     queued: '任务已排队',
-    running: '开始分析',
-    finalizing: '整理分析结论',
+    running: '正在思考',
+    finalizing: '正在整理回复',
   }
   if (data.stage === 'tool_completed')
     return `${tools[data.tool] || '分析步骤'}已完成`

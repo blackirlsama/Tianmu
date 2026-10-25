@@ -20,6 +20,8 @@ class BusinessAdapterTest {
     ObjectMapper mapper=new ObjectMapper().findAndRegisterModules();
     List<String> headers=new CopyOnWriteArrayList<>(); Set<Long> allowed=Set.of(1001L); volatile int metricStatus=200;
     volatile boolean oversized;
+    volatile List<?> authorizationOverride;
+    volatile boolean rawAnalysisSamples;
     @BeforeEach void start() throws Exception {
         repository=mock(RunRepository.class); ObjectProvider<RunRepository> provider=mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(repository);
@@ -31,7 +33,7 @@ class BusinessAdapterTest {
             else if(path.endsWith("authorize")) {
                 JsonNode body=mapper.readTree(exchange.getRequestBody()); Set<Long> result=new HashSet<>();
                 for(var id:body.path("videoIds")) if(allowed.contains(id.longValue())) result.add(id.longValue());
-                value=Map.of("videoIds",result);
+                value=Map.of("videoIds",authorizationOverride == null ? result : authorizationOverride);
             } else if(path.endsWith("danmaku-analysis")) {
                 status=metricStatus;
                 String query=exchange.getRequestURI().getRawQuery();
@@ -40,6 +42,14 @@ class BusinessAdapterTest {
                 var q=new com.tianmu.agent.core.DanmakuTypes.Query(Long.parseLong(params.get("videoId")),LocalDateTime.parse(params.get("start")),LocalDateTime.parse(params.get("end")));
                 var bins=new ArrayList<com.tianmu.agent.core.DanmakuTypes.Bucket>();for(int i=0;i<12;i++)bins.add(new com.tianmu.agent.core.DanmakuTypes.Bucket(i,0));
                 value=new com.tianmu.agent.core.DanmakuTypes.Dataset(q,0,0,bins,List.of(),Instant.now(),"fixture",false);
+                if (rawAnalysisSamples) {
+                    List<Map<String,Object>> wireBins=new ArrayList<>();
+                    for(int i=0;i<12;i++) wireBins.add(Map.of("index",i,"count",i==0?"1":"0"));
+                    value=Map.of("query",Map.of("videoId","1001","start",q.start().toString(),"end",q.end().toString()),
+                            "totalMessages","1","uniqueSenders","1","buckets",wireBins,
+                            "samples",List.of(Map.of("id","100000","bucket",0,"text","优惠券在哪里领","truncated",false)),
+                            "dataAsOf",Instant.now(),"source","fixture","demo",false);
+                }
             } else {
                 status=metricStatus;
                 value=new MetricData(1001,LocalDate.now().minusDays(1),"bullet_count",3,"bullet-retained-created-v1",
@@ -61,6 +71,16 @@ class BusinessAdapterTest {
     @Test void forbiddenTargetStopsBeforeRunCreation(){
         assertEquals("FORBIDDEN",assertThrows(AgentException.class,()->adapter.forCreate("token","查询视频1002昨天的弹幕数",null)).code());
     }
+    @Test void acceptsEmbeddedBusinessStringIdsWithoutLosingPrecision() {
+        allowed=Set.of(Long.MAX_VALUE); authorizationOverride=List.of(Long.toString(Long.MAX_VALUE));
+        assertEquals(Set.of(Long.MAX_VALUE),adapter.forCreate("token","分析视频9223372036854775807昨天的弹幕",null).videoIds());
+    }
+    @Test void rejectsMalformedOrUnrequestedAuthorizationIds() {
+        for (Object value : List.of("9223372036854775808", "1001.0", "01001", "-1001", "1002", 1001.5, 1001.0, -1001L)) {
+            authorizationOverride=List.of(value);
+            assertEquals("BUSINESS_UNAVAILABLE",assertThrows(AgentException.class,()->adapter.forCreate("token","分析视频1001昨天的弹幕",null)).code());
+        }
+    }
     @Test void videoAndRoomAliasesUseTheSameAuthorizationBoundary() {
         for (String target : List.of("视频1001", "直播间1001", "视频ID：1001", "videoId=1001", "video_id:1001"))
             assertEquals(Set.of(1001L), adapter.forCreate("token", "分析" + target + "昨天的弹幕", null).videoIds());
@@ -75,6 +95,15 @@ class BusinessAdapterTest {
         assertEquals(q,result.query());assertEquals(0,result.totalMessages());
         metricStatus=403;
         assertEquals("FORBIDDEN",assertThrows(AgentException.class,()->adapter.query(q,scope,new CallControl(Instant.now().plusSeconds(5),new CancellationToken()))).code());
+    }
+    @Test void rawBridgeSamplesAreAdaptedBeforeEvidenceGrouping() {
+        authorizationOverride=List.of("1001"); rawAnalysisSamples=true;
+        var scope=adapter.forCreate("token","分析视频1001昨天的弹幕",null);
+        var day=LocalDate.now(com.tianmu.agent.core.DanmakuTypes.ZONE).minusDays(1);
+        var query=new com.tianmu.agent.core.DanmakuTypes.Query(1001,day.atStartOfDay(),day.plusDays(1).atStartOfDay());
+        var result=adapter.query(query,scope,new CallControl(Instant.now().plusSeconds(5),new CancellationToken()));
+        assertEquals(1,result.totalMessages()); assertEquals(1,result.sampleOccurrenceCount());
+        assertEquals("100000",result.samples().get(0).occurrences().get(0).id());
     }
     @Test void runAndClarificationUseOwnerCheckedMetadata(){
         UUID id=UUID.randomUUID(); when(repository.resourcesForRun(eq(id),any())).thenReturn(Set.of(1001L));

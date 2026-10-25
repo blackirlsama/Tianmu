@@ -93,6 +93,20 @@ flowchart TB
 
 默认端口：HTTP `8101`，Netty WebSocket `9101`。真实运行需要 MySQL、Redis、RocketMQ、Elasticsearch、MinIO 与 Canal，业务表结构需自行初始化。
 
+### 前端
+
+Vue 3 前端源码位于 [`tianmu-front/`](tianmu-front/README.md)，使用 Node.js 与 npm 独立运行：
+
+```bash
+cd tianmu-front
+npm ci
+npm run serve
+```
+
+开发服务器默认把 `/api` 代理到本机业务后端 `http://127.0.0.1:8101`，弹幕 WebSocket 连接当前主机的 `9101` 端口。可分别通过 `TIANMU_API_PROXY_TARGET` 和 `VUE_APP_DANMU_WS_BASE_URL` 覆盖；生产静态资源由 `npm run build` 输出到 `tianmu-front/dist/`。
+
+网站导航、创作中心和视频详情页已接入 `/agent` AI 分析工作台，支持时段选择、执行进度、取消、澄清续接与 HTML 报告预览。`/api/agent` 默认代理到 `8201`，可通过 `TIANMU_AGENT_PROXY_TARGET` 覆盖；真实登录需启用 Agent 的 `business` 身份适配器。联调与生产反向代理说明见[前端文档](tianmu-front/README.md)。
+
 ---
 
 ## ② 运营 Agent

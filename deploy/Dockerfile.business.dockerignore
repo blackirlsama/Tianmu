@@ -1,0 +1,10 @@
+**
+!pom.xml
+!src/
+!src/**
+!deploy/
+!deploy/site/
+!deploy/site/business-entrypoint.sh
+**/application-local.yml
+**/application-secrets.yml
+**/.env*

@@ -8,8 +8,15 @@ ENV MAVEN_OPTS="-Xmx384m -XX:MaxMetaspaceSize=192m"
 COPY tianmu-agent/pom.xml ./pom.xml
 COPY tianmu-agent/src ./src
 COPY deploy/HealthProbe.java /probe/HealthProbe.java
-RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -DskipTests package \
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package \
     && javac --release 17 -d /probe/classes /probe/HealthProbe.java
+
+# Explicit isolated integration verification; its credential file is never copied into a layer.
+FROM build AS storage-verify
+ARG STORAGE_TESTS=MysqlStorageIntegrationTest
+RUN --mount=type=cache,target=/root/.m2 --mount=type=secret,id=storage-it-env,required=true \
+    set -a && . /run/secrets/storage-it-env && set +a \
+    && mvn -B -ntp "-Dtest=${STORAGE_TESTS}" test
 
 FROM ${JAVA_IMAGE} AS runtime
 ARG SOURCE_REVISION=unknown

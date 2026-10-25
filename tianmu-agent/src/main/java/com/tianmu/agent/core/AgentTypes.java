@@ -17,8 +17,13 @@ public final class AgentTypes {
     public record ToolCall(String name, Map<String, Object> arguments) {
         public ToolCall { arguments = ImmutablePayload.map(arguments); }
     }
-    public record Answer(String text, List<String> evidenceIds) {
-        public Answer { evidenceIds = List.copyOf(evidenceIds); }
+    public record AnswerNote(String label, String text, Instant updatedAt, String timezone) {}
+    public record Answer(String text, List<String> evidenceIds, List<AnswerNote> dataNotes) {
+        public Answer(String text, List<String> evidenceIds) { this(text, evidenceIds, List.of()); }
+        public Answer {
+            evidenceIds = List.copyOf(evidenceIds);
+            dataNotes = dataNotes == null ? List.of() : List.copyOf(dataNotes);
+        }
     }
     public record Decision(Kind kind, ToolCall call, Answer answer, String clarification) {
         public static Decision tool(String name, Map<String, Object> arguments) {

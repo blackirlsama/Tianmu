@@ -1,0 +1,132 @@
+name: tianmu-site
+services:
+  business-mysql:
+    image: ${BUSINESS_MYSQL_IMAGE:-mysql:8.0}
+    restart: unless-stopped
+    mem_limit: 448m
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_bin, --server-id=67, --log-bin=mysql-bin, --binlog-format=ROW, --default-time-zone=+00:00, --innodb-buffer-pool-size=96M, --max-connections=60, --performance-schema=OFF]
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/site-mysql-root-password
+    secrets: [site-mysql-root-password]
+    volumes: [business-mysql-data:/var/lib/mysql]
+    networks: [shared]
+  minio:
+    image: ${MINIO_IMAGE:-tianmu-minio:2025-10-15}
+    command: server /data --console-address :9001
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio-access-key
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio-secret-key
+    secrets: [minio-access-key, minio-secret-key]
+    volumes: [minio-data:/data]
+    networks: [shared]
+  elasticsearch:
+    image: tianmu-elasticsearch:8.18.1-ik
+    restart: unless-stopped
+    mem_limit: 640m
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: 'false'
+      xpack.ml.enabled: 'false'
+      ingest.geoip.downloader.enabled: 'false'
+      ES_JAVA_OPTS: -Xms256m -Xmx256m -XX:ActiveProcessorCount=2
+    volumes: [es-data:/usr/share/elasticsearch/data]
+    networks: [shared]
+  rocketmq-namesrv:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}
+    command: sh mqnamesrv
+    restart: unless-stopped
+    mem_limit: 192m
+    environment:
+      JAVA_OPT_EXT: -Xms64m -Xmx96m -Xmn32m -XX:MaxDirectMemorySize=32m -XX:ActiveProcessorCount=2
+    networks: [shared]
+  rocketmq-init:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}
+    user: '0:0'
+    entrypoint: ['/bin/sh', '-ec']
+    command: ['mkdir -p /store/config; chown -R rocketmq:rocketmq /store']
+    volumes: [mq-data:/store]
+    networks: [shared]
+  rocketmq-broker:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf
+    restart: unless-stopped
+    mem_limit: 320m
+    environment:
+      JAVA_OPT_EXT: -Xms96m -Xmx160m -Xmn48m -XX:MaxDirectMemorySize=48m -XX:ActiveProcessorCount=2
+    volumes: [./broker.conf:/home/rocketmq/broker.conf:ro, mq-data:/home/rocketmq/store]
+    depends_on:
+      rocketmq-namesrv: {condition: service_started}
+      rocketmq-init: {condition: service_completed_successfully}
+    networks: [shared]
+  canal:
+    image: ${CANAL_IMAGE:-canal/canal-server:v1.1.7}
+    restart: unless-stopped
+    mem_limit: 384m
+    env_file: ['${SITE_CONFIG_DIR:?Set the private site configuration directory}/canal.env']
+    networks: [shared]
+  business:
+    image: tianmu-business:${SITE_RELEASE:?Set the release id}
+    restart: unless-stopped
+    init: true
+    mem_limit: 640m
+    env_file: ['${SITE_CONFIG_DIR}/business.env']
+    secrets:
+      - {source: business-db-password, target: TIANMU_DB_PASSWORD}
+      - {source: redis-password, target: TIANMU_REDIS_PASSWORD}
+      - {source: minio-access-key, target: TIANMU_MINIO_ACCESS_KEY}
+      - {source: minio-secret-key, target: TIANMU_MINIO_SECRET_KEY}
+      - {source: jwt-secret, target: JWT_SECRET_BASE64}
+    ports: ['127.0.0.1:18101:8101', '127.0.0.1:18202:8201']
+    depends_on: [business-mysql, elasticsearch, minio, canal, rocketmq-broker]
+    networks: [shared]
+  agent:
+    image: tianmu-agent:${SITE_RELEASE}
+    restart: unless-stopped
+    init: true
+    mem_limit: 640m
+    # The authenticated bridge is strictly loopback-only HTTP or HTTPS.
+    network_mode: service:business
+    env_file: ['${SITE_CONFIG_DIR}/agent.env']
+    environment:
+      AGENT_DB_PASSWORD_FILE: /run/secrets/agent-db-password
+      AGENT_REDIS_PASSWORD_FILE: /run/secrets/redis-password
+      DEEPSEEK_API_KEY_FILE: /run/secrets/model-api-key
+      AGENT_MINIO_ACCESS_KEY_FILE: /run/secrets/minio-access-key
+      AGENT_MINIO_SECRET_KEY_FILE: /run/secrets/minio-secret-key
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=160m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8 -Duser.timezone=UTC
+    secrets: [agent-db-password, redis-password, model-api-key, minio-access-key, minio-secret-key]
+    volumes: [agent-traces:/data/trace]
+    depends_on: [business]
+  frontend:
+    image: ${NGINX_IMAGE:-nginx:1.28-alpine}
+    restart: unless-stopped
+    mem_limit: 64m
+    ports: ['80:80', '443:443']
+    volumes:
+      - ../../tianmu-front/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${SITE_CONFIG_DIR}/tls:/etc/nginx/tls:ro
+      - ${SITE_CONFIG_DIR}/acme-webroot:/var/www/acme:ro
+    depends_on: [business]
+    networks: [shared]
+secrets:
+  site-mysql-root-password: {file: '${SITE_CONFIG_DIR}/secrets/site-mysql-root-password'}
+  business-db-password: {file: '${SITE_CONFIG_DIR}/secrets/business-db-password'}
+  agent-db-password: {file: '${SITE_CONFIG_DIR}/secrets/agent-db-password'}
+  redis-password: {file: '${SITE_CONFIG_DIR}/secrets/redis-password'}
+  jwt-secret: {file: '${SITE_CONFIG_DIR}/secrets/jwt-secret'}
+  model-api-key: {file: '${SITE_CONFIG_DIR}/secrets/model-api-key'}
+  minio-access-key: {file: '${SITE_CONFIG_DIR}/secrets/minio-access-key'}
+  minio-secret-key: {file: '${SITE_CONFIG_DIR}/secrets/minio-secret-key'}
+volumes:
+  business-mysql-data:
+  minio-data:
+  es-data:
+  mq-data:
+  agent-traces:
+networks:
+  shared:
+    external: true
+    name: ${SITE_NETWORK:-tianmu-staging_default}

@@ -20,7 +20,7 @@ import com.tianmu.agent.harness.trace.*;
 @Component
 public class AgentRuntime {
     private static final Logger log = LoggerFactory.getLogger(AgentRuntime.class);
-    private static final Set<String> RETRYABLE = Set.of("TOOL_CALL_TIMEOUT", "TOOL_TEMPORARY_ERROR");
+    private static final Set<String> RETRYABLE = Set.of("TOOL_CALL_TIMEOUT", "TOOL_TEMPORARY_ERROR", "INVALID_REPORT");
     private final String finalizeDirective;
     private final ModelPort model;
     private final ToolDispatcher tools;
@@ -158,9 +158,11 @@ public class AgentRuntime {
             if (!RETRYABLE.contains(e.code())) throw e;
             int attempt = progress.failure(name);
             if (attempt >= harness.policy().consecutiveToolFailures())
-                throw new AgentException("TOOL_FAILURE_LIMIT", "Consecutive read-only tool failures reached the limit");
-            result = harness.transform(run, TransformPoint.TOOL_RESULT, new ToolResult(name,
-                    Map.of("error_code", e.code(), "retryable", true, "attempt", attempt), null));
+                throw new AgentException("TOOL_FAILURE_LIMIT", "Consecutive tool failures reached the limit");
+            Map<String,Object> feedback = new HashMap<>(Map.of("error_code", e.code(), "retryable", true, "attempt", attempt));
+            // INVALID_REPORT is raised before artifact persistence; correction cannot duplicate a stored report.
+            if ("INVALID_REPORT".equals(e.code())) feedback.put("error_message", e.getMessage());
+            result = harness.transform(run, TransformPoint.TOOL_RESULT, new ToolResult(name, feedback, null));
             run.execution().observe(result);
             run.emit("PROGRESS", Map.of("stage", "tool_failed", "tool", name, "code", e.code(), "attempt", attempt));
             return false;

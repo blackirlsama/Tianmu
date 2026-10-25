@@ -17,9 +17,13 @@ public final class EvidenceFallbackRenderer {
         if (evidence.isEmpty()) throw new AgentException("STEP_LIMIT", "No usable evidence for finalization");
         StringJoiner text = new StringJoiner("\n");
         if (evidence.stream().anyMatch(item -> item.data().demo())) text.add("【模拟数据】");
-        for (Evidence item : evidence) text.add("视频 " + item.data().videoId() + " 在 " + item.data().date()
-                + " 的弹幕数为 " + item.data().value() + " 条。");
-        text.add("以上仅陈列已查询到的指标，尚不足以证明变化原因。");
+        for (Evidence item : evidence) {
+            String day = item.data().date().format(java.time.format.DateTimeFormatter.ofPattern(
+                    item.data().date().getYear() == run.businessDate.getYear() ? "M月d日" : "yyyy年M月d日"));
+            String target = evidence.size() == 1 ? "这个视频" : "视频" + item.data().videoId();
+            text.add("查到了，" + target + "在" + day + "共有"
+                    + String.format(Locale.ROOT, "%,d", item.data().value()) + "条弹幕。");
+        }
         return new Answer(text.toString(), evidence.stream().map(Evidence::id).toList());
     }
 }

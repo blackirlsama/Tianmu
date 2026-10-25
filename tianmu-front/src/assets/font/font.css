@@ -1,0 +1,9 @@
+/* @font-face {
+    font-family: 'Harmony Font';
+    src: url('./HarmonyOS_Sans_SC_Medium.ttf');
+} */
+@font-face {
+    font-family: 'Harmony Font';
+    src: url('./HarmonyOS_Sans_SC_Medium.woff2') format('woff2');
+    font-display: swap;
+}

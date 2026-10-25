@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.*;
 import com.tianmu.agent.access.IdentityPort;
 import com.tianmu.agent.core.AgentException;
 import com.tianmu.agent.core.DanmakuTarget;
+import com.tianmu.agent.core.DanmakuTypes;
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.query.BusinessQueryPort;
 import com.tianmu.agent.runtime.control.CallControl;
@@ -31,6 +32,9 @@ public class BusinessAdapters {
 }
 
 final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort {
+    private record RawSample(String id, int bucket, String text, boolean truncated) {}
+    private record AnalysisResponse(DanmakuTypes.Query query, long totalMessages, long uniqueSenders,
+            List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo) {}
     private final BusinessProperties config;
     private final ObjectMapper json;
     private final ObjectProvider<RunRepository> repositories;
@@ -81,8 +85,14 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         if (!answer.path("videoIds").isArray()) throw new AgentException("BUSINESS_UNAVAILABLE", "Invalid authorization response");
         Set<Long> result = new HashSet<>();
         for (var value : answer.path("videoIds")) {
-            if (!value.canConvertToLong() || !requested.contains(value.longValue())) throw new AgentException("BUSINESS_UNAVAILABLE", "Invalid authorization response");
-            result.add(value.longValue());
+            long id;
+            try {
+                if (value.isIntegralNumber() && value.canConvertToLong()) id = value.longValue();
+                else if (value.isTextual() && value.textValue().matches("[1-9][0-9]{0,18}")) id = Long.parseLong(value.textValue());
+                else throw new IllegalArgumentException();
+            } catch (IllegalArgumentException e) { throw new AgentException("BUSINESS_UNAVAILABLE", "Invalid authorization response"); }
+            if (id <= 0 || !requested.contains(id)) throw new AgentException("BUSINESS_UNAVAILABLE", "Invalid authorization response");
+            result.add(id);
         }
         if (requireAll && !result.containsAll(requested)) throw new AgentException("FORBIDDEN", "Video is outside your current scope");
         return Set.copyOf(result);
@@ -122,7 +132,13 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         String end = java.net.URLEncoder.encode(query.end().toString(), java.nio.charset.StandardCharsets.UTF_8);
         JsonNode answer = request("GET", "/internal/agent/danmaku-analysis?videoId=" + query.videoId() + "&start=" + start + "&end=" + end,
                 credentials.token(scope.authorizationRef()), null, control);
-        try { return json.treeToValue(answer, com.tianmu.agent.core.DanmakuTypes.Dataset.class); }
+        try {
+            // The bridge returns raw snippets. Grouped occurrences belong to the Agent's tool/evidence model.
+            AnalysisResponse raw = json.treeToValue(answer, AnalysisResponse.class);
+            return new DanmakuTypes.Dataset(raw.query(), raw.totalMessages(), raw.uniqueSenders(), raw.buckets(),
+                    raw.samples().stream().map(s -> new DanmakuTypes.Sample(s.id(), s.bucket(), s.text(), s.truncated())).toList(),
+                    raw.dataAsOf(), raw.source(), raw.demo());
+        }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Analysis schema mismatch"); }
     }
 }

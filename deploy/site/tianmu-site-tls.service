@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Tianmu site IP TLS certificate
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/tianmu-site/current/deploy/site/renew-tls.sh /opt/tianmu-site/config

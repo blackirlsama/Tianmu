@@ -18,7 +18,7 @@ public record DeepSeekProperties(@DefaultValue("https://api.deepseek.com") URI b
                 || baseUrl.getRawUserInfo() != null || baseUrl.getRawQuery() != null || baseUrl.getFragment() != null)
             throw new IllegalArgumentException("A secure model base URL is required");
         for (String model : new String[]{preparationModel, harnessModel})
-            if (model == null || !model.matches("[a-zA-Z0-9_.:-]{1,100}")) throw new IllegalArgumentException("Invalid model ID");
+            if (model == null || !model.matches("[a-zA-Z0-9_.:/-]{1,100}")) throw new IllegalArgumentException("Invalid model ID");
         if (connectTimeout == null || connectTimeout.toMillis() < 1 || connectTimeout.compareTo(Duration.ofSeconds(30)) > 0
                 || preparationMaxTokens < 64 || preparationMaxTokens > 2048 || harnessMaxTokens < 128 || harnessMaxTokens > 8192)
             throw new IllegalArgumentException("Invalid model call limits");

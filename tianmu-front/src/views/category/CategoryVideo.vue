@@ -62,7 +62,7 @@
     <!-- 固钉频道栏 -->
     <div
       class="header-channel-fixed"
-      :style="isFixChannel ? '' : 'display: none;'"
+      :style="isFixChannel && categoryList.length > 1 ? '' : 'display: none;'"
     >
       <div
         class="header-channel-fixed-container"

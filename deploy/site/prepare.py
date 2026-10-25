@@ -96,6 +96,7 @@ if args.initialize_db:
     hashed = hashlib.md5(('TianMu' + acceptance['password']).encode()).hexdigest()
     sql += "\nINSERT IGNORE INTO user(user_id,email,password,nickname,state,role) VALUES(10001," + literal(acceptance['account']) + ',' + literal(hashed) + ",'链路验收账号','normal','user'),(10002,'scope-check@tianmu.local'," + literal(hashlib.md5(secrets.token_bytes(32)).hexdigest()) + ",'权限隔离账号','normal','user');\n"
     sql += "INSERT IGNORE INTO user_stats(user_id,video_count,coin_count) VALUES(10001,0,10),(10002,0,10);\n"
+    sql += "INSERT IGNORE INTO category(category_id,category_name) VALUES(1,'动漫');\n"
     result = subprocess.run(['docker', 'exec', '-i', 'tianmu-site-business-mysql-1', 'sh', '-c', 'export MYSQL_PWD="$(cat /run/secrets/site-mysql-root-password)"; exec mysql --default-character-set=utf8mb4 -uroot'], input=sql.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode:
         message = result.stderr.decode(errors='replace')

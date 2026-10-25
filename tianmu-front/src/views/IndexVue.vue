@@ -69,7 +69,7 @@
     </div>
 
     <!-- 固钉频道栏 -->
-    <div class="header-channel-fixed" :style="isFixChannel ? '' : 'display: none;'">
+    <div class="header-channel-fixed" :style="isFixChannel && categoryList.length > 1 ? '' : 'display: none;'">
       <div class="header-channel-fixed-container" :class="isChannelDown ? 'header-channel-fixed-down' : ''"
         @mouseenter="isChannelDown = true" @mouseleave="isChannelDown = false">
         <div class="header-channel-fixed-left">

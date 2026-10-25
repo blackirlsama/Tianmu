@@ -22,7 +22,7 @@
       </div>
     </div>
     <!-- 右边 -->
-    <div class="right-channel-container">
+    <div v-if="categoryList.length > 1" class="right-channel-container">
       <!-- 中间频道 -->
       <div class="channel-items__left">
         <div

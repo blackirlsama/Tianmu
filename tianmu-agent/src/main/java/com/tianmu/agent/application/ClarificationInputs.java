@@ -11,8 +11,9 @@ public final class ClarificationInputs {
         return combine(original, reply, null);
     }
     public static String combine(String original, String reply, java.time.LocalDate originBusinessDate) {
+        if (com.tianmu.agent.core.ConversationTopics.general(original)) return original + "\n用户补充：" + reply;
         if (com.tianmu.agent.preparation.DanmakuReportTask.requested(original)) return combineReport(original, reply, originBusinessDate);
-        if (!original.contains("弹幕")) throw new AgentException("RESUME_UNSUPPORTED", "Resubmit the original question with the missing conditions");
+        if (!original.contains("弹幕")) return original + "\n用户补充：" + reply;
         String video = one(DanmakuTarget.ID_PATTERN, reply, 1);
         if (video == null) video = one(DanmakuTarget.ID_PATTERN, original, 1);
         String date = one("\\d{4}-\\d{2}-\\d{2}", reply, 0);

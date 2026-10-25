@@ -46,7 +46,7 @@ async function request(path, options = {}) {
       messages[data.code] ||
         (response.status === 401
           ? '登录已失效，请重新登录'
-          : `请求未完成（${data.code || response.status}），请稍后重试`)
+          : '暂时没能完成请求，请稍后重试')
     )
     error.code = data.code
     error.status = response.status

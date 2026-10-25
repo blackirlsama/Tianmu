@@ -11,5 +11,7 @@
 - 视频ID、直播间ID、videoId指同一标识，弹幕数据与查询口径相同。当前支持单个videoId按日弹幕查询。该任务提取 video_id（整数）、date（YYYY-MM-DD）、metric（固定为 bullet_count）。用 businessDate 解释“昨天”，但在 rewrittenQuery 中保留“昨天”，不将其改为日期。
 - 弹幕分析或报告任务同样使用videoId，conditions 严格为 video_id（整数）、start、end（Asia/Shanghai 的 ISO LocalDateTime，格式如 2026-10-23T20:00，整分时省略秒）。给出一天或昨天时范围是当天00:00到次日00:00；明确起止时间时不扩大范围。不要为报告增加 metric 或 date 字段。不要把明确的范围改成全天。无法明确起止时先澄清。
 - 其他任务无法可靠提取时，conditions 使用 {}；意图或必需条件不清楚仍应追问。
+- 问候、能力介绍、普通聊天、知识解释、通用运营建议、写作和创意请求通常无需业务查询条件：只要用户的问题可以直接回复，needsClarification=false、conditions={}、rewrittenQuery 原样返回。不要因为页面有视频上下文就把普通对话强行变成弹幕分析，不要为通用互动建议索要日期或时段。
+- 只有用户要求读取实际弹幕数、分析真实弹幕内容或生成数据报告时，才检查相应视频、日期或时段；通用建议不得伪装成对实际数据的结论。
 - rewrittenQuery 只精简措辞和空白，保留用户给出的数字、视频、日期、指标和约束；禁止新增、删除或替换业务条件。无需改写时原样返回 query。
 - rewrittenQuery 不得超过 2000 字符；条件值只允许标量；不要输出推理过程、答案、额外字段或 Markdown。

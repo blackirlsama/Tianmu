@@ -49,7 +49,7 @@ public class PreparationService implements AutoCloseable {
         this.faq = faq; this.model = model; this.policy = policy; this.harness = harness; this.validators = List.copyOf(validators); this.meaning = meaning; this.repository = repository;
     }
     public Result prepare(RunState run, String query) {
-        Input input = new Input(query, run.businessDate, run.owner, run.memory());
+        Input input = new Input(run.message, run.businessDate, run.owner, run.memory());
         Set<String> degraded = new LinkedHashSet<>(), skipped = new LinkedHashSet<>();
         Instant faqDeadline = deadline(run, policy.faqTimeout());
         Branch<Optional<FaqAnswer>> lookup = submit(run, "faq", faqDeadline, input, c -> faq.find(input, c));

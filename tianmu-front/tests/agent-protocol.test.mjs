@@ -4,6 +4,7 @@ import {
   answerReport,
   buildReportMessage,
   buildChatMessage,
+  buildChatRequest,
   answerPresentation,
   formatDataUpdatedAt,
   chinaTime,
@@ -27,14 +28,16 @@ test('answer notes stay separate, preserve evidence wording and display Beijing 
   assert.equal(old.notes[0].updatedAt, '2026-10-25T07:19:48Z')
   assert.equal(answerPresentation({ text: '统计口径问题需要具体解释：这个日期怎么算？' }).text, '统计口径问题需要具体解释：这个日期怎么算？')
 })
-test('chat carries the video target without forcing reports or duplicating explicit targets', () => {
-  assert.equal(buildChatMessage('  昨天有多少条弹幕？ ', '1001'), '昨天有多少条弹幕？\n\n[页面上下文：当前视频1001。]')
-  assert.equal(buildChatMessage('查询视频1002昨天的弹幕数', '1001'), '查询视频1002昨天的弹幕数')
+test('chat preserves the user words and carries page selection in a separate context', () => {
+  assert.deepEqual(buildChatRequest('  昨天有多少条弹幕？ ', '1001'), { message: '昨天有多少条弹幕？', context: { videoId: '1001' } })
+  assert.deepEqual(buildChatRequest('你能做什么', '1001'), { message: '你能做什么', context: { videoId: '1001' } })
+  assert.equal(buildChatRequest('查询视频1002昨天的弹幕数', '1001').message, '查询视频1002昨天的弹幕数')
   assert.equal(buildChatMessage('我想聊聊内容运营'), '我想聊聊内容运营')
-  assert.equal(buildChatMessage('昨天', '1001', true), '昨天')
-  assert.throws(() => buildChatMessage('  ', '1001'))
-  assert.throws(() => buildChatMessage('问题', '9223372036854775808'))
-  assert.throws(() => buildChatMessage('字'.repeat(2000), '1001'))
+  assert.deepEqual(buildChatRequest('昨天', '1001'), { message: '昨天', context: { videoId: '1001' } })
+  assert.throws(() => buildChatRequest('  ', '1001'))
+  assert.throws(() => buildChatRequest('问题', '9223372036854775808'))
+  assert.equal(buildChatRequest('字'.repeat(2000), '1001').message.length, 2000)
+  assert.throws(() => buildChatRequest('字'.repeat(2001), '1001'))
 })
 const input = {
   videoId: '987654321098765432',

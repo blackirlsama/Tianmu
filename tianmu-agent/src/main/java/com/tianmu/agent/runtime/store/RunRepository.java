@@ -7,7 +7,10 @@ import java.util.*;
 
 public interface RunRepository {
     record Created(RunState run, boolean fresh) {}
-    Created create(String message, AccessScope owner, UUID sessionId, String idempotencyKey, UUID replyToRunId);
+    default Created create(String message, AccessScope owner, UUID sessionId, String idempotencyKey, UUID replyToRunId) {
+        return create(message, owner, sessionId, idempotencyKey, replyToRunId, null);
+    }
+    Created create(String message, AccessScope owner, UUID sessionId, String idempotencyKey, UUID replyToRunId, com.tianmu.agent.core.RequestContext context);
     RunState load(UUID id, AccessScope caller);
     default MemoryTypes.View memory(RunState run) { return MemoryTypes.View.empty(); }
     default List<MemoryTypes.Message> messages(UUID sessionId, AccessScope caller, long before) { throw new com.tianmu.agent.core.AgentException("STORAGE_REQUIRED", "Message history requires persistent storage"); }

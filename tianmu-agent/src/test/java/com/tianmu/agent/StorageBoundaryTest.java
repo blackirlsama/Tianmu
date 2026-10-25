@@ -84,9 +84,9 @@ class StorageBoundaryTest {
             assertTrue(summary.isEmpty() || !Character.isHighSurrogate(summary.charAt(summary.length() - 1)));
         }
     }
-    @Test void explicitClarificationResumesOnlyTheSupportedConditions() {
+    @Test void clarificationPreservesConversationAndConstrainsMetricConditions() {
         assertEquals("查询视频1001 昨天的弹幕数", com.tianmu.agent.application.ClarificationInputs.combine("查询视频1001的弹幕数", "昨天"));
-        assertThrows(AgentException.class, () -> com.tianmu.agent.application.ClarificationInputs.combine("生成复杂报告", "昨天"));
+        assertEquals("生成复杂报告\n用户补充：昨天", com.tianmu.agent.application.ClarificationInputs.combine("生成复杂报告", "昨天"));
         assertThrows(AgentException.class, () -> com.tianmu.agent.application.ClarificationInputs.combine("查询视频1001的弹幕数", "视频1002和视频1003"));
         assertEquals("查询视频1001 2030-01-01的弹幕数", com.tianmu.agent.application.ClarificationInputs.combine("查询昨天的弹幕数", "视频1001", LocalDate.of(2030, 1, 2)));
         assertFalse(com.tianmu.agent.application.ClarificationInputs.confirmed("查询视频1001和视频1002的弹幕", LocalDate.of(2030, 1, 2)).containsKey("video_id"));

@@ -111,7 +111,7 @@
                   <span class="working-dot" />{{
                     turn.events.length
                       ? turn.events[turn.events.length - 1].label
-                      : '正在连接分析任务…'
+                      : '正在准备回复…'
                   }}
                 </div>
                 <p v-if="turn.snapshot?.status === 'NEEDS_INPUT'" class="answer-text clarification">
@@ -135,7 +135,7 @@
                   {{
                     turn.snapshot.stopReason === 'SUPERSEDED'
                       ? '任务已被新的请求替代。'
-                      : '本次分析已取消。'
+                      : '这次回复已停止。'
                   }}
                 </p>
                 <button
@@ -144,7 +144,7 @@
                   :disabled="cancelling"
                   @click="cancel"
                 >
-                  {{ cancelling ? '正在取消…' : '取消分析' }}
+                  {{ cancelling ? '正在停止…' : '停止生成' }}
                 </button>
                 <details v-if="turn.events.length" class="execution-details">
                   <summary>查看执行进度 · {{ turn.events.length }} 条记录</summary>
@@ -246,7 +246,7 @@ import {
   answerReport,
   answerPresentation,
   formatDataUpdatedAt,
-  buildChatMessage,
+  buildChatRequest,
   progressLabel,
   reportPath,
   terminal,
@@ -297,10 +297,7 @@ const contextTitle = computed(() => (props.videoId === form.videoId ? props.vide
 const currentQueryRun = computed(() =>
   props.embedded ? route.query.assistantRunId : route.query.runId
 );
-const contextSuffix = computed(() =>
-  form.videoId ? `\n\n[页面上下文：当前视频${form.videoId}。]` : ''
-);
-const messageLimit = computed(() => (needsInput.value ? 2000 : 2000 - contextSuffix.value.length));
+const messageLimit = 2000;
 const focus = ref(''),
   turns = ref([]),
   history = ref([]),
@@ -331,10 +328,10 @@ function statusLabel(status) {
   return (
     {
       QUEUED: '排队中',
-      RUNNING: '分析中',
+      RUNNING: '思考中',
       SUCCEEDED: '已完成',
-      NEEDS_INPUT: '待补充',
-      FAILED: '分析失败',
+      NEEDS_INPUT: '等你补充',
+      FAILED: '回复未完成',
       CANCELLED: '已取消',
     }[status] || '连接中'
   );
@@ -344,9 +341,11 @@ function failureLabel(code) {
     {
       DATE_OUT_OF_RANGE: '分析时段超出范围，请选择最近 30 天内已经结束的时段。',
       FORBIDDEN: '你没有权限分析这项内容，请确认视频或直播间 ID。',
-      DEADLINE_EXCEEDED: '本次分析超时，请稍后重新发起。',
+      DEADLINE_EXCEEDED: '这次回复耗时较长，请稍后重试。',
       MODEL_UNAVAILABLE: '模型服务暂时不可用，请稍后重试。',
-    }[code] || `本次分析未完成（${code || 'UNKNOWN'}），可以调整条件后重新发起。`
+      INVALID_ANSWER: '这次没能整理出合适的回复，请重新发送一下。',
+      INTERNAL_ERROR: '助手暂时遇到了一点问题，请稍后重试。',
+    }[code] || '暂时没能完成回复，请稍后重试。'
   );
 }
 const isTerminal = terminal;
@@ -553,14 +552,13 @@ function replaceRun(id, videoId = form.videoId) {
 async function submit() {
   if (busy.value) return;
   notice.value = '';
-  let message;
+  let body;
   try {
-    message = buildChatMessage(focus.value, form.videoId, needsInput.value);
+    body = buildChatRequest(focus.value, form.videoId);
   } catch (error) {
     notice.value = error.message;
     return;
   }
-  const body = { message };
   if (activeTurn.value?.snapshot?.sessionId) body.sessionId = activeTurn.value.snapshot.sessionId;
   if (needsInput.value) body.replyToRunId = activeRunId.value;
   const fingerprint = JSON.stringify(body);

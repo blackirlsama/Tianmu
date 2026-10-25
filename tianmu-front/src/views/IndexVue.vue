@@ -140,8 +140,8 @@
     <div class="main__layout">
       <div class="recommended-container">
         <div class="container" v-infinite-scroll="loadMoreVideo"
-          :infinite-scroll-disabled="!hasMoreVideo || isLoadingCumulative" :infinite-scroll-delay="300"
-          :infinite-scroll-distance="0">
+          :infinite-scroll-disabled="!hasMoreVideo || isLoadingCumulative || loadError" :infinite-scroll-delay="300"
+          :infinite-scroll-distance="420" :infinite-scroll-immediate="true">
           <!-- 轮播图 -->
           <div class="recommended-swipe">
             <div class="recommended-swipe-core">
@@ -173,17 +173,22 @@
           <!-- 随机推荐 -->
           <div class="feed-card" v-for="(item, index) in loadingRecm
             ? 11
-            : recmVideoList.slice(0, 11)" :key="index">
+            : recmVideoList.slice(0, 11)" :key="loadingRecm ? `initial-${index}` : `feed-${item.videoId}`">
             <VideoCard :item="item" :isLoading="loadingRecm"></VideoCard>
           </div>
 
           <!-- 累加推荐 -->
-          <VideoCard v-for="(item, index) in recmVideoList.slice(11)" :key="index" :item="item" :isLoading="false">
+          <VideoCard v-for="item in recmVideoList.slice(11)" :key="`feed-${item.videoId}`" :item="item" :isLoading="false">
           </VideoCard>
 
-          <VideoCardSkeleton v-for="index in 15" :key="index" :hasMoreVideo="hasMoreVideo"></VideoCardSkeleton>
+          <VideoCardSkeleton v-for="index in (isLoadingCumulative && !loadingRecm ? 15 : 0)"
+            :key="`skeleton-${current}-${index}`" :hasMoreVideo="true"></VideoCardSkeleton>
         </div>
         <div v-if="!hasMoreVideo" class="no-more">没有更多了~</div>
+        <div v-if="loadError" class="feed-load-error" role="status">
+          <span>加载没有完成</span>
+          <button type="button" @click="retryLoadMore">重试</button>
+        </div>
       </div>
     </div>
   </div>
@@ -199,8 +204,6 @@ import VideoCardSkeleton from "@/components/VideoCardSkeleton/VideoCardSkeleton.
 import { fetchVideoList } from "@/api/video";
 import { mapState } from "pinia";
 import { useVideoStore } from "@/store/video";
-
-let headerHight, bottomDistance;
 
 export default {
   name: "IndexVue",
@@ -221,35 +224,33 @@ export default {
       isChannelDown: false,
       // 文档根元素
       el: null,
+      headerOffset: 0,
       // 是否正在加载随机推荐
       loadingRecm: true,
       // 推荐视频列表
       recmVideoList: [],
-      current: 1,
-      pageSize: 11,
+      current: 0,
       hasMoreVideo: true,
       isLoadingCumulative: false, // 添加加载状态锁，防止无限加载出现多余的请求，当响应数据为空时，就阻止再请求
+      loadError: false,
+      checkingViewport: false,
+      resizeTimer: null,
     };
   },
   async mounted() {
-    this.getVideoList();
-    // 初始化头图的监听器
-    //this.initHeader();
-    // 窗口滚动时根据高度判断是否显示固钉导航栏和固钉频道栏
     this.el = document.documentElement;
-    // 根据主体顶部的偏移量计算 header 的高度
-    headerHight = document.querySelector(".main__layout").offsetTop;
-    window.addEventListener("scroll", this.handleScroll);
-    // 初次挂载时执行一次，防止大屏情况下，视频数量不足以撑出滚动条
-    await this.handleScroll();
-    // while (bottomDistance < 800) {
-    //   await this.handleScroll();
-    // }
+    this.updateHeaderOffset();
+    window.addEventListener("scroll", this.handleScroll, { passive: true });
+    window.addEventListener("resize", this.handleResize, { passive: true });
+    const loaded = await this.getVideoList(1);
+    if (loaded) await this.ensureViewportFilled();
   },
   beforeUnmount() {
     document.removeEventListener("mousemove", this.handleMouseMove);
     document.removeEventListener("mouseout", this.handleMouseOut);
     window.removeEventListener("scroll", this.handleScroll);
+    window.removeEventListener("resize", this.handleResize);
+    if (this.resizeTimer) window.clearTimeout(this.resizeTimer);
   },
   computed: {
     ...mapState(useVideoStore, ["categoryList"]),
@@ -302,57 +303,75 @@ export default {
       // 检测鼠标是否离开窗口
       document.addEventListener("mouseout", this.handleMouseOut);
     },
-    async getVideoList() {
-      debugger
-      console.log(111)
-      try {
-        const res = await fetchVideoList(this.current, this.pageSize);
-        if (res.code === 200) {
-          this.loadingRecm = false;
-          if (res.data.length < this.pageSize) {
-            this.hasMoreVideo = false;
-          }
-          if (res.data.length > 0) {
-            this.recmVideoList = this.recmVideoList.concat(res.data);
-          }
-        }
-      } catch (error) {
-        console.log("获取视频列表失败" + error);
-      } finally {
-        this.isLoadingCumulative = false;
-      }
-    },
-    // 处理滚动
-    async handleScroll() {
-      // 计算页面底部距离
-      const windowHeight = window.innerHeight;
-      const documentHeight = document.documentElement.scrollHeight;
-      bottomDistance = documentHeight - (window.scrollY + windowHeight);
-
-      // 头部导航栏固定操作
-      if (this.el.scrollTop >= 64 && !this.isFixHeaderBar) {
-        this.isFixHeaderBar = true;
-      } else if (this.el.scrollTop < 64 && this.isFixHeaderBar) {
-        this.isFixHeaderBar = false;
-      }
-      // 频道栏固定操作
-      if (this.el.scrollTop >= headerHight && !this.isFixChannel) {
-        this.isFixChannel = true;
-      } else if (this.el.scrollTop < headerHight && this.isFixChannel) {
-        this.isFixChannel = false;
-      }
-
-      // 当距离底部小于800且有更多数据时触发加载数据的函数
-    },
-    // 无限加载更多视频
-    loadMoreVideo() {
-      if (!this.hasMoreVideo || this.isLoadingCumulative) return;
+    async getVideoList(page) {
+      // Keep page size stable so page-based APIs do not skip rows between pages.
+      const pageSize = 15;
       this.isLoadingCumulative = true;
-      this.current++;
-      if (this.current > 1) {
-        this.pageSize = 15;
+      this.loadError = false;
+      if (page === 1) this.loadingRecm = true;
+      try {
+        const res = await fetchVideoList(page, pageSize);
+        if (res.code !== 200 || !Array.isArray(res.data)) throw new Error("视频列表不可用");
+        this.recmVideoList = page === 1 ? res.data : this.recmVideoList.concat(res.data);
+        this.current = page;
+        this.hasMoreVideo = res.data.length >= pageSize;
+        return true;
+      } catch (_) {
+        this.loadError = true;
+        return false;
+      } finally {
+        this.loadingRecm = false;
+        this.isLoadingCumulative = false;
+        await this.$nextTick();
+        this.updateHeaderOffset();
+        this.handleScroll();
       }
-      this.getVideoList();
+    },
+    async loadMoreVideo() {
+      if (!this.hasMoreVideo || this.isLoadingCumulative || this.loadError || this.current === 0) return;
+      const loaded = await this.getVideoList(this.current + 1);
+      if (loaded) await this.ensureViewportFilled();
+    },
+    async retryLoadMore() {
+      if (this.isLoadingCumulative) return;
+      const page = this.current === 0 ? 1 : this.current + 1;
+      const loaded = await this.getVideoList(page);
+      if (loaded) await this.ensureViewportFilled();
+    },
+    async ensureViewportFilled() {
+      if (this.checkingViewport) return;
+      this.checkingViewport = true;
+      try {
+        let pagesLoaded = 0;
+        await this.$nextTick();
+        while (this.hasMoreVideo && !this.loadError && pagesLoaded < 4 &&
+          document.documentElement.scrollHeight <= window.innerHeight + 120) {
+          const loaded = await this.getVideoList(this.current + 1);
+          if (!loaded) break;
+          pagesLoaded += 1;
+          await this.$nextTick();
+        }
+      } finally {
+        this.checkingViewport = false;
+      }
+    },
+    updateHeaderOffset() {
+      const layout = document.querySelector(".main__layout");
+      if (layout) this.headerOffset = layout.getBoundingClientRect().top + window.scrollY;
+    },
+    handleResize() {
+      if (this.resizeTimer) window.clearTimeout(this.resizeTimer);
+      this.resizeTimer = window.setTimeout(async () => {
+        this.updateHeaderOffset();
+        this.handleScroll();
+        await this.ensureViewportFilled();
+      }, 100);
+    },
+    handleScroll() {
+      if (!this.el) return;
+      const scrollTop = window.scrollY || this.el.scrollTop || document.body.scrollTop || 0;
+      this.isFixHeaderBar = scrollTop >= 64;
+      this.isFixChannel = scrollTop >= this.headerOffset;
     },
   },
 };
@@ -718,6 +737,24 @@ header .window-cover {
   justify-content: center;
   align-items: center;
   margin-top: 30px;
+}
+
+.feed-load-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  color: var(--text2);
+}
+
+.feed-load-error button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 16px;
+  background: var(--brand_blue);
+  color: #fff;
+  cursor: pointer;
 }
 
 @media (max-width: 1366.9px) {

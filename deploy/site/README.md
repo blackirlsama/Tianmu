@@ -27,7 +27,7 @@ python3 deploy/site/prepare.py --config /opt/tianmu-site/config --release RELEAS
 docker compose --env-file /opt/tianmu-site/config/release.env -f deploy/site/compose.yaml up -d
 ```
 
-`business-schema.sql` 是当前实体对应的新库初始化结构，不是既有业务库的升级迁移。`--initialize-db` 会创建验收账号、两个不同归属的视频和 videoId=1001 的 2,400 条模拟弹幕，并刷新这些专用模拟弹幕的时间分布；不应指向其他业务库。验收账号密码仅写入私有 `acceptance.json`。
+`business-schema.sql` 是当前实体对应的新库初始化结构，不是既有业务库的升级迁移。`--initialize-db` 只创建验收账号，不创建验收视频或模拟弹幕；需要验收时请从网站正常上传测试视频并导入测试弹幕。该脚本不应指向其他业务库。验收账号密码仅写入私有 `acceptance.json`。
 
 业务与 Agent 分别使用 `tianmu_site`、`tianmu_site_agent`；网站登录使用 Redis database 1。业务文件与 Agent 报告共用同一 MinIO 实例，报告和 Trace 明细放在私有 `tianmu-agent-artifacts` 桶。
 
@@ -58,7 +58,7 @@ sh deploy/site/renew-tls.sh /opt/tianmu-site/config
 
 ## 验收
 
-使用真实网站密码登录，打开视频 1001 的详情页，点击「分析弹幕」，选择私有 `acceptance.json` 中记录的模拟数据日期并提交。验证实际模型生成、SSE 进度、HTML 图表、样本去重、刷新恢复以及视频 1002 的跨账号拒绝。
+使用真实网站密码登录，先通过网站上传专用测试视频并准备测试弹幕，再点击「分析弹幕」提交。验证实际模型生成、SSE 进度、HTML 图表、样本去重和刷新恢复。跨账号访问应使用隔离测试账号上传的视频验证。
 
 按返回的 `runId` / `traceId` 查询 ClickHouse `tianmu_trace.trace_spans_current`，核对节点类型、父子关系、耗时、工具调用、模型 token 用量及私有明细引用。Trace 明细需通过带网站身份鉴权的接口读取，不应由 Nginx 直接公开对象桶。
 

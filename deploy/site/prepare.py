@@ -4,7 +4,6 @@ Private values remain in --config; this script never prints credentials.
 """
 import argparse
 import base64
-import datetime as dt
 import hashlib
 import json
 import os
@@ -86,7 +85,7 @@ if not (tls / 'cert.pem').exists():
 if args.initialize_db:
     acceptance_path = config / 'acceptance.json'
     if not acceptance_path.exists():
-        write_private(acceptance_path, json.dumps({'account': 'acceptance@tianmu.local', 'password': 'Tm' + secrets.token_hex(6) + '9!', 'videoId': '1001', 'date': (dt.datetime.utcnow() + dt.timedelta(hours=8, days=-1)).date().isoformat()}))
+        write_private(acceptance_path, json.dumps({'account': 'acceptance@tianmu.local', 'password': 'Tm' + secrets.token_hex(6) + '9!'}))
     acceptance = json.loads(acceptance_path.read_text())
     def literal(value): return "'" + str(value).replace('\\', '\\\\').replace("'", "''") + "'"
     sql = 'CREATE DATABASE IF NOT EXISTS tianmu_site CHARACTER SET utf8mb4 COLLATE utf8mb4_bin; CREATE DATABASE IF NOT EXISTS tianmu_site_agent CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;\n'
@@ -96,26 +95,12 @@ if args.initialize_db:
     sql += (Path(__file__).parent / 'business-schema.sql').read_text()
     hashed = hashlib.md5(('TianMu' + acceptance['password']).encode()).hexdigest()
     sql += "\nINSERT IGNORE INTO user(user_id,email,password,nickname,state,role) VALUES(10001," + literal(acceptance['account']) + ',' + literal(hashed) + ",'链路验收账号','normal','user'),(10002,'scope-check@tianmu.local'," + literal(hashlib.md5(secrets.token_bytes(32)).hexdigest()) + ",'权限隔离账号','normal','user');\n"
-    sql += "INSERT IGNORE INTO user_stats(user_id,video_count,coin_count) VALUES(10001,1,10),(10002,1,10);\nINSERT IGNORE INTO category(category_id,category_name) VALUES(1,'验收示例');\n"
-    cover = next((Path(__file__).resolve().parents[2] / 'tianmu-front/dist/static/img').glob('sky_banner.*.png')).name
-    sql += "INSERT IGNORE INTO video(video_id,user_id,title,file_url,cover_url,duration,category_id,status,description,tags) VALUES(1001,10001,'模拟直播间 · 弹幕分析验收','/demo/acceptance.webm'," + literal('/static/img/' + cover) + ",10,1,2,'专用模拟数据，用于验证登录、业务查询、真实模型、报告持久化和Trace。','[\"模拟数据\",\"链路验收\"]'),(1002,10002,'权限隔离验收视频','','',0,1,2,'其他账号拥有的验收对象','[]');\n"
-    texts = ['优惠券在哪里领？', '什么时候发货呀', '这个讲解很清楚', '想看一下细节', '价格还有优惠吗', '背景音乐有点大', '已经下单了', '能再演示一次吗', '主播回答一下尺寸问题', '这款适合新手吗', '画面有点卡', '谢谢解答']
-    start = dt.datetime.strptime(acceptance['date'], '%Y-%m-%d')
-    rows = []
-    weights = [60, 80, 100, 160, 250, 380, 420, 300, 220, 180, 140, 110]
-    schedule = []
-    for bucket, count in enumerate(weights):
-        schedule.extend(start + dt.timedelta(seconds=bucket * 7200 + offset * 7200 // count) for offset in range(count))
-    for i in range(2400):
-        stamp = schedule[i]
-        rows.append('(%d,1001,%d,%s,\'FFFFFF\',%d,%s)' % (100000+i, 10001+i%60, literal(texts[i%len(texts)]), i%10, literal(stamp.isoformat(' '))))
-    sql += 'INSERT INTO bullet(bullet_id,video_id,user_id,content,color,playback_time,create_time) VALUES' + ','.join(rows) + ' ON DUPLICATE KEY UPDATE create_time=VALUES(create_time);\n'
-    sql += 'INSERT IGNORE INTO video_stats(video_id,view_count,bullet_count) VALUES(1001,3000,2400),(1002,1,0);\n'
+    sql += "INSERT IGNORE INTO user_stats(user_id,video_count,coin_count) VALUES(10001,0,10),(10002,0,10);\n"
     result = subprocess.run(['docker', 'exec', '-i', 'tianmu-site-business-mysql-1', 'sh', '-c', 'export MYSQL_PWD="$(cat /run/secrets/site-mysql-root-password)"; exec mysql --default-character-set=utf8mb4 -uroot'], input=sql.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode:
         message = result.stderr.decode(errors='replace')
         for value in list(values.values()) + [acceptance['password']]: message = message.replace(value, '[redacted]')
         raise SystemExit(message)
-    print(json.dumps({'databaseInitialized': True, 'acceptanceVideoId': '1001', 'syntheticComments': 2400, 'credentialsPrinted': False}))
+    print(json.dumps({'databaseInitialized': True, 'acceptanceAccountsCreated': True, 'acceptanceVideosCreated': False, 'credentialsPrinted': False}))
 else:
     print(json.dumps({'privateConfigurationPrepared': True, 'credentialsPrinted': False}))

@@ -1,0 +1,1 @@
+{"name":"video-content","version":"1.0.0","description":"理解指定videoId的视频画面、内容、剧情或镜头；支持全片采样概览与指定播放区间细查。","tools":["analyze_video_content"]}

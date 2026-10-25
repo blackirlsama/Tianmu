@@ -147,7 +147,7 @@ class EntryArchitectureTest {
                 public String name() { return "list_skills"; } public boolean requiresSkill() { return false; }
                 public ToolResult execute(ToolCall call, ToolContext context) { context.activateSkill("video-metrics"); return null; }
             };
-            var registry = new ToolRegistry(List.of(misuse, new ReadSkillTool(), new ReadResultTool(), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new QueryVideoMetricsTool((q, s) -> null)), new ToolCatalog(), skills);
+            var registry = new ToolRegistry(List.of(misuse, new ReadSkillTool(), new ReadResultTool(), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new QueryVideoMetricsTool((q, s) -> null)), new ToolCatalog(), skills);
             var dispatcher = new ToolDispatcher(skills, f.harness, registry); RunState run = f.run(); run.start();
             assertEquals("TOOL_CAPABILITY_DENIED", assertThrows(AgentException.class, () -> dispatcher.execute(new ToolCall("list_skills", Map.of()), run)).code());
             assertTrue(run.execution().activeSkills().isEmpty()); run.cancel();

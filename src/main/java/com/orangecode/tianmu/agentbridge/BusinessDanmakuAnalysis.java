@@ -12,7 +12,7 @@ import java.util.*;
 public final class BusinessDanmakuAnalysis {
     public record Query(long videoId, LocalDateTime start, LocalDateTime end) {}
     public record Bucket(int index, long count) {}
-    public record Sample(String id, int bucket, String text, boolean truncated) {}
+    public record Sample(String id, int bucket, String text, boolean truncated, Long playbackMs) {}
     public record Dataset(Query query, long totalMessages, long uniqueSenders, List<Bucket> buckets,
                           List<Sample> samples, Instant dataAsOf, String source, boolean demo) {}
     private record Totals(long messages, long senders, Instant asOf) {}
@@ -52,8 +52,8 @@ public final class BusinessDanmakuAnalysis {
                 buckets.add(new Bucket(i, counts[i])); if (counts[i] == 0) continue;
                 int bin = i;
                 LocalDateTime left = start.plusSeconds(width * i), right = start.plusSeconds(Math.min(seconds, width * (i + 1)));
-                samples.addAll(db.query("SELECT bullet_id,LEFT(COALESCE(content,''),160) AS excerpt,CHAR_LENGTH(COALESCE(content,''))>160 AS clipped" + scope + " ORDER BY create_time,bullet_id LIMIT 4",
-                        (rs, n) -> new Sample(Long.toString(rs.getLong("bullet_id")), bin, redact(rs.getString("excerpt")), rs.getBoolean("clipped")), videoId, wall(left, storage), wall(right, storage)));
+                samples.addAll(db.query("SELECT bullet_id,CASE WHEN playback_time>=0 AND playback_time<=3600 THEN ROUND(playback_time*1000) ELSE NULL END AS playback_ms,LEFT(COALESCE(content,''),160) AS excerpt,CHAR_LENGTH(COALESCE(content,''))>160 AS clipped" + scope + " ORDER BY create_time,bullet_id LIMIT 4",
+                        (rs, n) -> new Sample(Long.toString(rs.getLong("bullet_id")), bin, redact(rs.getString("excerpt")), rs.getBoolean("clipped"), rs.getObject("playback_ms")==null?null:rs.getLong("playback_ms")), videoId, wall(left, storage), wall(right, storage)));
             }
             return new Dataset(new Query(videoId, start, end), totals.messages(), totals.senders(),
                     List.copyOf(buckets), List.copyOf(samples), totals.asOf(), "mysql:bullet:danmaku-retained-v1", false);

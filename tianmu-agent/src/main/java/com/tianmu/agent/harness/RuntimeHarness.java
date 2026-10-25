@@ -63,6 +63,9 @@ public class RuntimeHarness implements AutoCloseable {
     public <T> T toolCall(RunState run, Function<CallControl, T> operation) {
         return loopControl.call(run, policy().toolTimeout(), "TOOL_CALL_TIMEOUT", "TOOL_ERROR", this::contextual, operation);
     }
+    public <T> T videoToolCall(RunState run, Function<CallControl, T> operation) {
+        return loopControl.call(run, java.time.Duration.ofSeconds(120), "TOOL_CALL_TIMEOUT", "TOOL_ERROR", this::contextual, operation);
+    }
     public void forget(UUID id) { sessions.remove(id); }
     @Override public void close() { if (ownsLoopControl) loopControl.close(); sessions.clear(); }
     public <T> T stage(RunState run, String name, HookPoint before, HookPoint after,

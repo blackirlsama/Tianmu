@@ -29,7 +29,7 @@ public final class QueryDanmakuTool implements AgentTool {
             List<Sample> matches = entry.getValue();
             Sample first = matches.get(0);
             List<SampleOccurrence> occurrences = matches.stream()
-                    .map(s -> new SampleOccurrence(s.id(), s.bucket(), s.truncated())).toList();
+                    .flatMap(s -> s.occurrences().stream()).toList();
             return new Sample(first.id(), first.bucket(), entry.getKey(), matches.stream().anyMatch(Sample::truncated), occurrences);
         }).toList();
         Dataset data = new Dataset(query, raw.totalMessages(), raw.uniqueSenders(), raw.buckets(), samples, raw.dataAsOf(), raw.source(), raw.demo());

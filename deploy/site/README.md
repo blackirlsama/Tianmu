@@ -67,3 +67,25 @@ sh deploy/site/renew-tls.sh /opt/tianmu-site/config
 数据库事件约束通过 `V3__artifact_ready_event.sql` 增加 `ARTIFACT_READY`；既有迁移保持不变。报告保存后的通知、终态和重建后的回放由 `MysqlStorageIntegrationTest` 覆盖。可用 Dockerfile 的 `storage-verify` target 在独立的 `_it` 库和无密码测试 Redis 上运行；凭据通过 BuildKit `storage-it-env` secret 临时注入，不拷入镜像。不要将集成测试指向网站或 Agent 的正式库。
 
 本次针对报告保存与事件回放使用 `--build-arg STORAGE_TESTS=MysqlStorageIntegrationTest#liveEvidenceAndHtmlReportSurviveReloadAndAreDeletedWithSession`。完整存储测试还含创建触发器的故障注入用例，需要专用测试实例提供相应权限；网站部署账号不需要获得这些权限。
+
+
+## 视频内容理解
+
+Agent 仅新增 `analyze_video_content`。视频内容从业务桥接接口按当前登录用户和 videoId 解析，拒绝任意媒体 URL。业务镜像需带 FFmpeg，Agent 镜像带字体包用于给采样帧拼图添加播放时间标签。短视频读取全片，长视频概览均匀采样最多12帧；显式细查区间最多120秒。目前单个源文件限制64MiB、时长最多1小时。采样不保证捕获每个瞬时事件。
+
+MiniMax 配置写入服务器私有 `agent.env`：
+
+```dotenv
+VIDEO_CONTENT_ENABLED=true
+VIDEO_MODEL_PROVIDER=minimax
+VIDEO_MODEL_BASE_URL=https://api.minimaxi.com
+VIDEO_MODEL=minimax-vlm-service
+```
+
+中国区使用 `api.minimaxi.com`，国际区使用 `api.minimax.io`，必须与 Key 区域一致。Key 放私有 `secrets/video-model-api-key`，由 Docker secret 和入口脚本注入 `VIDEO_MODEL_API_KEY`，不提交进仓库。MiniMax VLM 接口不返回具体模型版本时，`minimax-vlm-service` 只是服务标识，不声称使用了某个具体模型。参考 MiniMax 官方 Coding Plan MCP 的 `/v1/coding_plan/vlm` 实现。
+
+也可选 `VIDEO_MODEL_PROVIDER=compatible` 并配置支持图片输入的 Chat Completions 服务。可选 `VIDEO_TRANSCRIPTION_MODEL` 只适用于同时支持 `/audio/transcriptions` 的服务；未配置时明确返回 `SAMPLED_FRAMES`，不声称识别音频。MiniMax 当前部署仅启用画面理解；音轨提取不等于音频理解。
+
+工具返回的结构化事实沿用既有 evidence → 私有 MinIO 产物持久化。摘要缓存保存在 Agent MySQL 的 `agent_video_content_cache`，按租户、用户、视频源版本、区间、关注点和模型配置隔离，24小时过期；缓存命中前仍重新校验视频权限和源版本。原始帧在本次请求中使用，临时文件随后清理，不持久化帧图片，也不写入 LLM 历史。后台预处理任务、长期帧资产和全量播放时间直方图不在此版范围内。
+
+弹幕抽样 occurrences.playbackMs 为原始播放位置（毫秒，可空），bucket 仍是发送墙钟时间分箱，不能混用。报告可传入同一视频的 video_evidence_id 添加服务端生成的视频内容模块。Trace 包含 `video.source`、`video.extract`、`video.model.vision`；模型未报告 token 时标为未报告，整体用量标为部分统计，不估算成实际值。

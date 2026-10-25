@@ -41,6 +41,7 @@ values['jwt-secret'] = secret('jwt-secret', base64.b64encode(secrets.token_bytes
 values['redis-password'] = secret('redis-password', Path('/opt/tianmu-staging/config/secrets/redis-password').read_text().strip())
 if not (secret_dir / 'model-api-key').is_file():
     raise SystemExit('Install the model key in the private secrets directory first')
+secret('video-model-api-key', (secret_dir / 'model-api-key').read_text().strip())
 
 def env(name, settings):
     write_private(config / name, ''.join(key + '=' + str(value) + '\n' for key, value in settings.items()))

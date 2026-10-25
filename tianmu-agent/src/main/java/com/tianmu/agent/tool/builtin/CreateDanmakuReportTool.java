@@ -25,14 +25,23 @@ public final class CreateDanmakuReportTool implements AgentTool {
         if (data == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
         context.checkDanmakuQuery(data.query());
         List<Map<String, Object>> sections = sections(ToolArguments.text(call, "sections_json"), data);
-        byte[] html = render(data, evidence.id(), sections).getBytes(StandardCharsets.UTF_8);
+        com.tianmu.agent.video.VideoContent.Facts video = null;
+        String videoEvidence = null;
+        if (call.arguments().containsKey("video_evidence_id")) {
+            videoEvidence = ToolArguments.text(call,"video_evidence_id");
+            video = context.evidence(videoEvidence).videoContent();
+            if (video == null || video.videoId()!=data.query().videoId()) throw new AgentException("INVALID_EVIDENCE","Video evidence must match report video");
+        }
+        String document = render(data, evidence.id(), sections);
+        if (video != null) document = document.replace("<footer class=\"footer\">", renderVideo(video, videoEvidence) + "<footer class=\"footer\">");
+        byte[] html = document.getBytes(StandardCharsets.UTF_8);
         var report = context.saveReport(evidence.id(), html);
         String text = (data.demo() ? "【模拟数据】" : "") + "videoId " + data.query().videoId() + " 的弹幕分析报告已生成。\n"
                 + "范围：" + data.query().start() + " 至 " + data.query().end() + "（Asia/Shanghai，结束时刻不包含）。\n"
                 + "已入库且仍保留的弹幕 " + data.totalMessages() + " 条，非空用户ID去重 " + data.uniqueSenders() + " 人。\n"
                 + "内容观察基于 " + data.sampleOccurrenceCount() + " 条抽样片段，按文本去重为 " + data.samples().size() + " 种内容；不代表全量话题或情绪占比。\n"
                 + "[查看 HTML 报告](" + report.url() + ")（需登录鉴权）";
-        return new ToolResult(name(), Map.of("artifact_id", report.artifactId(), "url", report.url(), "status", "READY"), evidence.id(), new Answer(text, List.of(evidence.id())));
+        return new ToolResult(name(), Map.of("artifact_id", report.artifactId(), "url", report.url(), "status", "READY"), evidence.id(), new Answer(text, videoEvidence==null?List.of(evidence.id()):List.of(evidence.id(),videoEvidence)));
     }
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> sections(String source, Dataset data) {
@@ -159,5 +168,15 @@ public final class CreateDanmakuReportTool implements AgentTool {
             @media(max-width:640px){body{padding:18px 12px}.hero{padding:25px 22px 22px;border-radius:14px}.range{align-items:flex-start}.section{margin-top:27px}.section h2{font-size:20px}.metrics{grid-template-columns:1fr}.metric{min-height:112px;padding:17px 20px}.table-wrap th,.table-wrap td{padding:10px 12px}.time-cell{min-width:245px}.samples{grid-template-columns:1fr}.insight-card{padding:18px}.methodology-content dl{grid-template-columns:1fr;gap:2px}.methodology-content dd{margin-bottom:8px}}
             @media print{html,body{background:#fff}.report{max-width:none}.hero{box-shadow:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}.section,.metric,.insight-card,.sample-card,.methodology{break-inside:avoid}.methodology-content{display:block}}
             """;
+    private static String renderVideo(com.tianmu.agent.video.VideoContent.Facts video, String evidenceId) {
+        StringBuilder html = new StringBuilder("<section class=\"section\"><h2>视频内容证据</h2><p>");
+        html.append(esc(video.summary())).append("</p><p>播放范围：").append(playback(video.startMs())).append(" — ").append(playback(video.endMs()))
+                .append("；采样画面 ").append(video.sampledAtMs().size()).append(" 张。")
+                .append(video.coverage().equals("SAMPLED_FRAMES")?"未分析音频。":"包含区间音频转写，非逐句时间标注。")
+                .append("采样可能遗漏短暂事件，不能据此确认弹幕变化的原因。</p><ul>");
+        for (var moment : video.moments()) html.append("<li><strong>").append(playback(moment.atMs())).append("</strong> · ").append(esc(moment.observation())).append("</li>");
+        return html.append("</ul><details><summary>视频证据引用</summary><p>").append(esc(evidenceId)).append(" · ").append(esc(video.sourceVersion())).append("</p></details></section>").toString();
+    }
+    private static String playback(long ms) { return String.format(java.util.Locale.ROOT,"%02d:%02d.%03d",ms/60000,ms/1000%60,ms%1000); }
     private static String esc(String value) { return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;"); }
 }

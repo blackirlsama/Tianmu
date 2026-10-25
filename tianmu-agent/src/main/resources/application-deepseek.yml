@@ -1,4 +1,11 @@
 agent:
+  video:
+    provider: ${VIDEO_MODEL_PROVIDER:compatible}
+    enabled: ${VIDEO_CONTENT_ENABLED:true}
+    base-url: ${VIDEO_MODEL_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com}}
+    api-key: ${VIDEO_MODEL_API_KEY:${DEEPSEEK_API_KEY:}}
+    model: ${VIDEO_MODEL:deepseek-flash}
+    transcription-model: ${VIDEO_TRANSCRIPTION_MODEL:}
   models:
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
     api-key: ${DEEPSEEK_API_KEY:}

@@ -117,6 +117,21 @@ public class ToolDispatcher {
             run.execution().evidence().put(value); return value;
         }
         public <T> T query(Function<CallControl, T> operation) { return harness.toolCall(run, operation); }
+        public <T> T videoQuery(Function<CallControl, T> operation) { return harness.videoToolCall(run, operation); }
+        public void checkVideoQuery(long videoId) {
+            checkpoint();
+            if (!scope().videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside scope");
+            if (run.task() != null && run.task().specification().type().equals("danmaku.report")) {
+                Object target = run.task().specification().conditions().get("video_id");
+                if (!(target instanceof Number n) || n.longValue() != videoId)
+                    throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Video differs from prepared report");
+            }
+        }
+        public Evidence registerVideoEvidence(com.tianmu.agent.video.VideoContent.Facts facts) {
+            checkVideoQuery(facts.videoId());
+            Evidence value = new Evidence("ev_" + UUID.randomUUID(), run.id, run.owner, null, null, facts);
+            run.execution().evidence().put(value); return value;
+        }
         public void checkDanmakuQuery(com.tianmu.agent.core.DanmakuTypes.Query query) {
             checkpoint(); query.checkTime(Instant.now());
             if (!scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "videoId is outside scope");

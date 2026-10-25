@@ -17,7 +17,7 @@ public enum SpanType {
             case "agent.prepare.understanding" -> QUERY_UNDERSTANDING;
             case "agent.memory.load" -> MEMORY_LOAD;
             case "agent.context", "agent.assemble" -> CONTEXT_BUILD;
-            case "agent.model", "agent.model.finalize" -> LLM_INFERENCE;
+            case "agent.model", "agent.model.finalize", "video.model.vision", "video.model.transcription" -> LLM_INFERENCE;
             case "agent.tool" -> TOOL_CALL;
             case "agent.skill" -> READ_SKILL;
             case "agent.deliver" -> ANSWER_READY;

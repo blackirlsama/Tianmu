@@ -24,6 +24,12 @@ public interface ToolContext {
     default void checkDanmakuQuery(com.tianmu.agent.core.DanmakuTypes.Query query) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Danmaku analysis unavailable"); }
     default Evidence registerDanmakuEvidence(com.tianmu.agent.core.DanmakuTypes.Dataset data) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Danmaku evidence unavailable"); }
     default com.tianmu.agent.core.DanmakuTypes.ReportRef saveReport(String evidenceId, byte[] html) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Report storage unavailable"); }
+    default void checkVideoQuery(long videoId) {
+        checkpoint();
+        if (!scope().videoIds().contains(videoId)) throw new com.tianmu.agent.core.AgentException("FORBIDDEN", "Video outside scope");
+    }
+    default Evidence registerVideoEvidence(com.tianmu.agent.video.VideoContent.Facts facts) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Video evidence unavailable"); }
+    default <T> T videoQuery(Function<CallControl, T> operation) { return query(operation); }
     void checkQuery(MetricQuery query);
     <T> T query(Function<CallControl, T> operation);
 }

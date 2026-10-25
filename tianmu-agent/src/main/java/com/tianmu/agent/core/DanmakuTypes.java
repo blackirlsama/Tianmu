@@ -21,9 +21,10 @@ public final class DanmakuTypes {
     public record Bucket(int index, long count) {
         public Bucket { if (index < 0 || index >= 12 || count < 0) throw new IllegalArgumentException("Invalid bucket"); }
     }
-    public record SampleOccurrence(String id, int bucket, boolean truncated) {
+    public record SampleOccurrence(String id, int bucket, boolean truncated, Long playbackMs) {
+        public SampleOccurrence(String id, int bucket, boolean truncated) { this(id,bucket,truncated,null); }
         public SampleOccurrence {
-            if (id == null || !id.matches("[1-9][0-9]{0,18}") || bucket < 0 || bucket >= 12)
+            if (id == null || !id.matches("[1-9][0-9]{0,18}") || bucket < 0 || bucket >= 12 || playbackMs != null && (playbackMs < 0 || playbackMs > 3_600_000))
                 throw new IllegalArgumentException("Invalid sample occurrence");
         }
     }

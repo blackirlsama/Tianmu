@@ -31,8 +31,8 @@ public class BusinessAdapters {
     }
 }
 
-final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort {
-    private record RawSample(String id, int bucket, String text, boolean truncated) {}
+final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.video.VideoContentPort {
+    private record RawSample(String id, int bucket, String text, boolean truncated, Long playbackMs) {}
     private record AnalysisResponse(DanmakuTypes.Query query, long totalMessages, long uniqueSenders,
             List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo) {}
     private final BusinessProperties config;
@@ -46,22 +46,25 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(config.timeoutMillis())).followRedirects(HttpClient.Redirect.NEVER).build();
     }
     private JsonNode request(String method, String path, String token, Object body, CallControl control) {
+        return request(method, path, token, body, control, 65536, config.timeoutMillis());
+    }
+    private JsonNode request(String method, String path, String token, Object body, CallControl control, int maxBytes, int timeoutMillis) {
         try {
             if (control != null) control.checkpoint();
-            long millis = config.timeoutMillis();
+            long millis = timeoutMillis;
             if (control != null) millis = Math.min(millis, Duration.between(Instant.now(), control.deadline()).toMillis());
             if (millis < 1) throw new AgentException("BUSINESS_TIMEOUT", "Business call deadline exceeded");
             String base = config.baseUrl().toString().replaceAll("/+$", "");
             HttpRequest request = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofMillis(millis))
                     .header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
                     .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body))).build();
-            CompletableFuture<HttpResponse<byte[]>> future = http.sendAsync(request, ignored -> new com.tianmu.agent.resource.BoundedHttpBody(65536));
+            CompletableFuture<HttpResponse<byte[]>> future = http.sendAsync(request, ignored -> new com.tianmu.agent.resource.BoundedHttpBody(maxBytes));
             try (var registration = control == null ? null : control.cancellation().onCancel(() -> future.cancel(true))) {
                 HttpResponse<byte[]> response = future.get(millis, TimeUnit.MILLISECONDS);
                 if (control != null) control.checkpoint();
                 if (response.statusCode() == 401) throw new AgentException("UNAUTHORIZED", "Business login is no longer valid");
                 if (response.statusCode() == 403) throw new AgentException("FORBIDDEN", "Video is outside your current scope");
-                if (response.statusCode() != 200 || response.body().length > 65536)
+                if (response.statusCode() != 200 || response.body().length > maxBytes)
                     throw new AgentException("BUSINESS_UNAVAILABLE", "Business service response unavailable");
                 return json.readTree(response.body());
             } catch (TimeoutException e) { future.cancel(true); throw new AgentException("BUSINESS_TIMEOUT", "Business service timed out"); }
@@ -136,9 +139,24 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
             // The bridge returns raw snippets. Grouped occurrences belong to the Agent's tool/evidence model.
             AnalysisResponse raw = json.treeToValue(answer, AnalysisResponse.class);
             return new DanmakuTypes.Dataset(raw.query(), raw.totalMessages(), raw.uniqueSenders(), raw.buckets(),
-                    raw.samples().stream().map(s -> new DanmakuTypes.Sample(s.id(), s.bucket(), s.text(), s.truncated())).toList(),
+                    raw.samples().stream().map(s -> new DanmakuTypes.Sample(s.id(), s.bucket(), s.text(), s.truncated(), List.of(new DanmakuTypes.SampleOccurrence(s.id(),s.bucket(),s.truncated(),s.playbackMs())))).toList(),
                     raw.dataAsOf(), raw.source(), raw.demo());
         }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Analysis schema mismatch"); }
     }
+    @Override public com.tianmu.agent.video.VideoContent.Source source(long videoId, AccessScope scope, CallControl control) {
+        if (!scope.videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside prepared scope");
+        JsonNode result = request("GET", "/internal/agent/video-source?videoId=" + videoId,
+                credentials.token(scope.authorizationRef()), null, control);
+        try { return json.treeToValue(result, com.tianmu.agent.video.VideoContent.Source.class); }
+        catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Video metadata schema mismatch"); }
+    }
+    @Override public com.tianmu.agent.video.VideoContent.Media media(long videoId, String version, long startMs, long endMs, AccessScope scope, CallControl control) {
+        if (!scope.videoIds().contains(videoId) || !version.matches("[a-f0-9]{64}")) throw new AgentException("FORBIDDEN", "Video outside scope");
+        JsonNode result = request("GET", "/internal/agent/video-content-media?videoId=" + videoId + "&version=" + version + "&startMs=" + startMs + "&endMs=" + endMs,
+                credentials.token(scope.authorizationRef()), null, control, 8_000_000, 60_000);
+        try { return json.treeToValue(result, com.tianmu.agent.video.VideoContent.Media.class); }
+        catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Video media schema mismatch"); }
+    }
+
 }

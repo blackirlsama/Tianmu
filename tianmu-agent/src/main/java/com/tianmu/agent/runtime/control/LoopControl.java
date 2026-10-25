@@ -43,16 +43,16 @@ public final class LoopControl implements AutoCloseable {
         })) {
             try { calls.execute(contextual.apply(task)); }
             catch (RejectedExecutionException e) { throw new AgentException("CALL_CAPACITY_EXCEEDED", "Blocking-call workers are full"); }
-            long remaining = Duration.between(Instant.now(), run.deadline()).toMillis();
+            long remaining = Duration.between(Instant.now(), run.deadline()).toNanos();
             if (remaining <= 0) { run.timeout(); run.checkpoint(); }
             try {
-                T value = task.get(Math.max(1, Math.min(remaining, timeout.toMillis())), TimeUnit.MILLISECONDS);
+                T value = task.get(Math.max(1, Math.min(remaining, timeout.toNanos())), TimeUnit.NANOSECONDS);
                 run.checkpoint();
                 return value;
             } catch (TimeoutException e) {
                 control.cancellation().cancel(StopReason.ADAPTER_TIMEOUT);
                 task.cancel(true);
-                if (!Instant.now().isBefore(run.deadline())) { run.timeout(); run.checkpoint(); }
+                if (!localDeadline.isBefore(run.deadline()) || !Instant.now().isBefore(run.deadline())) { run.timeout(); run.checkpoint(); }
                 throw new AgentException(timeoutCode, "Adapter call exceeded its time budget");
             } catch (CancellationException e) {
                 run.checkpoint();

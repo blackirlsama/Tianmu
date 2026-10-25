@@ -23,11 +23,13 @@ ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/blackirlsama/Tianmu" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.licenses="MIT"
+RUN apt-get update && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/tianmu
 COPY --from=build /build/target/operations-agent-0.7.0-SNAPSHOT.jar /opt/tianmu/app.jar
 COPY --from=build /probe/classes /opt/tianmu/probe
 COPY deploy/entrypoint.sh /opt/tianmu/entrypoint.sh
-RUN mkdir -p /data/artifacts /data/trace \
+RUN sed -i 's/\r$//' /opt/tianmu/entrypoint.sh \
+    && mkdir -p /data/artifacts /data/trace \
     && chown -R 10001:10001 /data \
     && chmod 0555 /opt/tianmu/entrypoint.sh
 USER 10001:10001

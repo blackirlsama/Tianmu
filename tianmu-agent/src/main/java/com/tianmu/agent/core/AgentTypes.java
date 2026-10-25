@@ -78,10 +78,15 @@ public final class AgentTypes {
     public record MetricData(long videoId, LocalDate date, String metric, long value,
                              String metricVersion, String source, Instant dataAsOf,
                              String timezone, boolean complete, boolean demo) {}
-    public record Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis) {
-        public Evidence(String id, UUID runId, AccessScope owner, MetricData data) { this(id, runId, owner, data, null); }
-        public Evidence { if ((data == null) == (analysis == null)) throw new IllegalArgumentException("Evidence must contain exactly one fact type"); }
-        public Object facts() { return analysis == null ? data : analysis; }
+    public record Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis,
+                           com.tianmu.agent.video.VideoContent.Facts videoContent) {
+        public Evidence(String id, UUID runId, AccessScope owner, MetricData data) { this(id, runId, owner, data, null, null); }
+        public Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis) { this(id, runId, owner, data, analysis, null); }
+        public Evidence {
+            if ((data == null ? 0 : 1) + (analysis == null ? 0 : 1) + (videoContent == null ? 0 : 1) != 1)
+                throw new IllegalArgumentException("Evidence must contain exactly one fact type");
+        }
+        public Object facts() { return videoContent != null ? videoContent : analysis == null ? data : analysis; }
     }
     public record Event(long sequence, String type, Object data, Instant at) {}
     public record Snapshot(UUID runId, Status status, Instant createdAt, int steps,

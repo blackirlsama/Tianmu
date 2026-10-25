@@ -312,7 +312,7 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
                 if (terminal(row)) throw new AgentException("RUN_TERMINATED", "Evidence cannot be added after completion");
                 db.update("UPDATE agent_artifact SET status='READY',content_sha256=?,size_bytes=?,ready_at=UTC_TIMESTAMP(6) WHERE tenant_id=? AND artifact_id=?", digest, body.length, m.owner().tenantId(), artifact);
                 db.update("INSERT INTO agent_evidence(tenant_id,owner_user_id,session_id,run_id,evidence_id,query_fingerprint,facts_json,content_sha256,raw_artifact_id,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                        m.owner().tenantId(), m.owner().userId(), m.session().toString(), m.id().toString(), value.id(), hash(encode(value.analysis() == null ? Map.of("video", value.data().videoId(), "date", value.data().date(), "metric", value.data().metric()) : value.analysis().query())), new String(body, StandardCharsets.UTF_8), digest, artifact, stamp(Instant.now().plus(Duration.ofDays(30))));
+                        m.owner().tenantId(), m.owner().userId(), m.session().toString(), m.id().toString(), value.id(), hash(encode(value.videoContent() != null ? value.videoContent() : value.analysis() == null ? Map.of("video", value.data().videoId(), "date", value.data().date(), "metric", value.data().metric()) : value.analysis().query())), new String(body, StandardCharsets.UTF_8), digest, artifact, stamp(Instant.now().plus(Duration.ofDays(30))));
                 audit(m, "EVIDENCE_REGISTERED", "READY"); return null;
             });
             } catch (RuntimeException failure) {
@@ -331,6 +331,8 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
         }
     }
     private Evidence evidenceFacts(String id, Meta m, Object facts) {
+        if ("video-content-v1".equals(decode(facts, Map.class).get("kind")))
+            return new Evidence(id, m.id(), m.owner(), null, null, decode(facts, com.tianmu.agent.video.VideoContent.Facts.class));
         if (decode(facts, Map.class).containsKey("query"))
             return new Evidence(id, m.id(), m.owner(), null, decode(facts, com.tianmu.agent.core.DanmakuTypes.Dataset.class));
         return new Evidence(id, m.id(), m.owner(), decode(facts, MetricData.class));

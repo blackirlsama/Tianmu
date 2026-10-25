@@ -93,10 +93,11 @@ services:
       AGENT_DB_PASSWORD_FILE: /run/secrets/agent-db-password
       AGENT_REDIS_PASSWORD_FILE: /run/secrets/redis-password
       DEEPSEEK_API_KEY_FILE: /run/secrets/model-api-key
+      VIDEO_MODEL_API_KEY_FILE: /run/secrets/video-model-api-key
       AGENT_MINIO_ACCESS_KEY_FILE: /run/secrets/minio-access-key
       AGENT_MINIO_SECRET_KEY_FILE: /run/secrets/minio-secret-key
       JAVA_TOOL_OPTIONS: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=160m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8 -Duser.timezone=UTC
-    secrets: [agent-db-password, redis-password, model-api-key, minio-access-key, minio-secret-key]
+    secrets: [agent-db-password, redis-password, model-api-key, video-model-api-key, minio-access-key, minio-secret-key]
     volumes: [agent-traces:/data/trace]
     depends_on: [business]
   frontend:
@@ -118,6 +119,7 @@ secrets:
   redis-password: {file: '${SITE_CONFIG_DIR}/secrets/redis-password'}
   jwt-secret: {file: '${SITE_CONFIG_DIR}/secrets/jwt-secret'}
   model-api-key: {file: '${SITE_CONFIG_DIR}/secrets/model-api-key'}
+  video-model-api-key: {file: '${SITE_CONFIG_DIR}/secrets/video-model-api-key'}
   minio-access-key: {file: '${SITE_CONFIG_DIR}/secrets/minio-access-key'}
   minio-secret-key: {file: '${SITE_CONFIG_DIR}/secrets/minio-secret-key'}
 volumes:

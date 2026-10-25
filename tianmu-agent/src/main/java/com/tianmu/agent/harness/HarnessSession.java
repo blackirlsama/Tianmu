@@ -88,14 +88,15 @@ public final class HarnessSession {
     private void finishIfIdle() {
         Snapshot snapshot = terminal;
         if (snapshot == null || workers.get() != 0 || !ended.compareAndSet(false, true)) return;
+        long totalModelCalls = snapshot.totalModelCalls() + usage.externalCalls();
         try (Scope scope = context.makeCurrent(); TraceLogScope mdc = new TraceLogScope(root, run.id.toString())) {
             TraceAttributes.apply(root, Map.of("run.status", snapshot.status().name(), "run.steps", snapshot.steps(),
                     "run.stop_reason", snapshot.stopReason().name(), "run.model_calls", snapshot.modelCalls(),
-                    "run.preparation_calls", snapshot.preparationCalls(), "run.total_model_calls", snapshot.totalModelCalls()));
+                    "run.preparation_calls", snapshot.preparationCalls(), "run.total_model_calls", totalModelCalls));
             Map<String, Object> finish = new HashMap<>(usage.totals());
-            finish.put("usage.complete", ((Number) finish.get("usage.reported_calls")).longValue() == snapshot.totalModelCalls());
+            finish.put("usage.complete", ((Number) finish.get("usage.reported_calls")).longValue() == totalModelCalls);
             long reported = ((Number) finish.get("usage.reported_calls")).longValue();
-            finish.put("usage.state", snapshot.totalModelCalls() == 0 ? "NOT_APPLICABLE" : reported == 0 ? "NOT_REPORTED" : reported == snapshot.totalModelCalls() ? "REPORTED" : "PARTIAL");
+            finish.put("usage.state", totalModelCalls == 0 ? "NOT_APPLICABLE" : reported == 0 ? "NOT_REPORTED" : reported == totalModelCalls ? "REPORTED" : "PARTIAL");
             finish.put("finish.type", TraceSemantics.finishType(snapshot));
             finish.put("run.status", snapshot.status().name());
             finish.put("run.stop_reason", snapshot.stopReason().name());

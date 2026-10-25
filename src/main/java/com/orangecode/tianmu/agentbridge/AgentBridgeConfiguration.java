@@ -21,5 +21,10 @@ public class AgentBridgeConfiguration {
         return new BusinessAuthentication(new JdbcTemplate(reader.source()), redis, properties);
     }
     @Bean BusinessMetrics businessMetrics(BusinessReadDatabase reader, BridgeProperties properties) { return new BusinessMetrics(new JdbcTemplate(reader.source()), properties); }
+    @Bean BusinessVideoContent businessVideoContent(BusinessReadDatabase reader,
+            org.springframework.beans.factory.ObjectProvider<io.minio.MinioClient> minio,
+            @Value("${minio.bucket-name:tianmu-upload}") String bucket) {
+        return new BusinessVideoContent(new JdbcTemplate(reader.source()), minio.getIfAvailable(), bucket);
+    }
     @Bean BusinessDanmakuAnalysis businessDanmakuAnalysis(BusinessReadDatabase reader, BridgeProperties properties) { return new BusinessDanmakuAnalysis(new JdbcTemplate(reader.source()), properties); }
 }

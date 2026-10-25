@@ -31,7 +31,7 @@
         <Artplayer
           ref="artplayerRef"
           v-if="videoDetail.fileUrl"
-          :videoUrl="videoDetail.fileUrl"
+          :videoUrl="mediaVideoUrl(videoDetail.fileUrl)"
           :videoId="videoDetail.videoId"
           @sendDanmu="sendDanmu"
           :onlineUserCount="onlineUserCount"
@@ -295,6 +295,7 @@ import {
 import { toRaw, defineAsyncComponent } from "vue";
 import { useUserStore } from "@/store/user";
 import { mapState, mapActions } from "pinia";
+import { mediaVideoUrl } from "@/lib/media";
 export default {
   name: "VideoDetail",
   components: {
@@ -394,6 +395,7 @@ export default {
     },
   },
   methods: {
+    mediaVideoUrl,
     openAssistant() {
       if (!this.isLogin) {
         ElMessage.info('登录后就可以和运营助手对话');

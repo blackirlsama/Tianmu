@@ -2,28 +2,28 @@ import { defineStore } from "pinia";
 import { fetchFocus, fetchUnfocus } from "@/api/user";
 import { ElMessage } from "element-plus";
 import { TIANMU_USER, TIANMU_LOGIN } from "@/lib/config"
+import { hasAuthToken, readStoredUser } from "@/lib/auth"
 export const useUserStore = defineStore("user", {
   state: () => ({
     // 当前用户
-    user: JSON.parse(localStorage.getItem(TIANMU_USER)) || {},
-    // 是否登录
-    isLogin: JSON.parse(localStorage.getItem(TIANMU_LOGIN)) || false,
+    user: readStoredUser(),
     // 控制登录注册对话框的显示与隐藏
     dialogVisible: false,
   }),
+  getters: {
+    // 登录态只由网站自己的认证 token 决定，避免布尔标记与凭证脱节。
+    isLogin: (state) => hasAuthToken(state.user),
+  },
   actions: {
     login(user) {
       // 登录后，持久化用户信息
       this.user = user;
-      this.isLogin = true;
       localStorage.setItem(TIANMU_USER, JSON.stringify(user));
-      localStorage.setItem(TIANMU_LOGIN, JSON.stringify(true));
       console.log("login", this.user);
     },
     logout() {
       // 退出登录，清除用户信息
       this.user = {};
-      this.isLogin = false;
       localStorage.removeItem(TIANMU_USER);
       localStorage.removeItem(TIANMU_LOGIN);
     },

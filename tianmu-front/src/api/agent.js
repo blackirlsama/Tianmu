@@ -1,12 +1,9 @@
-import { TIANMU_USER } from '@/lib/config'
+import { readStoredUser } from '@/lib/auth'
+import { useUserStore } from '@/store/user'
 import { reportPath, sseDecoder, validRunId } from '@/agent/protocol.mjs'
 
 export function agentUser() {
-  try {
-    return JSON.parse(localStorage.getItem(TIANMU_USER)) || {}
-  } catch {
-    return {}
-  }
+  return readStoredUser()
 }
 
 function authorization() {
@@ -32,6 +29,7 @@ async function request(path, options = {}) {
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
+    if (response.status === 401) useUserStore().logout()
     const messages = {
       UNAUTHORIZED: '登录已失效，请重新登录',
       AUTH_CONTEXT_EXPIRED: '登录已失效，请重新登录',

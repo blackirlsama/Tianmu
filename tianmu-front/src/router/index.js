@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { TIANMU_USER, TIANMU_LOGIN } from "@/lib/config"
-import { agentUser } from '@/api/agent'
+import { hasAuthToken } from '@/lib/auth'
 
 const routes = [
   { path: '/agent', name: 'AgentWorkspace', component: () => import('@/views/agent/AgentWorkspace.vue'), meta: { requestAuth: true } },
@@ -57,15 +56,11 @@ const router = createRouter({
 })
 // 本地没有用户信息就不跳转
 router.beforeEach((to, from, next) => {
-  if (to.name === 'AgentWorkspace' && !agentUser().token) {
-    ElMessage.warning('请先登录后使用 AI 分析');
-    return next('/');
-  }
-  if (to.meta.requestAuth && !localStorage.getItem(TIANMU_USER) && !localStorage.getItem(TIANMU_LOGIN)) {
+  if (to.meta.requestAuth && !hasAuthToken()) {
     ElMessage.warning("请先登录");
-    next("/");
+    return next("/");
   } else {
-    next();
+    return next();
   }
 });
 router.afterEach((to) => {

@@ -14,6 +14,17 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConversationFlowTest {
+    @Test void videoPresetsInheritPageTargetWithoutChangingOrdinaryChatOrExplicitTargets() {
+        var page = new RequestContext("1001");
+        for (String text : List.of("请分析这个视频的画面内容，概括主要内容，并给出关键画面的播放时间点。", "请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。")) {
+            String execution = com.tianmu.agent.application.RequestMessages.execution(text,page);
+            assertTrue(execution.endsWith("当前视频：视频1001"));
+            assertEquals("video.content",TaskMeaning.defaults().resolve(execution,java.time.LocalDate.now()).type());
+            assertEquals(execution,com.tianmu.agent.application.RequestMessages.execution(execution,page));
+        }
+        for (String text : List.of("你能做什么？", "给我一些提升观众互动意愿的通用运营建议。", "帮我写三句自然的互动引导文案，不要太像广告。", "请分析视频1002的画面内容。"))
+            assertEquals(text,com.tianmu.agent.application.RequestMessages.execution(text,page));
+    }
     @Test void ordinaryConversationCanAnswerWithoutBusinessEvidenceOrTools() {
         for (String question : List.of("帮我想一句直播开场白", "如何提高直播间的弹幕互动？给我三条通用建议。", "怎么分析弹幕？")) {
         try (var fixture = new HarnessLifecycleTest.Fixture();
@@ -61,6 +72,8 @@ class ConversationFlowTest {
             assertEquals(Route.FAQ, run.snapshot().route());
             assertEquals(0, run.snapshot().totalModelCalls());
             assertTrue(run.snapshot().answer().text().contains("话术"));
+            assertTrue(run.snapshot().answer().text().contains("画面内容"));
+            assertTrue(run.snapshot().answer().text().contains("指定片段"));
         }
     }
 }

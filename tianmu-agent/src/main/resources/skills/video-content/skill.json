@@ -1,1 +1,8 @@
-{"name":"video-content","version":"1.0.0","description":"理解指定videoId的视频画面、内容、剧情或镜头；支持全片采样概览与指定播放区间细查。","tools":["analyze_video_content"]}
+{
+  "name": "video-content",
+  "version": "1.1.1",
+  "description": "理解当前授权视频的实际画面或指定播放片段，先回答内容与关键时间点；不需要弹幕日期，不自动生成报告。",
+  "tools": [
+    "analyze_video_content"
+  ]
+}

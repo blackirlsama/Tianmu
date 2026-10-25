@@ -46,8 +46,8 @@
           <section v-if="!turns.length" class="workspace-intro">
             <div class="welcome-symbol" aria-hidden="true">✦<i>✧</i></div>
             <div class="intro-tag">你的内容运营搭档</div>
-            <h1>一起，读懂观众的声音。</h1>
-            <p>聊聊视频表现、观众反馈，或下一次内容的灵感。<br />需要一份报告？直接告诉我就好。</p>
+            <h1>一起，看懂内容与观众。</h1>
+            <p>看视频、聊反馈，也一起想想下一次内容。<br />直接提问，需要报告时再告诉我。</p>
             <div class="conversation-context" v-if="form.videoId">
               <span>▣ 当前视频</span><strong>{{ contextTitle || '视频 ' + form.videoId }}</strong
               ><small>#{{ form.videoId }}</small>
@@ -56,7 +56,7 @@
               <button
                 v-for="item in suggestions"
                 :key="item.text"
-                @click="useSuggestion(item.text)"
+                @click="useSuggestion(item)"
               >
                 <span class="suggestion-icon">{{ item.icon }}</span
                 ><strong>{{ item.title }}</strong
@@ -64,6 +64,7 @@
                 ><i>↗</i>
               </button>
             </div>
+            <p class="suggestion-hint">点选问题后可以修改，确认后再发送。</p>
           </section>
           <div v-if="notice" class="workspace-notice" role="alert">
             {{ notice
@@ -196,6 +197,9 @@
           ><small>#{{ form.videoId }}</small
           ><span v-if="needsInput" class="reply-hint">助手需要你补充信息</span>
         </div>
+        <div v-if="turns.length && !busy && !needsInput" class="quick-suggestions" aria-label="常用提问">
+          <button v-for="item in quickSuggestions" :key="item.text" type="button" @click="useSuggestion(item)">{{ item.title }} ↗</button>
+        </div>
         <form class="chat-composer" @submit.prevent="submit">
           <label class="sr-only" for="assistant-message">给运营助手发消息</label>
           <textarea
@@ -208,7 +212,7 @@
             :placeholder="
               needsInput
                 ? '补充一下信息，我们接着聊…'
-                : '问问运营助手，比如：昨天的弹幕表现怎么样？'
+                : form.videoId ? '问问这个视频的内容、某个片段，或聊聊观众反馈…' : '聊聊运营思路、互动设计，或想写的文案…'
             "
             @keydown.enter.exact="composerEnter"
           />
@@ -232,6 +236,7 @@
   </div>
 </template>
 <script setup>
+/* global defineProps, defineEmits */
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/store/user';
@@ -262,37 +267,27 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 const composerInput = ref(null),
   conversationElement = ref(null);
-const suggestions = [
-  {
-    icon: '◷',
-    title: '看看弹幕表现',
-    description: '先从昨天的互动数据聊起',
-    text: '昨天有多少条弹幕？',
-  },
-  {
-    icon: '✧',
-    title: '一起想想运营思路',
-    description: '让观众更愿意参与讨论',
-    text: '怎样提高观众的互动意愿？请给我一些具体建议。',
-  },
-  {
-    icon: '▤',
-    title: '整理一份分析报告',
-    description: '把数据和观察留成一份复盘',
-    text: '请分析昨天的弹幕并生成一份分析报告。',
-  },
-  {
-    icon: '↗',
-    title: '优化下一场内容',
-    description: '从内容节奏和互动设计开始',
-    text: '直播开场可以怎样设计，才能吸引观众留下来？',
-  },
+const generalSuggestions = [
+  { icon: '✧', title: '你能帮我做什么', description: '先了解助手的能力', text: '你能做什么？' },
+  { icon: '↗', title: '聊聊运营思路', description: '一起想想怎样让观众参与', text: '给我一些提升观众互动意愿的通用运营建议。' },
+  { icon: '✎', title: '写几句互动文案', description: '自然一点，少一些广告感', text: '帮我写三句自然的互动引导文案，不要太像广告。' },
+  { icon: '▷', title: '怎样分析视频', description: '了解全片概览和片段分析', text: '怎么用你分析视频画面内容和观众反馈？' },
+];
+const videoSuggestions = [
+  { icon: '▷', title: '看懂这个视频', description: '概括画面内容，找到关键时间点', text: '请分析这个视频的画面内容，概括主要内容，并给出关键画面的播放时间点。' },
+  { icon: '◴', title: '细看一个片段', description: '选中示例时间，修改后再发送', text: '请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。', selection: '第1秒到第4秒' },
+  { icon: '◷', title: '查昨天的弹幕数', description: '快速查数量，直接告诉你结果', text: '这个视频昨天有多少条弹幕？' },
+  { icon: '▤', title: '结合画面做复盘', description: '把视频内容与观众反馈整理成报告', text: '请分析这个视频昨天的弹幕，结合实际视频画面生成一份分析报告。' },
+  generalSuggestions[1],
+  generalSuggestions[2],
 ];
 
 const router = useRouter(),
   route = useRoute(),
   userStore = useUserStore();
 const form = reactive({ videoId: '', ...yesterdayRange() });
+const suggestions = computed(() => form.videoId ? videoSuggestions : generalSuggestions);
+const quickSuggestions = computed(() => form.videoId ? [videoSuggestions[0], videoSuggestions[1], videoSuggestions[3]] : [generalSuggestions[1], generalSuggestions[2]]);
 const contextTitle = computed(() => (props.videoId === form.videoId ? props.videoTitle : ''));
 const currentQueryRun = computed(() =>
   props.embedded ? route.query.assistantRunId : route.query.runId
@@ -532,9 +527,16 @@ function createKey() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-function useSuggestion(text) {
-  focus.value = text;
-  nextTick(() => composerInput.value?.focus());
+function useSuggestion(item) {
+  focus.value = item.text;
+  nextTick(() => {
+    const input = composerInput.value;
+    input?.focus();
+    if (input && item.selection) {
+      const start = item.text.indexOf(item.selection);
+      if (start >= 0) input.setSelectionRange(start, start + item.selection.length);
+    }
+  });
 }
 function composerEnter(event) {
   if (event.isComposing || event.keyCode === 229) return;
@@ -986,6 +988,10 @@ onBeforeUnmount(() => {
 .conversation-context small {
   color: #b7b0bc;
 }
+.quick-suggestions { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+.quick-suggestions button { padding: 7px 11px; border: 1px solid #e9e2ed; border-radius: 99px; background: #fff; color: #8e728f; font-size: 11px; cursor: pointer; }
+.quick-suggestions button:hover { border-color: #cda5c3; background: #faf5fa; }
+.suggestion-hint { margin: 12px 0 0 !important; font-size: 11px !important; color: #aaa1af !important; }
 .suggestion-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1008,13 +1014,14 @@ onBeforeUnmount(() => {
 }
 .suggestion-grid strong {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 550;
   margin-bottom: 4px;
 }
 .suggestion-grid button > span:not(.suggestion-icon) {
-  font-size: 10px;
-  color: #aaa1af;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #928897;
 }
 .suggestion-icon {
   position: absolute;

@@ -171,6 +171,7 @@ export default {
           toRaw(this.instance).plugins.artplayerPluginDanmuku.load(
             this.danmuList
           );
+          this.seekFromRoute();
         });
         // 挂载弹幕发射器在播放器外部。在初始化弹幕插件的时候，是可以指定弹幕发射器的挂载位置的，默认是挂载在控制栏的中部，你也可以把它挂载在播放器以外的地方。 当播放器全屏的时候，发射器会自动回到控制栏的中部。
         toRaw(this.instance).plugins.artplayerPluginDanmuku.mount(
@@ -183,6 +184,11 @@ export default {
       this.playbackError = "";
       this.loading = true;
       this.instance.template.$video.load();
+    },
+    seekFromRoute() {
+      const raw = this.$route.query.t;
+      const position = typeof raw === 'string' && /^\d+(?:\.\d{1,3})?$/.test(raw) ? Number(raw) : NaN;
+      if (this.instance && Number.isFinite(position) && position >= 0 && position < this.instance.duration) this.instance.seek = position;
     },
     sendDanmu(danmu) {
       return new Promise((resolve) => {
@@ -213,6 +219,7 @@ export default {
     },
   },
   watch: {
+    '$route.query.t'() { this.seekFromRoute(); },
     videoUrl(newVal) {
       if (this.instance && newVal) {
         this.loading = true;

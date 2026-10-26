@@ -43,6 +43,7 @@
       </header>
       <div ref="conversationElement" class="conversation-scroll">
         <div class="workspace-content">
+          <RoomAudience v-if="form.videoId" :video-id="form.videoId" :busy="busy" @report="text => { focus = text; submit(); }" />
           <section v-if="!turns.length" class="workspace-intro">
             <div class="welcome-symbol" aria-hidden="true">✦<i>✧</i></div>
             <div class="intro-tag">你的内容运营搭档</div>
@@ -180,7 +181,7 @@
                   <iframe
                     v-else-if="turn.reportHtml"
                     :srcdoc="reportDocument(turn)"
-                    sandbox=""
+                    sandbox="allow-popups allow-popups-to-escape-sandbox"
                     referrerpolicy="no-referrer"
                     title="弹幕分析报告预览"
                     class="report-preview"
@@ -238,6 +239,7 @@
 <script setup>
 /* global defineProps, defineEmits */
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import RoomAudience from '@/components/agent/RoomAudience.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/store/user';
 import { useAgentRunMonitor } from '@/composables/useAgentRunMonitor';
@@ -273,7 +275,7 @@ const generalSuggestions = [
   { icon: '▷', title: '怎样分析视频', description: '了解全片概览和片段分析', text: '怎么用你分析视频画面内容和观众反馈？' },
 ];
 const videoSuggestions = [
-  { icon: '▷', title: '看懂这个视频', description: '概括画面内容，找到关键时间点', text: '请分析这个视频的画面内容，概括主要内容，并给出关键画面的播放时间点。' },
+  { icon: '▷', title: '观众在讨论什么', description: '默认过去七天，结合视频做复盘', text: '请分析这个视频的弹幕，结合视频内容归纳主要话题、真实弹幕例子和改进建议，生成分析报告。' },
   { icon: '◴', title: '细看一个片段', description: '选中示例时间，修改后再发送', text: '请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。', selection: '第1秒到第4秒' },
   { icon: '◷', title: '查昨天的弹幕数', description: '快速查数量，直接告诉你结果', text: '这个视频昨天有多少条弹幕？' },
   { icon: '▤', title: '结合画面做复盘', description: '把视频内容与观众反馈整理成报告', text: '请分析这个视频昨天的弹幕，结合实际视频画面生成一份分析报告。' },
@@ -557,7 +559,7 @@ async function cancel() {
   }
 }
 function reportDocument(turn) {
-  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">${turn.reportHtml}`;
+  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><base href="${window.location.origin}/">${turn.reportHtml}`;
 }
 function downloadReport(turn) {
   const url = URL.createObjectURL(new Blob([turn.reportHtml], { type: 'text/html;charset=utf-8' }));

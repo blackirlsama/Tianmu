@@ -1,1 +1,26 @@
-{"name": "create_danmaku_report", "description": "Render and privately store an HTML report using a danmaku analysis evidence_id for any authorized video_id. Sample excerpts are already grouped by exact text after redaction. sections_json is a JSON array (max 6) of {title,observation,recommendation,sample_ids:[string IDs]}, each observation cites 1-4 available canonical sample IDs; every sampled source ID remains available. Empty array allowed for no reliable observations. Do not interpret sampled duplicate count as full-room frequency, or invent numeric topic/sentiment ratios or causation. Successful execution delivers the report and ends the run. Optionally attach video_evidence_id from analyze_video_content for the SAME video; the server adds a time-anchored video evidence section. Never put video evidence IDs in sample_ids.", "inputSchema": {"type": "object", "properties": {"evidence_id": {"type": "string", "maxLength": 80}, "sections_json": {"type": "string", "maxLength": 12000}, "video_evidence_id": {"type": "string", "maxLength": 80}}, "required": ["evidence_id", "sections_json"], "additionalProperties": false}}
+{
+  "name": "create_danmaku_report",
+  "description": "Render a private HTML report from owned query_danmaku evidence. sections_json is an array of up to 6 topics with title,observation,recommendation,sample_ids. When analysis.audience exists, classify audience.corpus IDs, each ID at most once; recommendation may be empty. Optional video_context requires supplied same-video video_evidence_id and video_at_ms (up to 4 actual sampled timestamps). Server computes topic counts, coverage, playback statistics and interaction ranking; do not invent counts. Without audience use 1-4 legacy sample IDs per section. Empty array is valid for insufficient data. Report success delivers the answer and ends the run.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "evidence_id": {
+        "type": "string",
+        "maxLength": 80
+      },
+      "sections_json": {
+        "type": "string",
+        "maxLength": 12000
+      },
+      "video_evidence_id": {
+        "type": "string",
+        "maxLength": 80
+      }
+    },
+    "required": [
+      "evidence_id",
+      "sections_json"
+    ],
+    "additionalProperties": false
+  }
+}

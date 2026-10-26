@@ -11,7 +11,7 @@ public final class EvidencePresentation {
         boolean supported = switch (specification.type()) {
             case "video.metric" -> evidence.stream().anyMatch(e -> e.data() != null);
             case "video.content" -> evidence.stream().anyMatch(e -> e.videoContent() != null);
-            case "danmaku.report" -> evidence.stream().anyMatch(e -> e.analysis() != null);
+            case "danmaku.report", "danmaku.overview" -> evidence.stream().anyMatch(e -> e.analysis() != null);
             default -> true;
         };
         if (!supported) throw new AgentException("INVALID_EVIDENCE", "Answer lacks evidence required by the prepared task");

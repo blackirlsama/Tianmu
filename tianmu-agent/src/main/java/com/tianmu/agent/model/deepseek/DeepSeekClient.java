@@ -32,6 +32,9 @@ public final class DeepSeekClient {
     }
     public List<Map<String, String>> messages(String instruction, Map<String, ?> input) { return contexts.build(instruction, input); }
     public JsonNode complete(String model, List<Map<String, String>> messages, int maxTokens, CallControl control) {
+        return complete(model,messages,maxTokens,control,false);
+    }
+    public JsonNode complete(String model, List<Map<String, String>> messages, int maxTokens, CallControl control, boolean external) {
         control.checkpoint();
         contexts.check(messages);
         TraceAttributes.apply(Span.current(), Map.of("model.name", model, "model.provider", "deepseek", "model.max_tokens", maxTokens,
@@ -48,7 +51,7 @@ public final class DeepSeekClient {
             HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/chat/completions"))
                     .timeout(Duration.ofNanos(nanos)).header("Authorization", "Bearer " + config.apiKey())
                     .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofByteArray(payload)).build();
-            JsonNode body = com.tianmu.agent.runtime.control.ModelBudget.execute(control, model, false, () -> exchange(request, control));
+            JsonNode body = com.tianmu.agent.runtime.control.ModelBudget.execute(control, model, external, () -> exchange(request, control));
             TraceDetails.capture("provider_output", body, "MODEL_PROVIDER_RESPONSE");
             JsonNode choice = body.path("choices").path(0);
             if (choice.path("finish_reason").isTextual()) TraceAttributes.apply(Span.current(), Map.of("model.finish_reason", choice.path("finish_reason").asText()));

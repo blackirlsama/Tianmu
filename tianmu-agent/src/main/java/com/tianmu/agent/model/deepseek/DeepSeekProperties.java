@@ -10,7 +10,7 @@ public record DeepSeekProperties(@DefaultValue("https://api.deepseek.com") URI b
         String apiKey, @DefaultValue("deepseek-flash") String preparationModel,
         @DefaultValue("deepseek-v4-pro") String harnessModel,
         @DefaultValue("3s") Duration connectTimeout,
-        @DefaultValue("384") int preparationMaxTokens, @DefaultValue("1536") int harnessMaxTokens) {
+        @DefaultValue("384") int preparationMaxTokens, @DefaultValue("3072") int harnessMaxTokens) {
     public DeepSeekProperties {
         if (apiKey == null || apiKey.isBlank()) throw new IllegalArgumentException("DEEPSEEK_API_KEY is required");
         boolean local = SetHolder.LOCAL.contains(baseUrl.getHost());

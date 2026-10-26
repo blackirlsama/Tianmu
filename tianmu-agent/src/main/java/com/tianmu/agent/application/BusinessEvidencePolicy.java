@@ -52,7 +52,7 @@ public final class BusinessEvidencePolicy {
         public void checkDanmakuQuery(EvidenceContext run, com.tianmu.agent.core.DanmakuTypes.Query query) {
             run.checkpoint(); query.checkTime(Instant.now());
             if (!run.scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "videoId is outside scope");
-            if (run.task() == null || !run.task().specification().type().equals("danmaku.report")
+            if (run.task() == null || !Set.of("danmaku.report","danmaku.overview").contains(run.task().specification().type())
                     || !((TaskConditions.Report) run.task().specification().typed()).query().equals(query))
                 throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Analysis differs from the prepared task");
         }

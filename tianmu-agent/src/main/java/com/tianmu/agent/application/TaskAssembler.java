@@ -32,7 +32,7 @@ public class TaskAssembler {
     public PreparedTask assemble(RunState run) {
         run.checkpoint();
         var preparation = Objects.requireNonNull(run.preparedRequest());
-        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate) : preparation.specification();
+        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate, run.createdAt) : preparation.specification();
         boolean conversation = "unclassified".equals(specification.type())
                 && Set.of(com.tianmu.agent.core.PreparationTypes.Intent.KNOWLEDGE, com.tianmu.agent.core.PreparationTypes.Intent.OTHER).contains(preparation.intent());
         if (conversation) specification = new Specification("conversation", Map.of(), Map.of());

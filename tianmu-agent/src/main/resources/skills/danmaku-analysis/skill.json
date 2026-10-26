@@ -1,7 +1,7 @@
 {
   "name": "danmaku-analysis",
-  "version": "1.3.0",
-  "description": "按指定发送日期分析视频/直播间弹幕，按需结合实际视频画面并生成HTML复盘报告；区分发送时间与播放位置，空数据不编造反馈。",
+  "version": "2.0.0",
+  "description": "视频房间的区间弹幕统计与话题报告；默认过去七天，结合视频、原文例子、改进建议和互动用户榜。",
   "tools": [
     "query_danmaku",
     "create_danmaku_report",

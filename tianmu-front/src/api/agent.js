@@ -58,6 +58,14 @@ function runPath(id) {
   return `/api/agent/runs/${id}`
 }
 
+export async function getRoomSummary(videoId, start, signal) {
+  if (!/^[1-9]\d{0,18}$/.test(videoId) || (videoId.length === 19 && videoId > '9223372036854775807'))
+    throw new Error('视频 ID 无效')
+  const query = start ? `?start=${encodeURIComponent(start)}` : ''
+  const response = await request(`/api/agent/rooms/${videoId}/summary${query}`, { signal })
+  return response.json()
+}
+
 export async function createAgentRun(body, key, signal) {
   const response = await request('/api/agent/runs', {
     method: 'POST',

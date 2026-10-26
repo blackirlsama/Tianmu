@@ -36,7 +36,7 @@ public class BusinessAdapters {
 final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.video.VideoContentPort {
     private record RawSample(String id, int bucket, String text, boolean truncated, Long playbackMs) {}
     private record AnalysisResponse(DanmakuTypes.Query query, long totalMessages, long uniqueSenders,
-            List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo) {}
+            List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo, com.tianmu.agent.core.AudienceData.Overview audience) {}
     private final BusinessProperties config;
     private final ObjectMapper json;
     private final ObjectProvider<ResourceScopeStore> repositories;
@@ -136,13 +136,13 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         String start = java.net.URLEncoder.encode(query.start().toString(), java.nio.charset.StandardCharsets.UTF_8);
         String end = java.net.URLEncoder.encode(query.end().toString(), java.nio.charset.StandardCharsets.UTF_8);
         JsonNode answer = request("GET", "/internal/agent/danmaku-analysis?videoId=" + query.videoId() + "&start=" + start + "&end=" + end,
-                credentials.token(scope.authorizationRef()), null, control);
+                credentials.token(scope.authorizationRef()), null, control, 524288, 10_000);
         try {
             // The bridge returns raw snippets. Grouped occurrences belong to the Agent's tool/evidence model.
             AnalysisResponse raw = json.treeToValue(answer, AnalysisResponse.class);
             return new DanmakuTypes.Dataset(raw.query(), raw.totalMessages(), raw.uniqueSenders(), raw.buckets(),
                     raw.samples().stream().map(s -> new DanmakuTypes.Sample(s.id(), s.bucket(), s.text(), s.truncated(), List.of(new DanmakuTypes.SampleOccurrence(s.id(),s.bucket(),s.truncated(),s.playbackMs())))).toList(),
-                    raw.dataAsOf(), raw.source(), raw.demo());
+                    raw.dataAsOf(), raw.source(), raw.demo(), raw.audience());
         }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Analysis schema mismatch"); }
     }

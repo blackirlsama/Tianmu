@@ -26,7 +26,7 @@ mvn -B -ntp -f tianmu-agent/pom.xml -Dtest=EvaluationBaselineTest test
 
 ## 实际验证范围
 
-7个绑定覆盖：明确日期的数量、空结果、只缺日期时的澄清、页面视频上下文、越权查询、跨账号/跨任务证据隔离，以及受控查询在途取消。终态请求检查 SSE 唯一 DONE。
+7个绑定覆盖：明确日期的数量、空结果、未指定日期时默认过去7天、页面视频上下文、越权查询、跨账号/跨任务证据隔离，以及受控查询在途取消。终态请求检查 SSE 唯一 DONE。`metric_missing_date` 保留历史场景 ID，当前行为改为 `default_range`；首份 engineering-v1 历史结果不改写。
 
 数字 fixture 只对测试生效：默认值128，评测日的前两天为0。真实 query 适配器通过 `@Primary` 的测试 fixture 替换，生产代码和真实数据库不增加这些分支。日期按本次报告的 `calendar_anchor`（Asia/Shanghai）绑定，避免固定日期在30天窗口外失效。
 

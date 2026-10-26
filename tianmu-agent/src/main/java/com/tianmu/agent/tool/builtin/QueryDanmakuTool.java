@@ -32,9 +32,15 @@ public final class QueryDanmakuTool implements AgentTool {
                     .flatMap(s -> s.occurrences().stream()).toList();
             return new Sample(first.id(), first.bucket(), entry.getKey(), matches.stream().anyMatch(Sample::truncated), occurrences);
         }).toList();
-        Dataset data = new Dataset(query, raw.totalMessages(), raw.uniqueSenders(), raw.buckets(), samples, raw.dataAsOf(), raw.source(), raw.demo());
+        Dataset data = new Dataset(query, raw.totalMessages(), raw.uniqueSenders(), raw.buckets(), samples, raw.dataAsOf(), raw.source(), raw.demo(), raw.audience());
         Evidence evidence = context.registerDanmakuEvidence(data);
-        return new ToolResult(name(), Map.of("analysis", data, "sampling_method", data.samplingMethod(), "evidence_id", evidence.id()), evidence.id());
+        Dataset visible=data;
+        if(data.audience()!=null){
+            var a=data.audience();
+            var redacted=new AudienceData.Overview(List.of(),a.playback(),a.unknownPlayback(),a.corpus().stream().map(AudienceData.TextGroup::forModel).toList(),a.corpusMessages(),a.totalMessages());
+            visible=new Dataset(query,data.totalMessages(),data.uniqueSenders(),data.buckets(),List.of(),data.dataAsOf(),data.source(),data.demo(),redacted);
+        }
+        return new ToolResult(name(), Map.of("analysis", visible, "sampling_method", data.samplingMethod(), "evidence_id", evidence.id()), evidence.id());
     }
     private static String redact(String text) { return text.replaceAll("(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}", "[email]").replaceAll("(?<!\\d)1[3-9]\\d{9}(?!\\d)", "[phone]"); }
 }

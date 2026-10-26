@@ -6,5 +6,6 @@ import java.util.Optional;
 
 /** A business capability may resolve only conditions explicitly supported by its parser. */
 public interface TaskSpecificationResolver {
+    default java.util.Optional<com.tianmu.agent.core.TaskTypes.Specification> resolve(String text, java.time.LocalDate date, java.time.Instant requestedAt) { return resolve(text, date); }
     Optional<Specification> resolve(String original, LocalDate businessDate);
 }

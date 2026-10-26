@@ -74,6 +74,10 @@ export function yesterdayRange(now = new Date()) {
   return { start, end }
 }
 
+export function sevenDayRange(now = new Date()) {
+  return { start: chinaTime(new Date(now.getTime() - 7 * 86400000)), end: chinaTime(now) }
+}
+
 export function buildReportMessage(
   { videoId, start, end, focus = '' },
   now = new Date()
@@ -85,9 +89,9 @@ export function buildReportMessage(
     throw new Error('请输入有效的视频或直播间 ID')
   }
   const parse = (value) => {
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return NaN
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) return NaN
     const ms = Date.parse(`${value}+08:00`)
-    return Number.isFinite(ms) && chinaTime(new Date(ms)) === value ? ms : NaN
+    return Number.isFinite(ms) && new Date(ms + 8 * 3600000).toISOString().slice(0, value.length) === value ? ms : NaN
   }
   const from = parse(start),
     to = parse(end)
@@ -95,9 +99,9 @@ export function buildReportMessage(
     !Number.isFinite(from) ||
     !Number.isFinite(to) ||
     to <= from ||
-    to - from > 86400000
+    to - from > 30 * 86400000
   ) {
-    throw new Error('请选择有效的起止时间，分析时长最多 24 小时')
+    throw new Error('请选择有效的起止时间，分析时长最多 30 天')
   }
   if (
     to > now.getTime() ||

@@ -12,14 +12,27 @@ public final class DanmakuReportTask {
     private DanmakuReportTask() {}
     public static boolean requested(String text) { return !com.tianmu.agent.core.ConversationTopics.general(text) && text.contains("弹幕") && (text.contains("报告") || text.contains("分析")); }
     public static Query parse(String text, LocalDate date) {
+        return parse(text, date, date.atStartOfDay(ZONE));
+    }
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    public static Query parse(String text, LocalDate date, ZonedDateTime requestedAt) {
         var ids = DanmakuTarget.matcher(text).results().toList();
         if (ids.size() != 1) throw new IllegalArgumentException("请明确一个videoId，例如视频1001或直播间1001。");
+        if(Pattern.compile("今天|前天|明天|后天|上周|本周|这周|上月|本月").matcher(text).find())
+            throw new IllegalArgumentException("请提供完整起止时间，未指定时间时默认过去七天。");
         var times = Pattern.compile("\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?").matcher(text).results().map(m -> m.group().replace(' ', 'T')).toList();
         LocalDateTime start, end;
         if (times.size() == 2) { start = LocalDateTime.parse(times.get(0)); end = LocalDateTime.parse(times.get(1)); }
         else if (!times.isEmpty()) throw new IllegalArgumentException("请提供完整的开始和结束时间，例如2026-10-23 20:00到2026-10-23 22:00。");
         else {
             var dates = Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(text).results().map(m -> m.group()).toList();
+            if (dates.isEmpty() && !text.contains("昨天")) {
+                if (Pattern.compile("\\d{1,2}:\\d{2}|\\d{1,2}点|今天|前天|上周|本周|上月|本月|近\\s*\\d+\\s*天|过去\\s*\\d+\\s*天").matcher(text).find()
+                        && !text.matches("(?s).*(过去|最近|近)\\s*(7|七)\\s*天.*"))
+                    throw new IllegalArgumentException("请明确起止时间；未指定时默认过去七天。");
+                end = requestedAt.withZoneSameInstant(ZONE).toLocalDateTime().withNano(0);
+                return new Query(Long.parseLong(ids.get(0).group(1)), end.minusDays(7), end);
+            }
             if (dates.size() == 1 && !text.contains("昨天")) start = LocalDate.parse(dates.get(0)).atStartOfDay();
             else if (dates.isEmpty() && text.contains("昨天")) start = date.minusDays(1).atStartOfDay();
             else throw new IllegalArgumentException("请指定一天，或提供完整的开始和结束日期时间。");

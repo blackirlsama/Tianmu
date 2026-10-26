@@ -13,6 +13,11 @@ public class MetricQueryReadiness implements QueryReadinessPolicy {
     public Optional<Clarification> validate(Input input) {
         if (DanmakuReportTask.requested(input.query()) || com.tianmu.agent.core.ConversationTopics.general(input.query())) return Optional.empty();
         if (!input.query().contains("弹幕")) return Optional.empty();
+        if(!Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(input.query()).find() && !input.query().contains("昨天")
+                || input.query().matches("(?s).*\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}.*")) {
+            try { DanmakuReportTask.parse(input.query(),input.businessDate(),input.requestedAt().atZone(ZoneId.of("Asia/Shanghai"))).checkTime(Instant.now());return Optional.empty(); }
+            catch(RuntimeException e){return ask("请明确一个视频及有效起止时间；未指定时默认过去七天。");}
+        }
         if (DanmakuTarget.matcher(input.query()).results().count() != 1) return ask("请明确一个要查询的videoId，可写成视频ID或直播间ID。");
         var dateValues = Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(input.query()).results().map(m -> m.group()).toList();
         if (dateValues.size() > 1 || !dateValues.isEmpty() && input.query().contains("昨天"))

@@ -100,6 +100,15 @@ class EvaluationBaselineTest {
             run = terminal(id, "alice");
             switch (item.path("mode").asText()) {
                 case "metric" -> verifyMetric(run, id, item.path("expected_value").asLong(), "alice");
+                case "default_range" -> {
+                    assertEquals("SUCCEEDED",run.path("status").asText());
+                    assertEquals("danmaku.overview",run.path("task").path("specification").path("type").asText());
+                    var c=run.path("task").path("specification").path("conditions");
+                    var end=Instant.parse(run.path("createdAt").asText()).atZone(ZoneId.of("Asia/Shanghai")).toLocalDateTime().withNano(0);
+                    assertEquals(end,LocalDateTime.parse(c.path("end").asText()));
+                    assertEquals(end.minusDays(7),LocalDateTime.parse(c.path("start").asText()));
+                    assertEquals(0,run.path("preparationCalls").asInt());
+                }
                 case "clarification" -> {
                     assertEquals("NEEDS_INPUT", run.path("status").asText());
                     assertEquals("CLARIFY", run.path("route").asText());

@@ -24,7 +24,7 @@ class PreparationFlowTest {
         }
         public Emotion emotion(Input i, CallControl c) { return Emotion.NEUTRAL; }
         Understanding accepted(Input i, String query) {
-            return Understanding.proceed(TaskMeaning.defaults().resolve(i.query(), i.businessDate()).conditions(), query);
+            return Understanding.proceed(TaskMeaning.defaults().resolve(i.query(), i.businessDate(),i.requestedAt()).conditions(), query);
         }
         public Understanding understand(Input i, CallControl c) { return accepted(i, i.query()); }
     }
@@ -95,12 +95,12 @@ class PreparationFlowTest {
     @Test void businessPrerequisitesOverrideFalseNegativeFromSmallModel() {
         try (var f = new HarnessLifecycleTest.Fixture(); var prep = new PreparationService(miss(), new Model(),
                 new PreparationPolicy(Duration.ofMillis(200), Duration.ofMillis(400)), f.harness, List.of(new MetricQueryReadiness()))) {
-            RunState run = new RunState(new AccessScope("demo", "alice", Set.of(1001L)), "查询视频1001的弹幕数");
+            RunState run = new RunState(new AccessScope("demo", "alice", Set.of(1001L)), "查询视频1001从2026-10-24 12:00的弹幕数");
             execute(f, prep, run, forbidden());
             assertEquals(Status.NEEDS_INPUT, run.snapshot().status());
             assertEquals(Route.CLARIFY, run.snapshot().route());
             assertTrue(run.snapshot().preparationCalls() >= 2 && run.snapshot().preparationCalls() <= 3);
-            assertTrue(run.snapshot().clarification().contains("日期"));
+            assertTrue(run.snapshot().clarification().contains("时间"));
         }
     }
     @Test void emotionAndRewriteErrorsUseSafeDefaults() {

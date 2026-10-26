@@ -10,7 +10,8 @@ public final class PreparationTypes {
     public enum Emotion { NEUTRAL, POSITIVE, NEGATIVE, UNKNOWN }
     public enum Intent { VIDEO_METRIC, DANMAKU_REPORT, KNOWLEDGE, OTHER, UNKNOWN }
     public enum Route { FAQ, CLARIFY, HARNESS }
-    public record Input(String query, LocalDate businessDate, AccessScope scope, MemoryTypes.View memory) {
+    public record Input(String query, LocalDate businessDate, AccessScope scope, MemoryTypes.View memory, java.time.Instant requestedAt) {
+        public Input(String query, LocalDate date, AccessScope scope, MemoryTypes.View memory) { this(query, date, scope, memory, date.atStartOfDay(java.time.ZoneId.of("Asia/Shanghai")).toInstant()); }
         public Input(String query, LocalDate date, AccessScope scope) { this(query, date, scope, MemoryTypes.View.empty()); }
     }
     public record Clarification(boolean required, String question) {

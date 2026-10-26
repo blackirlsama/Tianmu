@@ -141,7 +141,8 @@ class DanmakuReportTest {
         LocalDate day = LocalDate.of(2026,10,23);
         Query q = DanmakuReportTask.parse("分析直播间1001在2026-10-23 20:00到2026-10-23 22:00的弹幕报告",day.plusDays(1));
         assertEquals(Duration.ofHours(2),Duration.between(q.start(),q.end()));
-        for (String invalid : List.of("分析直播间1001昨天20:00到22:00的弹幕报告", "分析直播间1001和直播间1002昨天弹幕报告", "分析直播间1001弹幕报告"))
+        assertEquals(Duration.ofDays(7),Duration.between(DanmakuReportTask.parse("分析直播间1001弹幕报告",day).start(),DanmakuReportTask.parse("分析直播间1001弹幕报告",day).end()));
+        for (String invalid : List.of("分析直播间1001昨天20:00到22:00的弹幕报告", "分析直播间1001和直播间1002昨天弹幕报告", "分析直播间1001从2026-10-23 12:00的弹幕报告"))
             assertThrows(RuntimeException.class, () -> DanmakuReportTask.parse(invalid,day));
         List<Bucket> bins = new ArrayList<>(); for(int i=0;i<12;i++) bins.add(new Bucket(i,0));
         Dataset empty = new Dataset(q,0,0,bins,List.of(),Instant.now(),"fixture",false);

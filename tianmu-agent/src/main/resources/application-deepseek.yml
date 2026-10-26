@@ -13,7 +13,7 @@ agent:
     harness-model: ${HARNESS_MODEL:deepseek-v4-pro}
     connect-timeout: 3s
     preparation-max-tokens: 384
-    harness-max-tokens: 1536
+    harness-max-tokens: ${HARNESS_MAX_OUTPUT_TOKENS:3072}
   preparation:
     intent-timeout: 10s
     understanding-timeout: 10s

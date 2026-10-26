@@ -10,8 +10,8 @@ public final class DanmakuTypes {
     public record Query(long videoId, LocalDateTime start, LocalDateTime end) {
         public Query {
             Objects.requireNonNull(start); Objects.requireNonNull(end);
-            if (videoId <= 0 || !start.isBefore(end) || start.getNano() != 0 || end.getNano() != 0 || Duration.between(start, end).compareTo(Duration.ofDays(1)) > 0)
-                throw new IllegalArgumentException("Report range must be positive and at most 24 hours");
+            if (videoId <= 0 || !start.isBefore(end) || start.getNano() != 0 || end.getNano() != 0 || Duration.between(start, end).compareTo(Duration.ofDays(30)) > 0)
+                throw new IllegalArgumentException("Analysis range must be positive and at most 30 days");
         }
         public void checkTime(Instant now) {
             if (end.atZone(ZONE).toInstant().isAfter(now) || start.toLocalDate().isBefore(now.atZone(ZONE).toLocalDate().minusDays(30)))
@@ -43,7 +43,11 @@ public final class DanmakuTypes {
         public int occurrenceCount() { return occurrences.size(); }
     }
     public record Dataset(Query query, long totalMessages, long uniqueSenders, List<Bucket> buckets,
-                          List<Sample> samples, Instant dataAsOf, String source, boolean demo) {
+                          List<Sample> samples, Instant dataAsOf, String source, boolean demo, AudienceData.Overview audience) {
+        public Dataset(Query query, long totalMessages, long uniqueSenders, List<Bucket> buckets,
+                       List<Sample> samples, Instant dataAsOf, String source, boolean demo) {
+            this(query, totalMessages, uniqueSenders, buckets, samples, dataAsOf, source, demo, null);
+        }
         public Dataset {
             Objects.requireNonNull(query); Objects.requireNonNull(dataAsOf);
             buckets = List.copyOf(buckets); samples = List.copyOf(samples);
@@ -65,6 +69,7 @@ public final class DanmakuTypes {
                     throw new IllegalArgumentException("Inconsistent samples");
             }
             if (occurrenceCount > 48) throw new IllegalArgumentException("Too many sampled occurrences");
+            if (audience != null && audience.totalMessages() != totalMessages) throw new IllegalArgumentException("Audience scope mismatch");
         }
         public int sampleOccurrenceCount() { return samples.stream().mapToInt(Sample::occurrenceCount).sum(); }
         public String samplingMethod() { return "Up to 12 fixed-width time bins (rounded up to seconds); first up to 4 messages per bin, ordered by create_time and bullet_id; snippets at most 160 code points; exact text duplicates grouped after redaction with all sampled IDs retained; non-random and not population-representative"; }

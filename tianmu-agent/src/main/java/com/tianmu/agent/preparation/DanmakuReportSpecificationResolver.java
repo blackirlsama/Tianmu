@@ -9,13 +9,16 @@ import java.util.*;
 @Component
 public final class DanmakuReportSpecificationResolver implements TaskSpecificationResolver, QueryReadinessPolicy {
     public Optional<Specification> resolve(String text, LocalDate date) {
+        return resolve(text, date, date.atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant());
+    }
+    public Optional<Specification> resolve(String text, LocalDate date, Instant requestedAt) {
         if (!DanmakuReportTask.requested(text)) return Optional.empty();
-        try { return Optional.of(DanmakuReportTask.specification(DanmakuReportTask.parse(text, date))); }
+        try { return Optional.of(DanmakuReportTask.specification(DanmakuReportTask.parse(text, date, requestedAt.atZone(ZoneId.of("Asia/Shanghai"))))); }
         catch (IllegalArgumentException | DateTimeException e) { return Optional.empty(); }
     }
     public Optional<Clarification> validate(Input input) {
         if (!DanmakuReportTask.requested(input.query())) return Optional.empty();
-        try { DanmakuReportTask.parse(input.query(), input.businessDate()).checkTime(Instant.now()); return Optional.empty(); }
-        catch (RuntimeException e) { return Optional.of(new Clarification(true, "请明确videoId和最近30天内已结束的时间范围（最长24小时），例如：分析视频1001昨天的弹幕并生成报告；直播间ID也使用videoId。")); }
+        try { DanmakuReportTask.parse(input.query(), input.businessDate(), input.requestedAt().atZone(ZoneId.of("Asia/Shanghai"))).checkTime(Instant.now()); return Optional.empty(); }
+        catch (RuntimeException e) { return Optional.of(new Clarification(true, "请明确一个视频ID和有效起止时间（最近30天）；不填时间时默认过去七天。")); }
     }
 }

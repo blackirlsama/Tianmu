@@ -36,9 +36,9 @@
     },
     {
       "id": "metric_missing_date",
-      "category": "clarification",
+      "category": "default_range",
       "prompt_template": "这个视频有多少弹幕？",
-      "expected_behavior": "已知当前视频时，只澄清确实缺失的日期或时段。",
+      "expected_behavior": "已知当前视频、未指定日期时，使用提交时刻往前七天的范围并展示实际起止，不追问日期。",
       "forbidden_claims": [
         "重复索要已有视频ID"
       ],

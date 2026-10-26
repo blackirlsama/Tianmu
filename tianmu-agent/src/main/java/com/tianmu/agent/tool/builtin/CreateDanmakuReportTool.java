@@ -26,7 +26,8 @@ public final class CreateDanmakuReportTool implements AgentTool {
         Dataset data = evidence.analysis();
         if (data == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
         context.checkDanmakuQuery(data.query());
-        List<Map<String, Object>> sections = sections(ToolArguments.text(call, "sections_json"), data);
+        String sectionSource=ToolArguments.text(call,"sections_json");
+        List<Map<String, Object>> sections = data.audience()==null?sections(sectionSource,data):List.of();
         com.tianmu.agent.core.VideoContent.Facts video = null;
         String videoEvidence = null;
         if (call.arguments().containsKey("video_evidence_id")) {
@@ -35,13 +36,22 @@ public final class CreateDanmakuReportTool implements AgentTool {
             if (video == null || video.videoId()!=data.query().videoId()) throw new AgentException("INVALID_EVIDENCE","Video evidence must match report video");
         }
         String document = render(data, evidence.id(), sections);
+        if (data.audience()!=null) {
+            var topics=com.tianmu.agent.application.AudienceTopics.parse(json,sectionSource,data.audience(),video);
+            String from="<section class=\"section\" aria-labelledby=\"insights-title\">";
+            int left=document.indexOf(from),right=document.indexOf("<section class=\"section\" aria-labelledby=\"evidence-title\">",left);
+            document=document.substring(0,left)+com.tianmu.agent.application.AudienceReportView.render(data.audience(),topics,data.query().videoId())+document.substring(right);
+            document=document.replace("内容观察依据最多 48 条非随机片段，每个时间段取最早 4 条，不代表全量话题/情绪比例或因果结论。", "话题分析采用下方标明覆盖范围的同文语料；其余抽样弹幕仅供补充查看，不代表全量观点或因果结论。");
+            document=document.replace("模板版本：1.3.0","模板版本：2.0.0");
+        }
         if (video != null) document = document.replace("<footer class=\"footer\">", renderVideo(video, videoEvidence) + "<footer class=\"footer\">");
         byte[] html = document.getBytes(StandardCharsets.UTF_8);
         var report = context.saveReport(evidence.id(), html);
         String text = (data.demo() ? "【模拟数据】" : "") + "videoId " + data.query().videoId() + " 的弹幕分析报告已生成。\n"
                 + "范围：" + data.query().start() + " 至 " + data.query().end() + "（Asia/Shanghai，结束时刻不包含）。\n"
                 + "已入库且仍保留的弹幕 " + data.totalMessages() + " 条，非空用户ID去重 " + data.uniqueSenders() + " 人。\n"
-                + "内容观察基于 " + data.sampleOccurrenceCount() + " 条抽样片段，按文本去重为 " + data.samples().size() + " 种内容；不代表全量话题或情绪占比。\n"
+                + (data.audience()==null?"内容观察基于 " + data.sampleOccurrenceCount() + " 条抽样片段，按文本去重为 " + data.samples().size() + " 种内容；不代表全量话题或情绪占比。\n":
+                    "话题语料覆盖 "+data.audience().corpusMessages()+" 条弹幕、"+data.audience().corpus().size()+" 组同文；报告包含话题、原文例子、改进建议、播放位置统计和互动用户榜。未分类部分在报告中标明。\n")
                 + "[查看 HTML 报告](" + report.url() + ")（需登录鉴权）";
         return new ToolResult(name(), Map.of("artifact_id", report.artifactId(), "url", report.url(), "status", "READY"), evidence.id(), new Answer(text, videoEvidence==null?List.of(evidence.id()):List.of(evidence.id(),videoEvidence)));
     }
@@ -68,7 +78,7 @@ public final class CreateDanmakuReportTool implements AgentTool {
     private static String render(Dataset d, String evidence, List<Map<String, Object>> sections) {
         StringBuilder out = new StringBuilder("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light\"><title>弹幕分析报告</title><style>");
         out.append(STYLES).append("</style></head><body><main class=\"report\">");
-        out.append("<header class=\"hero\"><div class=\"eyebrow\">直播间弹幕分析</div><h1>")
+        out.append("<header class=\"hero\"><div class=\"eyebrow\">视频房间弹幕分析</div><h1>")
                 .append(d.demo() ? "<span class=\"demo-badge\">模拟数据</span>" : "")
                 .append("videoId ").append(d.query().videoId()).append("</h1><p class=\"subtitle\">直播间互动概览与内容观察</p>")
                 .append("<p class=\"range\"><span>统计时段</span>").append(esc(d.query().start().toString())).append(" 至 ")

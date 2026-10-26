@@ -11,6 +11,7 @@ public final class TaskCapabilities {
             case "video.metric" -> Set.of("list_skills", "read_skill", "read_result", "query_video_metrics");
             case "video.content" -> Set.of("list_skills", "read_skill", "read_result", "analyze_video_content");
             case "danmaku.report" -> Set.of("list_skills", "read_skill", "read_result", "query_danmaku", "analyze_video_content", "create_danmaku_report");
+            case "danmaku.overview" -> Set.of("list_skills", "read_skill", "read_result", "query_danmaku");
             default -> Set.of();
         };
         Set<String> available = new HashSet<>(ceiling);

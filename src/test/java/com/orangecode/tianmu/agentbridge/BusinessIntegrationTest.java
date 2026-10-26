@@ -21,6 +21,30 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="BUSINESS_IT", matches="true")
 class BusinessIntegrationTest {
+    @Test void sevenDayRoomOverviewUsesExactGroupsPositionsAndInteractionRanking() {
+        db.update("UPDATE video SET duration=20 WHERE video_id=1001");
+        String[] text={"尺寸？","尺寸？","联系13812345678","颜色？"};
+        long[] users={881,882,881,881};double[] positions={2.5,5,9999,15};
+        for(int i=0;i<4;i++) {
+            Instant at=day.minusDays(i==0?2:0).atTime(12,0).atZone(ZoneId.of("Asia/Shanghai")).toInstant();
+            db.update("INSERT INTO bullet(bullet_id,video_id,user_id,content,playback_time,create_time) VALUES(?,1001,?,?,?,?)",7001+i,users[i],text[i],positions[i],Timestamp.from(at));
+        }
+        db.update("INSERT INTO bullet(bullet_id,video_id,user_id,content,playback_time,create_time) VALUES(7005,1001,-7,'',-1,?)",Timestamp.from(day.atTime(13,0).atZone(ZoneId.of("Asia/Shanghai")).toInstant()));
+        var service=new BusinessDanmakuAnalysis(db,new BridgeProperties("tianmu",Set.of("normal"),"Asia/Shanghai",5));
+        var result=service.query(principal(),1001,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay());
+        assertEquals(5,result.totalMessages());assertEquals(2,result.uniqueSenders());
+        var a=result.audience();assertEquals(4,a.corpusMessages());assertEquals(3,a.corpus().size());
+        assertEquals(2,a.unknownPlayback());assertEquals(3,a.playback().stream().mapToLong(BusinessDanmakuAnalysis.Position::count).sum());
+        assertTrue(a.playback().stream().allMatch(p->p.endMs()<=20000));
+        assertEquals("881",a.interactions().get(0).userId());assertEquals(3,a.interactions().get(0).messages());assertEquals(2,a.interactions().get(0).activeDays());
+        var sizes=a.corpus().stream().filter(g->g.text().equals("尺寸？")).findFirst().orElseThrow();
+        assertEquals(2,sizes.count());assertEquals(2,sizes.trend().stream().mapToLong(Long::longValue).sum());
+        assertTrue(a.corpus().stream().noneMatch(g->g.text().contains("13812345678")));
+        db.update("UPDATE video SET duration=NULL WHERE video_id=1001");
+        var unknown=service.query(principal(),1001,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay()).audience();
+        assertEquals(5,unknown.unknownPlayback());assertTrue(unknown.playback().isEmpty());assertTrue(unknown.corpus().stream().allMatch(g->g.playbackMs()==null));
+        assertEquals(403,assertThrows(BridgeException.class,()->service.query(principal(),1002,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay())).status());
+    }
     HikariDataSource source; JdbcTemplate db; LettuceConnectionFactory factory; StringRedisTemplate redis;
     BusinessAuthentication auth; BusinessMetrics metrics; TransactionTemplate transaction;
     final LocalDate day = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(1);
@@ -32,10 +56,13 @@ class BusinessIntegrationTest {
         config.setPassword(System.getenv("BUSINESS_DB_PASSWORD")); config.setMaximumPoolSize(4); config.setConnectionInitSql("SET time_zone='+00:00'");
         source = new HikariDataSource(config); db = new JdbcTemplate(source);
         new ResourceDatabasePopulator(new ClassPathResource("business-schema.sql")).execute(source);
+        if(db.queryForObject("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='video' AND COLUMN_NAME='duration'",Integer.class)==0)
+            db.execute("ALTER TABLE video ADD COLUMN duration DOUBLE DEFAULT 180");
         db.update("DELETE FROM bullet WHERE video_id IN (1001,1002,1003)");
         db.update("DELETE FROM video_stats WHERE video_id IN (1001,1002,1003)");
         for (long id : List.of(881L,882L)) db.update("INSERT INTO user(user_id,state,is_delete) VALUES(?,'normal',0) ON DUPLICATE KEY UPDATE state='normal',is_delete=0", id);
         for (long video : List.of(1001L,1002L,1003L)) db.update("INSERT INTO video(video_id,user_id,is_delete) VALUES(?,?,0) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id),is_delete=0", video, video == 1002 ? 882 : 881);
+        db.update("UPDATE video SET duration=180 WHERE video_id IN (1001,1002,1003)");
         factory = new LettuceConnectionFactory(System.getenv("BUSINESS_REDIS_HOST"), Integer.parseInt(System.getenv("BUSINESS_REDIS_PORT")));
         factory.afterPropertiesSet(); redis = new StringRedisTemplate(factory); redis.afterPropertiesSet();
         alice = JwtUtil.generate("881"); bob = JwtUtil.generate("882");

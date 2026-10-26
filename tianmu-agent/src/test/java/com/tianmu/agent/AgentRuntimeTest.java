@@ -53,11 +53,13 @@ class AgentRuntimeTest {
         assertEquals("demo-capabilities", snapshot.faqId()); assertEquals("2", snapshot.faqVersion());
         assertEquals(Status.SUCCEEDED, snapshot.status()); assertEquals(0, snapshot.modelCalls());
     }
-    @Test void serviceEntryClarifiesBeforeHarness() throws Exception {
+    @Test void serviceEntryDefaultsMissingRangeToSevenDays() throws Exception {
         Snapshot snapshot = await(runs.create("查询视频1001的弹幕数", alice()));
-        assertEquals(Status.NEEDS_INPUT, snapshot.status());
-        assertEquals(com.tianmu.agent.core.PreparationTypes.Route.CLARIFY, snapshot.route());
-        assertEquals(0, snapshot.steps()); assertEquals(0, snapshot.modelCalls());
+        assertEquals(Status.SUCCEEDED, snapshot.status());
+        assertEquals("danmaku.overview",snapshot.task().specification().type());
+        var q=((com.tianmu.agent.core.TaskConditions.Report)snapshot.task().specification().typed()).query();
+        assertEquals(java.time.Duration.ofDays(7),java.time.Duration.between(q.start(),q.end()));
+        assertEquals(0,snapshot.preparationCalls());assertFalse(snapshot.answer().evidenceIds().isEmpty());
     }
     @Test void serviceEntryPassesPreparedQueryToHarnessWithOwnedEvidence() throws Exception {
         String message = "  查询视频1001昨天的弹幕数  ";

@@ -54,7 +54,7 @@ public class PreparationService implements AutoCloseable {
         calls.shutdown(); calls = executor; ownsExecutor = false;
     }
     public Result prepare(RunState run, String query) {
-        Input input = new Input(run.message, run.businessDate, run.owner, run.memory());
+        Input input = new Input(run.message, run.businessDate, run.owner, run.memory(), run.createdAt);
         Set<String> degraded = new LinkedHashSet<>(), skipped = new LinkedHashSet<>();
         Instant faqDeadline = deadline(run, policy.faqTimeout());
         Branch<Optional<FaqAnswer>> lookup = submit(run, "faq", faqDeadline, input, c -> faq.find(input, c));
@@ -67,10 +67,10 @@ public class PreparationService implements AutoCloseable {
                 new PreparedRequest(run.message, query, Emotion.UNKNOWN, degraded, Set.of("intent", "understanding", "emotion")), hit.get(), null);
 
         if (repository != null) run.memory(harness.stage(run, "agent.memory.load", null, null, Map.of(), () -> repository.memory(run)));
-        Input contextInput = new Input(query, run.businessDate, run.owner, run.memory());
+        Input contextInput = new Input(query, run.businessDate, run.owner, run.memory(), run.createdAt);
         run.emit("PROGRESS", Map.of("stage", "preparing"));
-        var specification = meaning.resolve(run.query(), run.businessDate);
-        if (!specification.equals(meaning.resolve(query, run.businessDate)))
+        var specification = meaning.resolve(run.query(), run.businessDate, run.createdAt);
+        if (!specification.equals(meaning.resolve(query, run.businessDate, run.createdAt)))
             throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Input transformation changed the task conditions");
         Optional<Clarification> required = harness.stage(run, "agent.prepare.validate", null, null, Map.of(),
                 () -> validators.stream().map(v -> v.validate(contextInput)).flatMap(Optional::stream).filter(Clarification::required).findFirst());
@@ -83,6 +83,7 @@ public class PreparationService implements AutoCloseable {
                 case "video.metric" -> Intent.VIDEO_METRIC;
                 case "danmaku.report" -> Intent.DANMAKU_REPORT;
                 case "video.content" -> Intent.OTHER;
+                case "danmaku.overview" -> Intent.OTHER;
                 default -> Intent.UNKNOWN;
             };
             if (known != Intent.UNKNOWN) {
@@ -124,7 +125,7 @@ public class PreparationService implements AutoCloseable {
             }
             String rewritten = result.rewrittenQuery();
             if (!safeRewrite(query, rewritten)
-                    || !specification.equals(meaning.resolve(rewritten, run.businessDate))) {
+                    || !specification.equals(meaning.resolve(rewritten, run.businessDate, run.createdAt))) {
                 degraded.add("rewrite"); rewritten = query;
             }
             Emotion feeling = readyEmotion(run, emotion, emotionEnd, degraded, skipped);

@@ -31,7 +31,7 @@ public sealed interface TaskConditions {
                 if (id <= 0 || !"bullet_count".equals(values.get("metric"))) throw new IllegalArgumentException("Invalid metric task");
                 yield new Metric(id, LocalDate.parse((String) values.get("date")), (String) values.get("metric"));
             }
-            case "danmaku.report" -> {
+            case "danmaku.report", "danmaku.overview" -> {
                 keys(values, Set.of("video_id", "start", "end"));
                 yield new Report(new DanmakuTypes.Query(integer(values, "video_id"),
                         LocalDateTime.parse((String) values.get("start")), LocalDateTime.parse((String) values.get("end"))));

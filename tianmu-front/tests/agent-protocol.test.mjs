@@ -11,6 +11,7 @@ import {
   reportPath,
   sseDecoder,
   yesterdayRange,
+  sevenDayRange,
 } from '../src/agent/protocol.mjs'
 
 const now = new Date('2026-10-25T04:00:00Z')
@@ -56,10 +57,15 @@ test('report requests preserve long video IDs and explicit Beijing wall times', 
     { end: '2026-10-26T00:00' },
     { start: '2026-09-01T00:00' },
     { start: '2026-02-30T10:00' },
-    { start: '2026-10-24T00:00', end: '2026-10-25T01:00' },
+    { start: '2026-09-20T00:00', end: '2026-10-25T01:00' },
   ]) {
     assert.throws(() => buildReportMessage({ ...input, ...changes }, now))
   }
+})
+
+test('seven day report defaults include the partial current day and support multi-day ranges', () => {
+  assert.deepEqual(sevenDayRange(now), { start: '2026-10-18T12:00', end: '2026-10-25T12:00' })
+  assert.match(buildReportMessage({ ...input, ...sevenDayRange(now) }, now), /2026-10-18 12:00到2026-10-25 12:00/)
 })
 test('default ranges use Beijing dates across timezone day boundaries', () => {
   assert.equal(chinaTime(new Date('2026-10-24T18:00:00Z')), '2026-10-25T02:00')

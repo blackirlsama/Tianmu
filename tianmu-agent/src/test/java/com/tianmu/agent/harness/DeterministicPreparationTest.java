@@ -40,7 +40,7 @@ class DeterministicPreparationTest {
             var model = mock(PreparationModelPort.class);
             try (var prep = new PreparationService((i,c) -> Optional.empty(), model, policy(), f.harness,
                     List.of(new MetricQueryReadiness(), new VideoContentReadiness()))) {
-                for (String query : List.of("查询视频1001的弹幕数", "查询视频1001昨天和2026-10-24的弹幕数",
+                for (String query : List.of("查询视频1001从2026-10-24 12:00的弹幕数", "查询视频1001昨天和2026-10-24的弹幕数",
                         "查询视频1001和视频1002昨天的弹幕数", "分析视频1001第2秒的画面", "分析视频1001第8秒到第2秒的画面")) {
                     RunState run = run(query); f.harness.start(run);
                     assertEquals(Route.CLARIFY, prep.prepare(run, query).route());

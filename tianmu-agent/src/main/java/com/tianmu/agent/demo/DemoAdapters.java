@@ -24,7 +24,8 @@ public class DemoAdapters {
             public Intent intent(Input input, CallControl control) {
                 control.checkpoint();
                 if (DanmakuReportTask.requested(input.query())) return Intent.DANMAKU_REPORT;
-                return input.query().contains("弹幕") ? Intent.VIDEO_METRIC : Intent.UNKNOWN;
+                String type=TaskMeaning.defaults().resolve(input.query(),input.businessDate(),input.requestedAt()).type();
+                return type.equals("danmaku.overview")?Intent.OTHER:input.query().contains("弹幕")?Intent.VIDEO_METRIC:Intent.UNKNOWN;
             }
             public Emotion emotion(Input input, CallControl control) {
                 control.checkpoint();
@@ -34,14 +35,12 @@ public class DemoAdapters {
                 control.checkpoint();
                 String text = input.query();
                 if (DanmakuReportTask.requested(text)) {
-                    try { return Understanding.proceed(DanmakuReportTask.specification(DanmakuReportTask.parse(text, input.businessDate())).conditions(), text); }
+                    try { return Understanding.proceed(DanmakuReportTask.specification(DanmakuReportTask.parse(text, input.businessDate(),input.requestedAt().atZone(ZoneId.of("Asia/Shanghai")))).conditions(), text); }
                     catch (RuntimeException e) { return Understanding.clarify("请提供videoId和日期，例如：分析视频1001昨天的弹幕并生成报告；直播间ID也使用videoId。"); }
                 }
                 if (!DanmakuTarget.matcher(text).find() || !text.contains("弹幕"))
                     return Understanding.clarify("请提供videoId、日期和要查询的弹幕指标；可使用视频ID或直播间ID。");
-                if (!text.contains("昨天") && !Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(text).find())
-                    return Understanding.clarify("请指定一个 YYYY-MM-DD 格式的日期，或使用“昨天”。");
-                return Understanding.proceed(TaskMeaning.defaults().resolve(text, input.businessDate()).conditions(),
+                return Understanding.proceed(TaskMeaning.defaults().resolve(text, input.businessDate(),input.requestedAt()).conditions(),
                         text.strip().replaceAll("\\s+", " "));
             }
         };
@@ -65,6 +64,13 @@ public class DemoAdapters {
     }
     @Bean @Profile("!deepseek") ModelPort scriptedDemoModel() {
         return context -> {
+            if(context.task()!=null && "danmaku.overview".equals(context.task().specification().type())) {
+                if(!context.activeSkills().contains("danmaku-analysis"))return Decision.tool("read_skill",Map.of("name","danmaku-analysis"));
+                var found=context.observations().stream().filter(r->r.tool().equals("query_danmaku")).findFirst();
+                if(found.isEmpty())return Decision.tool("query_danmaku",context.task().specification().conditions());
+                var d=(com.tianmu.agent.core.DanmakuTypes.Dataset)found.get().data().get("analysis");
+                return Decision.answer("【模拟数据】范围 "+d.query().start()+" 至 "+d.query().end()+"；弹幕 "+d.totalMessages()+" 条，参与用户 "+d.uniqueSenders()+" 人。",List.of(found.get().evidenceId()));
+            }
             if (context.task() != null && context.task().specification().type().equals("danmaku.report")) {
                 if (!context.activeSkills().contains("danmaku-analysis")) return Decision.tool("read_skill", Map.of("name", "danmaku-analysis"));
                 var observation = context.observations().stream().filter(r -> r.tool().equals("query_danmaku")).findFirst();

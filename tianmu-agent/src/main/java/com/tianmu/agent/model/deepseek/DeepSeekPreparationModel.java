@@ -23,6 +23,7 @@ final class DeepSeekPreparationModel implements PreparationModelPort {
     private JsonNode call(String prompt, Input input, CallControl control, int tokens) {
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("memory", input.memory()); payload.put("query", input.query()); payload.put("businessDate", input.businessDate().toString());
+        payload.put("requestedAt",input.requestedAt().toString());
         return client.complete(config.preparationModel(), client.messages(prompt, payload), tokens, control);
     }
     public Emotion emotion(Input input, CallControl control) {

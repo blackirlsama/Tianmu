@@ -4,12 +4,13 @@ ARG MAVEN_IMAGE=maven:3.10.0-eclipse-temurin-17
 ARG JAVA_IMAGE=eclipse-temurin:17-jre-jammy
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /build
-ENV MAVEN_OPTS="-Xmx384m -XX:MaxMetaspaceSize=192m"
+ENV MAVEN_OPTS="-Xmx256m -XX:MaxMetaspaceSize=160m -XX:ActiveProcessorCount=2"
+ARG TEST_JVM_OPTIONS="-Xmx256m -XX:MaxMetaspaceSize=160m -XX:ActiveProcessorCount=2"
 COPY tianmu-agent/pom.xml ./pom.xml
 COPY tianmu-agent/src ./src
 COPY tianmu-agent/eval ./eval
 COPY deploy/HealthProbe.java /probe/HealthProbe.java
-RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package \
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp "-DargLine=${TEST_JVM_OPTIONS}" package \
     && javac --release 17 -d /probe/classes /probe/HealthProbe.java
 
 # Explicit isolated integration verification; its credential file is never copied into a layer.
@@ -17,7 +18,7 @@ FROM build AS storage-verify
 ARG STORAGE_TESTS=MysqlStorageIntegrationTest
 RUN --mount=type=cache,target=/root/.m2 --mount=type=secret,id=storage-it-env,required=true \
     set -a && . /run/secrets/storage-it-env && set +a \
-    && mvn -B -ntp "-Dtest=${STORAGE_TESTS}" test
+    && mvn -B -ntp "-DargLine=${TEST_JVM_OPTIONS}" "-Dtest=${STORAGE_TESTS}" test
 
 FROM ${JAVA_IMAGE} AS runtime
 ARG SOURCE_REVISION=unknown

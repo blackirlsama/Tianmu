@@ -20,6 +20,13 @@ class DeploymentContract(unittest.TestCase):
         self.assertIn('COPY tianmu-agent/eval ./eval', dockerfile)
         self.assertIn('!tianmu-agent/eval/**', ignore)
 
+    def test_release_builds_bound_both_maven_and_forked_test_jvm(self):
+        for name in ['Dockerfile', 'Dockerfile.business']:
+            source = (ROOT / 'deploy' / name).read_text(encoding='utf-8')
+            self.assertIn('ENV MAVEN_OPTS="-Xmx256m', source)
+            self.assertIn('ARG TEST_JVM_OPTIONS="-Xmx256m', source)
+            self.assertIn('"-DargLine=${TEST_JVM_OPTIONS}"', source)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

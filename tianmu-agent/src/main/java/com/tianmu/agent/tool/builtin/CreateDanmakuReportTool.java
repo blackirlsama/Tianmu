@@ -16,7 +16,9 @@ import java.util.*;
 @Component
 public final class CreateDanmakuReportTool implements AgentTool {
     private final ObjectMapper json;
+    private final ReportDraftEditor drafts;
     public CreateDanmakuReportTool(ObjectMapper json) {
+        this.drafts=new ReportDraftEditor(json);
         this.json = json.copy().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     }
@@ -26,34 +28,51 @@ public final class CreateDanmakuReportTool implements AgentTool {
         Dataset data = evidence.analysis();
         if (data == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
         context.checkDanmakuQuery(data.query());
-        String sectionSource=ToolArguments.text(call,"sections_json");
+        if(data.audience()!=null && call.arguments().containsKey("topics_json")){
+            ToolResult progress=drafts.append(call,context);
+            if(context.reportClassification(evidence.id()).offset()<data.audience().corpus().size())return progress;
+        }
+        String sectionSource=call.arguments().containsKey("sections_json")?ToolArguments.text(call,"sections_json"):"[]";
         List<Map<String, Object>> sections = data.audience()==null?sections(sectionSource,data):List.of();
         com.tianmu.agent.core.VideoContent.Facts video = null;
-        String videoEvidence = null;
-        if (call.arguments().containsKey("video_evidence_id")) {
-            videoEvidence = ToolArguments.text(call,"video_evidence_id");
+        String videoEvidence=call.arguments().containsKey("video_evidence_id")?ToolArguments.text(call,"video_evidence_id"):
+                Objects.requireNonNullElse(context.reportClassification(evidence.id()),DanmakuClassification.empty()).videoEvidenceId();
+        var savedDraft=Objects.requireNonNullElse(context.reportClassification(evidence.id()),DanmakuClassification.empty());
+        if(savedDraft.videoEvidenceId()!=null && !savedDraft.videoEvidenceId().equals(videoEvidence))throw new AgentException("INVALID_REPORT","同一份报告必须复用同一份视频证据。");
+        if (videoEvidence!=null) {
             video = context.evidence(videoEvidence).videoContent();
             if (video == null || video.videoId()!=data.query().videoId()) throw new AgentException("INVALID_EVIDENCE","Video evidence must match report video");
         }
-        String document = render(data, evidence.id(), sections);
-        if (data.audience()!=null) {
-            var topics=com.tianmu.agent.application.AudienceTopics.parse(json,sectionSource,data.audience(),video);
-            String from="<section class=\"section\" aria-labelledby=\"insights-title\">";
-            int left=document.indexOf(from),right=document.indexOf("<section class=\"section\" aria-labelledby=\"evidence-title\">",left);
-            document=document.substring(0,left)+com.tianmu.agent.application.AudienceReportView.render(data.audience(),topics,data.query().videoId())+document.substring(right);
-            document=document.replace("内容观察依据最多 48 条非随机片段，每个时间段取最早 4 条，不代表全量话题/情绪比例或因果结论。", "话题分析采用下方标明覆盖范围的同文语料；其余抽样弹幕仅供补充查看，不代表全量观点或因果结论。");
-            document=document.replace("模板版本：1.3.0","模板版本：2.0.0");
-        }
+        String document;Map<String,Object> reportDocument=null;
+        if(data.audience()!=null){
+            var progress=Objects.requireNonNullElse(context.reportClassification(evidence.id()),DanmakuClassification.empty());
+            if(progress==null || data.audience().corpusMessages()!=data.totalMessages() || data.audience().corpus().stream().anyMatch(AudienceData.TextGroup::truncated)
+                    || progress.offset()!=data.audience().corpus().size() || progress.topics().stream().mapToLong(AudienceData.Topic::messages).sum()!=data.totalMessages())
+                throw new AgentException("INVALID_REPORT","全部弹幕尚未完成归类，请先完成 classification 中的所有批次，再生成报告。");
+            Set<String> members=new HashSet<>();
+            for(var topic:progress.topics())for(String member:topic.sampleIds())if(!members.add(member))throw new AgentException("INVALID_REPORT","Duplicate topic membership");
+            if(!members.equals(data.audience().corpus().stream().map(AudienceData.TextGroup::id).collect(java.util.stream.Collectors.toSet())))throw new AgentException("INVALID_REPORT","Incomplete topic membership");
+            var presentation=com.tianmu.agent.application.CreatorReportDocument.from(data,progress.topics(),video);
+            try{
+                String source=json.writeValueAsString(presentation);
+                reportDocument=json.readValue(source,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
+                document=com.tianmu.agent.application.CreatorAudienceReport.render(json.readValue(source,com.tianmu.agent.application.CreatorReportDocument.class));
+            }catch(com.fasterxml.jackson.core.JsonProcessingException e){throw new AgentException("INVALID_REPORT","报告内容结构无效，请重试。");}
+        }else{
+        document = render(data, evidence.id(), sections);
         if (video != null) document = document.replace("<footer class=\"footer\">", renderVideo(video, videoEvidence) + "<footer class=\"footer\">");
+        }
         byte[] html = document.getBytes(StandardCharsets.UTF_8);
         var report = context.saveReport(evidence.id(), html);
         String text = (data.demo() ? "【模拟数据】" : "") + "videoId " + data.query().videoId() + " 的弹幕分析报告已生成。\n"
                 + "范围：" + data.query().start() + " 至 " + data.query().end() + "（Asia/Shanghai，结束时刻不包含）。\n"
                 + "已入库且仍保留的弹幕 " + data.totalMessages() + " 条，非空用户ID去重 " + data.uniqueSenders() + " 人。\n"
                 + (data.audience()==null?"内容观察基于 " + data.sampleOccurrenceCount() + " 条抽样片段，按文本去重为 " + data.samples().size() + " 种内容；不代表全量话题或情绪占比。\n":
-                    "话题语料覆盖 "+data.audience().corpusMessages()+" 条弹幕、"+data.audience().corpus().size()+" 组同文；报告包含话题、原文例子、改进建议、播放位置统计和互动用户榜。未分类部分在报告中标明。\n")
+                    "已完整分析本时段全部 "+data.totalMessages()+" 条弹幕，报告包含主要话题、相关画面、观众原话、改进建议和互动排行。\n")
                 + "[查看 HTML 报告](" + report.url() + ")（需登录鉴权）";
-        return new ToolResult(name(), Map.of("artifact_id", report.artifactId(), "url", report.url(), "status", "READY"), evidence.id(), new Answer(text, videoEvidence==null?List.of(evidence.id()):List.of(evidence.id(),videoEvidence)));
+        Map<String,Object> result=new LinkedHashMap<>();result.put("artifact_id",report.artifactId());result.put("url",report.url());result.put("status","READY");
+        if(reportDocument!=null)result.put("report_document",reportDocument);
+        return new ToolResult(name(),result,evidence.id(),new Answer(text,videoEvidence==null?List.of(evidence.id()):List.of(evidence.id(),videoEvidence)));
     }
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> sections(String source, Dataset data) {

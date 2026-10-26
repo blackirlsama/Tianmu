@@ -136,7 +136,7 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         String start = java.net.URLEncoder.encode(query.start().toString(), java.nio.charset.StandardCharsets.UTF_8);
         String end = java.net.URLEncoder.encode(query.end().toString(), java.nio.charset.StandardCharsets.UTF_8);
         JsonNode answer = request("GET", "/internal/agent/danmaku-analysis?videoId=" + query.videoId() + "&start=" + start + "&end=" + end,
-                credentials.token(scope.authorizationRef()), null, control, 524288, 10_000);
+                credentials.token(scope.authorizationRef()), null, control, 4_194_304, 10_000);
         try {
             // The bridge returns raw snippets. Grouped occurrences belong to the Agent's tool/evidence model.
             AnalysisResponse raw = json.treeToValue(answer, AnalysisResponse.class);

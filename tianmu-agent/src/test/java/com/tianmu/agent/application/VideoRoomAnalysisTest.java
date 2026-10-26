@@ -38,9 +38,10 @@ class VideoRoomAnalysisTest {
         String source="[{\"title\":\"<script>bad</script>\",\"observation\":\"询问尺寸\",\"recommendation\":\"补充说明\",\"sample_ids\":[\"1\"]}]";
         var topics=AudienceTopics.parse(json,source,audience(),null);
         assertEquals(3,topics.get(0).messages());
-        String html=AudienceReportView.render(audience(),topics,1001);
+        LocalDateTime end=LocalDateTime.now(DanmakuTypes.ZONE).minusSeconds(1).withNano(0);
+        String html=CreatorAudienceReport.render(data(new Query(1001,end.minusDays(7),end)),topics,null);
         assertTrue(html.contains("&lt;script&gt;"));assertFalse(html.contains("<script>bad"));assertTrue(html.contains("尺寸？"));
-        assertTrue(html.contains("已归入话题 3"));assertTrue(html.contains("未知或超出支持范围的位置：1"));
+        assertTrue(html.contains("3 条相关弹幕"));assertTrue(html.contains("另有 1 条缺少有效播放位置"));
         assertThrows(AgentException.class,()->AudienceTopics.parse(json,source.replace("\"1\"","\"999\""),audience(),null));
         assertThrows(AgentException.class,()->AudienceTopics.parse(json,"["+source.substring(1,source.length()-1)+","+source.substring(1,source.length()-1)+"]",audience(),null));
         assertThrows(AgentException.class,()->AudienceTopics.parse(json,source.replace("\"sample_ids\"","\"messages\":99,\"sample_ids\""),audience(),null));
@@ -58,7 +59,7 @@ class VideoRoomAnalysisTest {
         Clock clock=new Clock(){public ZoneId getZone(){return ZoneOffset.UTC;}public Clock withZone(ZoneId z){return Clock.fixed(time.get(),z);}public Instant instant(){return time.get();}};
         var model=mock(AudienceModelPort.class);var vision=mock(VideoAnalysisService.class);
         when(vision.analyze(anyLong(),any(),any(),anyString(),any(),any())).thenThrow(new AgentException("VIDEO_CONTENT_UNAVAILABLE","disabled"));
-        when(model.summarize(any(),any(),any(),any())).thenReturn("[{\"title\":\"尺寸问题\",\"observation\":\"观众询问尺寸\",\"recommendation\":\"补充尺寸信息\",\"sample_ids\":[\"1\"]}]");
+        when(model.summarize(any(),any(),any(),any())).thenReturn("[{\"title\":\"尺寸问题\",\"observation\":\"观众询问尺寸\",\"recommendation\":\"补充尺寸信息\",\"sample_ids\":[\"1\",\"2\"]}]");
         var beans=new StaticListableBeanFactory();beans.addBean("model",model);
         AtomicInteger reads=new AtomicInteger();CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
         var service=new RoomSummaryService((q,s,c)->{reads.incrementAndGet();entered.countDown();try{release.await(1,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}return data(q);},beans.getBeanProvider(AudienceModelPort.class),vision,json,executor,clock);
@@ -68,7 +69,7 @@ class VideoRoomAnalysisTest {
             service.get(1001,start,owner);assertEquals(1,reads.get());release.countDown();
             long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);RoomSummaryService.View v;
             do{v=service.get(1001,start,owner);if(v.state().equals("READY"))break;Thread.sleep(10);}while(System.nanoTime()<until);
-            assertEquals("READY",v.state());assertEquals(3,v.topics().get(0).messages());
+            assertEquals("READY",v.state());assertEquals(4,v.topics().get(0).messages());
             assertThrows(AgentException.class,()->service.get(1002,start,owner));
             time.set(time.get().plusSeconds(31));service.get(1001,start,owner);
             until=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);
@@ -88,11 +89,12 @@ class VideoRoomAnalysisTest {
         java.util.UUID id=java.util.UUID.randomUUID();
         when(context.evidence("ev_room")).thenReturn(new com.tianmu.agent.core.AgentTypes.Evidence("ev_room",id,owner,null,dataset));
         when(context.saveReport(eq("ev_room"),any())).thenReturn(new ReportRef("report","/report"));
+        when(context.reportClassification("ev_room")).thenReturn(new DanmakuClassification(2,List.of(new Topic("T1","尺寸问题","观众咨询尺寸和颜色","补充信息",List.of("1","2"),4,"",List.of()))));
         var tool=new com.tianmu.agent.tool.builtin.CreateDanmakuReportTool(json);
         tool.execute(new com.tianmu.agent.core.AgentTypes.ToolCall("create_danmaku_report",Map.of("evidence_id","ev_room","sections_json","[{\"title\":\"尺寸问题\",\"observation\":\"尺寸询问\",\"recommendation\":\"补充信息\",\"sample_ids\":[\"1\"]}]")),context);
         var html=org.mockito.ArgumentCaptor.forClass(byte[].class);verify(context).saveReport(eq("ev_room"),html.capture());
         String page=new String(html.getValue(),java.nio.charset.StandardCharsets.UTF_8);
-        assertTrue(page.contains("尺寸问题 · 3 条"));assertTrue(page.contains("用户 9"));assertTrue(page.contains("尺寸？"));assertTrue(page.contains("未知或超出支持范围的位置：1"));
+        assertTrue(page.contains("尺寸问题"));assertTrue(page.contains("4 条相关弹幕"));assertTrue(page.contains("尺寸？"));assertTrue(page.contains("另有 1 条缺少有效播放位置"));
         when(context.scope()).thenReturn(owner);
         when(context.query(any())).thenAnswer(i->((java.util.function.Function<com.tianmu.agent.runtime.control.CallControl,Object>)i.getArgument(0)).apply(new com.tianmu.agent.runtime.control.CallControl(Instant.now().plusSeconds(10),new com.tianmu.agent.runtime.control.CancellationToken())));
         when(context.registerDanmakuEvidence(any())).thenAnswer(i->new com.tianmu.agent.core.AgentTypes.Evidence("ev_room",id,owner,null,i.getArgument(0)));

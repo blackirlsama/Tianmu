@@ -6,8 +6,10 @@ import java.util.*;
 /** Exact SQL statistics are separate from the bounded text corpus used for interpretation. */
 public final class AudienceData {
     private AudienceData() {}
-    public record Interaction(String userId, long messages, int activeDays, long distinctTexts, Instant lastAt) {
+    public record Interaction(String userId, long messages, int activeDays, long distinctTexts, Instant lastAt, String nickname) {
+        public Interaction(String userId,long messages,int activeDays,long distinctTexts,Instant lastAt){this(userId,messages,activeDays,distinctTexts,lastAt,"");}
         public Interaction {
+            nickname=nickname==null?"":nickname;
             if (userId == null || !userId.matches("[1-9][0-9]{0,18}") || messages < 1 || activeDays < 1 || activeDays > 31
                     || distinctTexts < 0 || distinctTexts > messages || lastAt == null) throw new IllegalArgumentException("Invalid interaction aggregate");
         }
@@ -18,22 +20,21 @@ public final class AudienceData {
     public record TextGroup(String id, String text, long count, Long playbackMs, boolean truncated, List<Long> trend) {
         public TextGroup(String id,String text,long count,Long playbackMs,boolean truncated){this(id,text,count,playbackMs,truncated,List.of());}
         public TextGroup {
-            if (id == null || !id.matches("[1-9][0-9]{0,18}") || text == null || text.length() > 320 || count < 1
+            if (id == null || !id.matches("[1-9][0-9]{0,18}") || text == null || text.length() > 8192 || count < 1
                     || playbackMs != null && (playbackMs < 0 || playbackMs > 3_600_000)) throw new IllegalArgumentException("Invalid grouped text");
             trend=trend==null?List.of():List.copyOf(trend);
             if(!trend.isEmpty() && (trend.size()!=12 || trend.stream().anyMatch(n->n==null || n<0) || trend.stream().mapToLong(Long::longValue).reduce(0,Math::addExact)!=count))
                 throw new IllegalArgumentException("Inconsistent grouped trend");
         }
         public TextGroup forModel(){
-            int points=text.codePointCount(0,text.length());
-            return points<=80?this:new TextGroup(id,text.substring(0,text.offsetByCodePoints(0,80)),count,playbackMs,true,trend);
+            return this;
         }
     }
     public record Overview(List<Interaction> interactions, List<Position> playback, long unknownPlayback,
                            List<TextGroup> corpus, long corpusMessages, long totalMessages) {
         public Overview {
             interactions = List.copyOf(interactions); playback = List.copyOf(playback); corpus = List.copyOf(corpus);
-            if (interactions.size() > 20 || playback.size() > 120 || corpus.size() > 120 || unknownPlayback < 0
+            if (interactions.size() > 20 || playback.size() > 120 || corpus.size() > 5000 || unknownPlayback < 0
                     || corpusMessages < 0 || corpusMessages > totalMessages || unknownPlayback > totalMessages)
                 throw new IllegalArgumentException("Invalid audience coverage");
             Set<String> ids = new HashSet<>(); long covered = 0, located = 0;

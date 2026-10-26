@@ -1,6 +1,6 @@
 {
   "name": "create_danmaku_report",
-  "description": "Render a private HTML report from owned query_danmaku evidence. sections_json is an array of up to 6 topics with title,observation,recommendation,sample_ids. When analysis.audience exists, classify audience.corpus IDs, each ID at most once; recommendation may be empty. Optional video_context requires supplied same-video video_evidence_id and video_at_ms (up to 4 actual sampled timestamps). Server computes topic counts, coverage, playback statistics and interaction ranking; do not invent counts. Without audience use 1-4 legacy sample IDs per section. Empty array is valid for insufficient data. Report success delivers the answer and ends the run.",
+  "description": "Build a creator-facing report with full danmaku analysis; no model calls occur inside this tool. For classification returned by query_danmaku, submit current offset and topics_json: an array of {topic_key:T1..T6,title,observation,recommendation,sample_ids,optional video_context,optional video_at_ms}. Assign EVERY current batch ID exactly once; sample_ids means all members, not examples. Reuse topic_key across batches and update its prose using prior conclusions plus current feedback. Include video_evidence_id when available. Server saves the draft, computes exact counts and returns the next full batch. The LAST batch automatically renders and delivers the HTML report; earlier batches do not finish the run. A report cannot be produced with unread or unclassified text. For zero messages, pass evidence_id only. Legacy data without audience uses sections_json with up to 6 observations and 1-4 legacy sample IDs each.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -12,14 +12,15 @@
         "type": "string",
         "maxLength": 12000
       },
+      "offset": {"type":"integer","minimum":0,"maximum":5000},
+      "topics_json": {"type":"string","maxLength":24000},
       "video_evidence_id": {
         "type": "string",
         "maxLength": 80
       }
     },
     "required": [
-      "evidence_id",
-      "sections_json"
+      "evidence_id"
     ],
     "additionalProperties": false
   }

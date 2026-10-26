@@ -10,7 +10,7 @@
       </form>
       <div class="room-live-heading"><strong>实时弹幕汇总</strong><button type="button" @click="monitoring ? stop() : start()">{{ monitoring ? '停止汇总' : '开始汇总' }}</button></div>
       <p class="room-hint">使用当前视频的弹幕作为房间讨论；从开始汇总时累计已入库弹幕，页面每15秒刷新，话题最多每30秒更新。关闭面板停止刷新。</p>
-      <p class="room-hint">话题最多分析120组高频同文，每组读取前80字；数量统计按全量记录计算，归类和建议需要复核。</p>
+      <p class="room-hint">按当前区间全量分析弹幕，内容较多时分批处理；正文原话仅用于举例，分析不抽样。</p>
       <p v-if="error" role="status">{{ error }}</p>
       <template v-if="snapshot">
         <p v-if="snapshot.demo" class="demo-label">模拟数据，仅用于演示</p>
@@ -20,17 +20,17 @@
           <p class="room-hint">统计范围：{{ snapshot.start }} — {{ snapshot.end }}。不含尚未入库或已删除记录。</p>
           <button type="button" :disabled="busy" @click="reportSnapshot">按本次区间生成报告</button>
           <p class="room-hint">数量数据截至 {{ formatDataUpdatedAt(snapshot.data.dataAsOf) }}；话题摘要更新于 {{ formatDataUpdatedAt(snapshot.updatedAt) || '尚未生成' }}。</p>
-          <p v-if="snapshot.data.audience" class="room-hint">当前话题语料覆盖 {{ snapshot.data.audience.corpusMessages }} / {{ snapshot.data.totalMessages }} 条；上次成功摘要归类 {{ classified }} 条。{{ snapshot.videoAnalyzed ? '已结合视频采样画面。' : '尚未结合视频画面。' }}</p>
+          <p v-if="snapshot.data.audience" class="room-hint">已读取 {{ snapshot.data.audience.corpusMessages }} 条弹幕；上次成功摘要处理 {{ classified }} 条。{{ snapshot.videoAnalyzed ? '已结合视频画面。' : '尚未结合视频画面。' }}</p>
           <article v-for="topic in snapshot.topics" :key="topic.id" class="room-topic">
             <h4>{{ topic.title }} <small>{{ topic.messages }} 条</small></h4><p>{{ topic.observation }}</p>
             <p v-if="topic.videoContext"><strong>相关画面：</strong>{{ topic.videoContext }}</p>
             <p v-if="topic.videoContext"><router-link v-for="at in topic.videoAtMs" :key="at" :to="`/video/${videoId}?t=${at / 1000}`">查看 {{ at / 1000 }} 秒采样位置 ↗ </router-link></p>
             <p v-if="topic.recommendation"><strong>建议：</strong>{{ topic.recommendation }}</p>
-            <p v-if="topicTrend(topic)" class="room-hint">发送时间趋势（区间内12箱）：{{ topicTrend(topic) }}，仅含本话题已归类同文组。</p>
+            <p v-if="topicTrend(topic)" class="room-hint">{{ topicTrend(topic) }}</p>
             <blockquote v-for="sample in examples(topic)" :key="sample.id">{{ sample.text }} <small>同文 {{ sample.count }} 条</small><router-link v-if="sample.playbackMs != null" :to="`/video/${videoId}?t=${sample.playbackMs / 1000}`">查看片段 ↗</router-link></blockquote>
           </article>
           <p v-if="!snapshot.topics.length">{{ snapshot.data.totalMessages ? '尚未形成可靠话题，数量统计仍可查看。' : '这段时间还没有已入库弹幕。' }}</p>
-          <details v-if="snapshot.data.audience"><summary>最铁互动用户</summary><p class="room-hint">按活跃天数、不同原文数、发言数排序；不表示关注关系或忠诚度。</p><ol><li v-for="fan in snapshot.data.audience.interactions" :key="fan.userId">用户 {{ fan.userId }} · {{ fan.messages }} 条 · {{ fan.activeDays }} 天 · {{ fan.distinctTexts }} 种原文</li></ol></details>
+          <details v-if="snapshot.data.audience"><summary>互动最活跃的观众</summary><ol><li v-for="(fan, index) in snapshot.data.audience.interactions" :key="fan.userId">{{ fan.nickname || `观众 ${index + 1}` }} · {{ fan.messages }} 条发言 · 活跃 {{ fan.activeDays }} 天</li></ol></details>
         </template>
       </template>
     </div>
@@ -56,7 +56,12 @@ function topicTrend(topic) {
   if (snapshot.value?.state !== 'READY') return ''
   const groups = (snapshot.value?.data?.audience?.corpus || []).filter(g => topic.sampleIds.includes(g.id))
   if (!groups.length || groups.some(g => !g.trend || g.trend.length !== 12)) return ''
-  return groups.reduce((bins, g) => bins.map((n, i) => n + g.trend[i]), Array(12).fill(0)).join(' → ')
+  const bins = groups.reduce((counts, g) => counts.map((n, i) => n + g.trend[i]), Array(12).fill(0))
+  const peak = Math.max(...bins)
+  if (!peak) return ''
+  const from = Date.parse(`${snapshot.value.start}+08:00`), to = Date.parse(`${snapshot.value.end}+08:00`)
+  const at = from + bins.indexOf(peak) * Math.ceil((to - from) / 12000) * 1000
+  return `这类讨论在 ${chinaTime(new Date(at)).replace('T', ' ')} 附近最集中，该时段有 ${peak} 条相关弹幕。`
 }
 function reportSnapshot() {
   try { emit('report', buildReportMessage({ videoId: props.videoId, start: snapshot.value.start, end: snapshot.value.end, focus: '结合视频内容整理话题、真实例子和建议。' })); error.value = '' }

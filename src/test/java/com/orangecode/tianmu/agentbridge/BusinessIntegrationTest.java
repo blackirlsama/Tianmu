@@ -21,6 +21,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="BUSINESS_IT", matches="true")
 class BusinessIntegrationTest {
+    @Test void completeCorpusContainsAllTwoHundredTextsWithoutClippingAndUsesShortVideoBins(){
+        db.update("UPDATE video SET duration=31.698 WHERE video_id=1001");
+        db.update("UPDATE user SET nickname='模拟·布丁' WHERE user_id=881");
+        for(int i=0;i<200;i++)db.update("INSERT INTO bullet(bullet_id,video_id,user_id,content,color,playback_time,create_time) VALUES(?,1001,881,?,'white',?,?)",
+                19000+i,i==0?"绒毛细节".repeat(45):"观众希望继续看到小鸭的日常片段"+i,(i*73%316)/10.0,
+                Timestamp.from(day.minusDays(i%7).atTime(10,i%60).atZone(ZoneId.of("Asia/Shanghai")).toInstant()));
+        var service=new BusinessDanmakuAnalysis(db,new BridgeProperties("tianmu",Set.of("normal"),"Asia/Shanghai",5));
+        var result=service.query(principal(),1001,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay());
+        assertEquals(200,result.totalMessages());assertEquals(200,result.audience().corpusMessages());assertEquals(200,result.audience().corpus().size());
+        assertTrue(result.samples().isEmpty());assertTrue(result.audience().corpus().stream().noneMatch(BusinessDanmakuAnalysis.TextGroup::truncated));
+        assertTrue(result.audience().corpus().stream().anyMatch(g->g.text().equals("绒毛细节".repeat(45))));
+        assertTrue(result.audience().playback().size()>8);assertTrue(result.audience().playback().stream().allMatch(p->p.endMs()-p.startMs()<=3000));
+        assertEquals("模拟·布丁",result.audience().interactions().get(0).nickname());assertEquals(7,result.audience().interactions().get(0).activeDays());
+    }
     @Test void sevenDayRoomOverviewUsesExactGroupsPositionsAndInteractionRanking() {
         db.update("UPDATE video SET duration=20 WHERE video_id=1001");
         String[] text={"尺寸？","尺寸？","联系13812345678","颜色？"};
@@ -33,7 +47,7 @@ class BusinessIntegrationTest {
         var service=new BusinessDanmakuAnalysis(db,new BridgeProperties("tianmu",Set.of("normal"),"Asia/Shanghai",5));
         var result=service.query(principal(),1001,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay());
         assertEquals(5,result.totalMessages());assertEquals(2,result.uniqueSenders());
-        var a=result.audience();assertEquals(4,a.corpusMessages());assertEquals(3,a.corpus().size());
+        var a=result.audience();assertEquals(5,a.corpusMessages());assertEquals(4,a.corpus().size());
         assertEquals(2,a.unknownPlayback());assertEquals(3,a.playback().stream().mapToLong(BusinessDanmakuAnalysis.Position::count).sum());
         assertTrue(a.playback().stream().allMatch(p->p.endMs()<=20000));
         assertEquals("881",a.interactions().get(0).userId());assertEquals(3,a.interactions().get(0).messages());assertEquals(2,a.interactions().get(0).activeDays());
@@ -58,6 +72,8 @@ class BusinessIntegrationTest {
         new ResourceDatabasePopulator(new ClassPathResource("business-schema.sql")).execute(source);
         if(db.queryForObject("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='video' AND COLUMN_NAME='duration'",Integer.class)==0)
             db.execute("ALTER TABLE video ADD COLUMN duration DOUBLE DEFAULT 180");
+        if(db.queryForObject("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='user' AND COLUMN_NAME='nickname'",Integer.class)==0)
+            db.execute("ALTER TABLE user ADD COLUMN nickname VARCHAR(255) NOT NULL DEFAULT ''");
         db.update("DELETE FROM bullet WHERE video_id IN (1001,1002,1003)");
         db.update("DELETE FROM video_stats WHERE video_id IN (1001,1002,1003)");
         for (long id : List.of(881L,882L)) db.update("INSERT INTO user(user_id,state,is_delete) VALUES(?,'normal',0) ON DUPLICATE KEY UPDATE state='normal',is_delete=0", id);

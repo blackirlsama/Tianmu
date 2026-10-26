@@ -69,8 +69,8 @@ public final class RoomSummaryService {
     private View busy(View v,String error){return new View(v.videoId(),v.version(),"UPDATING",v.start(),v.end(),v.updatedAt(),v.data(),v.topics(),v.videoAnalyzed(),error,v.demo());}
     private void refresh(Key key,Slot slot,Query bounds,AccessScope owner){
         AtomicInteger calls=new AtomicInteger();
-        CallControl control=new CallControl(clock.instant().plusSeconds(25),new CancellationToken(),new ModelBudget(32768,8192),()->{
-            calls.updateAndGet(n->{if(n>=3)throw new AgentException("MODEL_CALL_BUDGET_EXCEEDED","Room refresh call limit");return n+1;});
+        CallControl control=new CallControl(clock.instant().plusSeconds(120),new CancellationToken(),new ModelBudget(131072,8192),()->{
+            calls.updateAndGet(n->{if(n>=12)throw new AgentException("MODEL_CALL_BUDGET_EXCEEDED","Room refresh call limit");return n+1;});
         });
         var usage=new com.tianmu.agent.harness.trace.TraceUsage();
         var span=tracer.spanBuilder("agent.room.summary").startSpan();
@@ -98,7 +98,7 @@ public final class RoomSummaryService {
             if(!fingerprint.equals(slot.fingerprint)) {
                 if(data.audience().corpus().isEmpty())topics=List.of();
                 else if(models.getIfAvailable()!=null) {
-                    topics=AudienceTopics.parse(json,models.getObject().summarize(data,topics,video,control),data.audience(),video);
+                    topics=new FullAudienceAnalysis(json,models).analyze(data,video,control);
                     topics=stableIds(slot.view.topics(),topics);
                 } else topics=List.of();
                 slot.fingerprint=fingerprint;

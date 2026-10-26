@@ -72,7 +72,7 @@ public class AgentRuntime {
                 .filter(tool -> run.task() == null || run.task().allowedTools().contains(tool.name()))
                 .map(ToolDefinition::name).toList();
         Map<String, Object> start = new HashMap<>();
-        start.put("agent.max_turns", harness.policy().maxTurns());
+        start.put("agent.max_turns", maxTurns(run));
         start.put("agent.available_tools", available.stream().limit(32).toList());
         start.put("agent.available_tool_count", available.size());
         if (model.modelName() != null) start.put("model.name", model.modelName());
@@ -82,7 +82,7 @@ public class AgentRuntime {
         finally {
             Map<String, Object> end = new HashMap<>();
             end.put("agent.total_turns", run.snapshot().steps());
-            end.put("agent.reached_turn_limit", run.snapshot().steps() >= harness.policy().maxTurns());
+            end.put("agent.reached_turn_limit", run.snapshot().steps() >= maxTurns(run));
             end.put("agent.outcome", !returned ? "ERROR" : run.snapshot().status().name());
             TraceUsage usage = io.opentelemetry.context.Context.current().get(TraceUsage.KEY);
             if (usage != null) end.putAll(usage.totals());
@@ -92,7 +92,7 @@ public class AgentRuntime {
     private void runLoopBody(RunState run, String message) {
         run.emit("PROGRESS", Map.of("stage", "harness"));
         Progress progress = new Progress();
-        int max = harness.policy().maxTurns();
+        int max = maxTurns(run);
         for (int step = 0; step < max; step++) {
             run.checkpoint();
             run.nextStep();
@@ -103,6 +103,10 @@ public class AgentRuntime {
         }
         if (!harness.policy().finalizeEnabled() || run.execution().evidence().isEmpty()) { run.fail("STEP_LIMIT"); return; }
         finalizeWithoutTools(run, message);
+    }
+    private int maxTurns(RunState run){
+        return run.task()!=null && "danmaku.report".equals(run.task().specification().type())
+                ?Math.max(harness.policy().maxTurns(),Math.min(32,run.modelCallLimit()-1)):harness.policy().maxTurns();
     }
     private ModelContext context(RunState run, String message, int remaining, boolean finalizing) {
         return harness.stage(run, "agent.context", null, null, Map.of("context.observation_count", run.execution().observations().size()),

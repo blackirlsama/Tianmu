@@ -99,6 +99,11 @@ public class ToolDispatcher {
             return value;
         }
         public void checkQuery(MetricQuery query) { business.checkQuery(run, query); }
+        public com.tianmu.agent.core.DanmakuClassification reportClassification(String id){evidence(id);return run.execution().classification(id);}
+        public void saveReportClassification(String id,com.tianmu.agent.core.DanmakuClassification progress){
+            if(!tool.name().equals("create_danmaku_report"))throw new AgentException("TOOL_CAPABILITY_DENIED","Only report tool may update its draft");
+            evidence(id);run.execution().classification(id,progress);
+        }
         public Evidence registerEvidence(MetricData data) { return business.registerEvidence(run, data); }
         public <T> T query(Function<CallControl, T> operation) { return harness.toolCall(run, operation); }
         public <T> T videoQuery(Function<CallControl, T> operation) { return harness.videoToolCall(run, operation); }

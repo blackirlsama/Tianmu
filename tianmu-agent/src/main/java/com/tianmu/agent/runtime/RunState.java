@@ -14,7 +14,7 @@ import java.util.*;
 import java.util.function.Consumer;
 
 /** Task state and terminal arbitration. Execution data, event storage and transport are separate. */
-public class RunState {
+public class RunState implements EvidenceContext {
     public final UUID id;
     public final UUID sessionId;
     public final long turnSeq;
@@ -29,7 +29,7 @@ public class RunState {
     private final ExecutionState execution;
     private final RunEventStore events;
     private Status status = Status.QUEUED;
-    private int steps, modelCalls, preparationCalls, modelCallLimit = 16;
+    private int steps, modelCalls, preparationCalls, externalModelCalls, modelCallLimit = 16;
     private StopReason stopReason;
     private Result prepared;
     private PreparedTask task;
@@ -38,6 +38,7 @@ public class RunState {
     private final CancellationToken cancellation = new CancellationToken();
     private volatile Instant deadline;
     private boolean controlBound;
+    private ModelBudget modelBudget = new ModelBudget(0, 8192);
     private boolean persistedControl;
     private Answer answer;
     private String clarification, errorCode;
@@ -63,6 +64,7 @@ public class RunState {
     public synchronized void restore(Snapshot value) {
         restored = value; status = value.status(); steps = value.steps(); answer = value.answer(); clarification = value.clarification();
         errorCode = value.errorCode(); stopReason = value.stopReason(); modelCalls = value.modelCalls(); preparationCalls = value.preparationCalls();
+        externalModelCalls = Math.max(0, value.totalModelCalls() - modelCalls - preparationCalls);
         traceId = value.traceId(); task = value.task();
         if (task != null) modelCallLimit = task.maxModelCalls();
     }
@@ -76,13 +78,17 @@ public class RunState {
         cancellation.cancel(value.stopReason()); observers.forEach(observer -> notifyObserver(observer, value));
     }
     public ExecutionState execution() { return execution; }
+    public UUID runId() { return id; }
+    public AccessScope scope() { return owner; }
+    public LocalDate businessDate() { return businessDate; }
+    public EvidenceStore evidenceStore() { return execution.evidence(); }
     public RunEventStore events() { return events; }
     public synchronized Snapshot snapshot() {
         if (restored != null) return restored;
         return new Snapshot(id, status, createdAt, steps, answer, clarification, errorCode, traceId, stopReason, modelCalls,
                 prepared == null ? null : prepared.route(), prepared == null || prepared.faq() == null ? null : prepared.faq().id(),
                 prepared == null || prepared.faq() == null ? null : prepared.faq().version(), prepared == null ? null : prepared.request(), task,
-                preparationCalls, preparationCalls + modelCalls, sessionId, turnSeq);
+                preparationCalls, preparationCalls + modelCalls + externalModelCalls, sessionId, turnSeq);
     }
     public synchronized void prepared(Result result) { checkpoint(); prepared = Objects.requireNonNull(result); backend.save(this); }
     public synchronized PreparedRequest preparedRequest() { return prepared == null ? restored == null ? null : restored.preparation() : prepared.request(); }
@@ -100,7 +106,10 @@ public class RunState {
     }
     public CancellationToken cancellation() { return cancellation; }
     public Instant deadline() { return deadline; }
-    public CallControl callControl() { return new CallControl(deadline, cancellation); }
+    public CallControl callControl() { return callControl(deadline, cancellation); }
+    public CallControl callControl(Instant until, CancellationToken token) { return new CallControl(until, token, modelBudget, this::externalModelCallStarted); }
+    public synchronized ModelBudget modelBudget() { return modelBudget; }
+    public synchronized void configureBudget(LoopPolicy policy) { if (!controlBound) modelBudget = new ModelBudget(policy.maxTokens(), policy.tokenReservation()); }
     public synchronized boolean bindControl(Duration timeout) {
         return bindControl(timeout, 16);
     }
@@ -113,8 +122,9 @@ public class RunState {
     public synchronized int modelCallLimit() { return modelCallLimit; }
     public void modelCallStarted() { checkpoint(); synchronized (this) { reserveModelCall(); modelCalls++; backend.save(this); } }
     public void preparationCallStarted() { checkpoint(); synchronized (this) { reserveModelCall(); preparationCalls++; backend.save(this); } }
+    public void externalModelCallStarted() { checkpoint(); synchronized (this) { reserveModelCall(); externalModelCalls++; backend.save(this); } }
     private void reserveModelCall() {
-        if (modelCalls + preparationCalls >= modelCallLimit) throw new AgentException("MODEL_CALL_BUDGET_EXCEEDED", "Request model-call budget exhausted");
+        if (modelCalls + preparationCalls + externalModelCalls >= modelCallLimit) throw new AgentException("MODEL_CALL_BUDGET_EXCEEDED", "Request model-call budget exhausted");
     }
     public TurnControl.Reservation reserveFinalResponse() { return turnControl.reserve(); }
     public void onTerminal(Consumer<Snapshot> observer) {
@@ -153,6 +163,7 @@ public class RunState {
             case "TOOL_FAILURE_LIMIT" -> StopReason.TOOL_FAILURE_LIMIT;
             case "STEP_LIMIT" -> StopReason.STEP_LIMIT;
             case "MODEL_CALL_BUDGET_EXCEEDED" -> StopReason.MODEL_CALL_BUDGET_EXCEEDED;
+            case "MODEL_TOKEN_BUDGET_EXCEEDED" -> StopReason.MODEL_TOKEN_BUDGET_EXCEEDED;
             case "NO_PROGRESS" -> StopReason.NO_PROGRESS;
             default -> StopReason.ERROR;
         };
@@ -186,7 +197,7 @@ public class RunState {
             };
             Snapshot base = snapshot();
             Snapshot proposed = new Snapshot(id, target, createdAt, steps, value, text, code, base.traceId(), reason, modelCalls,
-                    base.route(), base.faqId(), base.faqVersion(), base.preparation(), task, preparationCalls, modelCalls + preparationCalls, sessionId, turnSeq);
+                    base.route(), base.faqId(), base.faqVersion(), base.preparation(), task, preparationCalls, modelCalls + preparationCalls + externalModelCalls, sessionId, turnSeq);
             // No terminal status, cancellation or DONE is exposed before this durable transaction succeeds.
             completed = backend.commit(this, proposed, event, data,
                     Map.of("status", target.name(), "run_id", id.toString(), "stop_reason", reason.name()));

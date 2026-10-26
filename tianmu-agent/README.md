@@ -21,11 +21,12 @@ java -jar tianmu-agent/target/operations-agent-0.7.0-SNAPSHOT.jar
 flowchart TD
     A["API / RunService：认证、会话、幂等与入队"]
     A --> B["RequestOrchestrator：协调请求"]
-    B --> C["PreparationService：FAQ 与三路识别"]
+    B --> C["PreparationService：FAQ 与确定性准备"]
     C -->|FAQ / 澄清| F["DeliveryService：统一交付"]
-    C -->|继续| U["问题理解：澄清 + 条件提取 + 改写"]
-    C -->|并行关键分支| I["意图识别"]
-    C -->|并行旁路| M["情绪识别：非阻塞"]
+    C -->|条件明确| D["TaskAssembler：固定 PreparedTask"]
+    C -->|仍需模型判断| U["问题理解：澄清 + 条件提取 + 改写"]
+    C -->|仍需模型判断，并行| I["意图识别"]
+    C -->|显式启用时| M["情绪识别：非阻塞"]
     U -->|需澄清| F
     U --> V["服务端意图、条件与规则校验"]
     I --> V
@@ -40,7 +41,7 @@ flowchart TD
 | 目录 | 职责与约束 |
 | --- | --- |
 | `api/` | HTTP / SSE，接口与鉴权接入 |
-| `preparation/` | FAQ 优先短路，意图、问题理解和情绪三路并行，服务端汇合校验 |
+| `preparation/` | FAQ 优先；确定性规则先检查，明确任务直接准备，其余请求并行理解/意图识别，情绪识别可选 |
 | `application/` | 任务组装、受限历史视图、统一交付 |
 | `runtime/` | 请求编排、循环、状态与调度；`control/` 负责超时、取消和终态竞争 |
 | `harness/` | Hook、Transform 与 Trace |
@@ -50,7 +51,9 @@ flowchart TD
 | `adapters/`、`demo/` | 外部系统适配与本地模拟实现 |
 | `core/`、`resource/` | 共享契约与有界资源读取 |
 
-意图未知、关键识别超时或候选条件与服务端解析冲突时追问；仅改写无效时回到原文。情绪只取已就绪结果。三路独立调用均计入总预算，模型意图和提取的条件不直接作为授权或执行条件。
+默认 `agent.preparation.deterministic-routing=true`：规则可明确解析的指标、视频内容和弹幕报告任务跳过模型识别，缺失或非法必需条件直接澄清。其余请求仍使用模型理解与意图识别；候选条件必须匹配服务端解析。`emotion-enabled=false` 默认关闭情绪旁路，启用时只取已就绪结果。所有实际模型调用均计入总预算，模型输出不授予权限。显式使用旧版四参数及其简化 `PreparationPolicy` 构造器时保留模型优先行为，方便已有嵌入调用兼容；Spring 使用完整配置构造器。
+
+准备结果保存服务端解析的 specification，`TaskAssembler` 复用它并固定资源版本与按任务筛选的工具上限。持久化 JSON 保留原有 `type/conditions/provenance`，Java 侧使用类型化条件；新增可选的 preparation.specification，旧记录缺失时仍可读取。视频播放范围支持秒数区间或 mm:ss 区间，显式区间最长120秒；工具和返回证据都不能突破用户指定范围，允许在范围内进一步细查。未识别任务默认不授予工具。
 
 业务 SQL 位于根工程的 `agentbridge/`，模型协议位于模型适配器。模型返回决策，Runtime 执行工具；工具不能直接控制终态或发送 SSE。
 
@@ -102,3 +105,13 @@ git diff --check
 - [弹幕分析报告](docs/弹幕分析报告.md)：统一videoId、Tool/Skill、统计与样例口径、私有HTML交付。
 - [部署说明](../docs/DEPLOYMENT.md)：profiles 与环境变量。
 - [路线图](../docs/ROADMAP.md)：尚未实现的能力与后续方向。
+
+模型调用次数与 Token 预留、结算及配置见[模型调用预算](docs/模型调用预算.md)。Token 上限默认关闭；文本、视觉与转写共享任务额度，货币费用结算尚未实现。
+
+文本模型的历史裁剪、重复 Schema 消除与发送前大小限制见[上下文预算](docs/上下文预算.md)。必要证据超限时明确失败，避免丢失口径或证据引用。
+
+视频模型接口拆分、同请求在途合并、独立取消与缓存并发说明见[视频分析并发与缓存](docs/视频分析并发与缓存.md)。
+
+本轮执行上下文、Spring 执行器、Caffeine、存储端口、OTLP 和前端职责整理，以及 SDK 保留决策，见[架构边界与组件选型](docs/架构边界与组件选型.md)。
+
+后续以创作者复盘为主线，按[产品与技术迭代方案](docs/产品与技术迭代方案.md)推进；首批[24条验收场景](eval/scenarios.json)为待绑定素材/标注的清单，不代表真实模型评测结果。

@@ -79,7 +79,7 @@ public final class AgentTypes {
                              String metricVersion, String source, Instant dataAsOf,
                              String timezone, boolean complete, boolean demo) {}
     public record Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis,
-                           com.tianmu.agent.video.VideoContent.Facts videoContent) {
+                           com.tianmu.agent.core.VideoContent.Facts videoContent) {
         public Evidence(String id, UUID runId, AccessScope owner, MetricData data) { this(id, runId, owner, data, null, null); }
         public Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis) { this(id, runId, owner, data, analysis, null); }
         public Evidence {

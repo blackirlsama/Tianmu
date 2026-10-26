@@ -13,7 +13,7 @@ public class MetricTaskSpecificationResolver implements TaskSpecificationResolve
         if (DanmakuReportTask.requested(original) || com.tianmu.agent.core.ConversationTopics.general(original)) return Optional.empty();
         var ids = DanmakuTarget.matcher(original).results().map(m -> m.group(1)).toList();
         var dates = Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(original).results().map(m -> m.group()).toList();
-        if (original.contains("弹幕") && ids.size() == 1 && (dates.size() == 1 || dates.isEmpty() && original.contains("昨天"))) {
+        if (original.contains("弹幕") && ids.size() == 1 && (dates.size() == 1 && !original.contains("昨天") || dates.isEmpty() && original.contains("昨天"))) {
             try {
                 long video = Long.parseLong(ids.get(0));
                 String date = dates.isEmpty() ? businessDate.minusDays(1).toString() : LocalDate.parse(dates.get(0)).toString();

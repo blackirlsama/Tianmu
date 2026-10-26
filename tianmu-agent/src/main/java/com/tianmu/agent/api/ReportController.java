@@ -2,7 +2,7 @@ package com.tianmu.agent.api;
 
 import com.tianmu.agent.access.IdentityPort;
 import com.tianmu.agent.core.AgentException;
-import com.tianmu.agent.runtime.store.RunRepository;
+import com.tianmu.agent.runtime.store.ReportStore;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
@@ -10,8 +10,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/agent/runs/{runId}/reports")
 public final class ReportController {
-    private final IdentityPort identity; private final RunRepository reports;
-    public ReportController(IdentityPort identity, RunRepository reports) { this.identity = identity; this.reports = reports; }
+    private final IdentityPort identity; private final ReportStore reports;
+    public ReportController(IdentityPort identity, ReportStore reports) { this.identity = identity; this.reports = reports; }
     @GetMapping("/{artifactId}")
     public ResponseEntity<byte[]> report(@PathVariable UUID runId, @PathVariable String artifactId,
             @RequestHeader(value="Authorization", required=false) String auth) {

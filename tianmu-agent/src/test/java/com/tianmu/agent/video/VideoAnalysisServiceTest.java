@@ -1,5 +1,7 @@
 package com.tianmu.agent.video;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tianmu.agent.core.AgentException;
 import com.tianmu.agent.core.AgentTypes.AccessScope;
@@ -45,16 +47,50 @@ class VideoAnalysisServiceTest {
     @Test void contentIsAnchoredCachedPerOwnerAndUsageCountedWithoutInventingAudio() {
         String response="{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"{\\\"summary\\\":\\\"角色进入画面\\\",\\\"moments\\\":[{\\\"atMs\\\":500,\\\"observation\\\":\\\"角色出现在画面左侧\\\"}]}\"}}],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":9}}";
         var auth=new AtomicInteger(); var http=http(response); var service=service(port(auth),http); var usage=new TraceUsage();
+        var budget = new ModelBudget(100, 50);
         try (var ignored=Context.current().with(TraceUsage.KEY,usage).makeCurrent()) {
-            var first=service.analyze(7,null,null,"",owner("1"),control());
+            var first=service.analyze(7,null,null,"",owner("1"),control().withBudget(budget));
             assertEquals("SAMPLED_FRAMES",first.coverage()); assertEquals("",first.transcript());
             assertEquals(500,first.moments().get(0).atMs());
-            assertEquals(first,service.analyze(7,null,null,"",owner("1"),control()));
-            assertEquals(2,auth.get(),"Reauthorize even on cache hits");
+            assertEquals(first,service.analyze(7,null,null,"",owner("1"),control().withBudget(budget)));
+            assertEquals(3,auth.get(),"Reauthorize shared results and cache hits");
             assertEquals(1L,usage.totals().get("usage.reported_calls"));
             assertEquals(26L,usage.totals().get("usage.total_tokens"));
-            service.analyze(7,null,null,"",owner("2"),control());
+            service.analyze(7,null,null,"",owner("2"),control().withBudget(budget));
             assertEquals(2L,usage.totals().get("usage.reported_calls"),"Cache must not cross owners");
+            assertEquals(52L, budget.attributes().get("budget.charged_tokens"), "Cache hit must not reserve or charge tokens");
+        }
+    }
+    @Test void tokenBudgetRejectsBeforeVisionNetworkRequest() {
+        var http = http("{}");
+        var service = service(port(new AtomicInteger()), http);
+        var budget = new ModelBudget(10, 50);
+        try (var scope = Context.current().makeCurrent()) {
+            assertEquals("MODEL_TOKEN_BUDGET_EXCEEDED", assertThrows(AgentException.class, () -> service.analyze(7, null, null, "", owner("1"), control().withBudget(budget))).code());
+            verifyNoInteractions(http);
+        }
+    }
+    @Test void transcriptionWithoutUsageRetainsBudgetAndPreventsVisionDispatch() {
+        VideoContentPort port = new VideoContentPort() {
+            public VideoContent.Source source(long id, AccessScope scope, CallControl c) { return new VideoContent.Source(id, VERSION, 1000); }
+            public VideoContent.Media media(long id, String version, long start, long end, AccessScope scope, CallControl c) {
+                return new VideoContent.Media(source(id, scope, c), start, end,
+                        List.of(new VideoContent.Frame(500, "/9j/")), Base64.getEncoder().encodeToString(new byte[]{1, 2}));
+            }
+        };
+        var beans = new StaticListableBeanFactory(); beans.addBean("video", port);
+        var http = http("{\"text\":\"audio transcript\"}");
+        var service = new VideoAnalysisService(new VideoModelProperties(true, "compatible", URI.create("https://vision.example"), "key", "vision", "asr"),
+                beans.getBeanProvider(VideoContentPort.class), new VideoContentCache(beans.getBeanProvider(javax.sql.DataSource.class), JSON), JSON,
+                OpenTelemetry.noop().getTracer("test"), http);
+        var budget = new ModelBudget(50, 50);
+        try (var scope = Context.current().makeCurrent()) {
+            assertEquals("MODEL_TOKEN_BUDGET_EXCEEDED", assertThrows(AgentException.class,
+                    () -> service.analyze(7, null, null, "", owner("1"), control().withBudget(budget))).code());
+            assertEquals(1L, budget.attributes().get("budget.unsettled_calls"));
+            var request = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
+            verify(http, times(1)).sendAsync(request.capture(), any(HttpResponse.BodyHandler.class));
+            assertEquals("/audio/transcriptions", request.getValue().uri().getPath());
         }
     }
     @Test void mismatchedSourceAndHalfRangesCannotProduceEvidence() {

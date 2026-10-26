@@ -32,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DanmakuReportTest {
     @Autowired RunService runs;
     @Autowired RunRepository repository;
+    @Autowired com.tianmu.agent.runtime.store.ReportStore reports;
     @Autowired ToolDispatcher tools;
     @Autowired RuntimeHarness harness;
     @Autowired TaskAssembler assembler;
@@ -77,7 +78,7 @@ class DanmakuReportTest {
         assertTrue(html.contains(">22</text>"), "Peak bucket should be visible in the simulated activity curve");
         mvc.perform(get(path)).andExpect(status().isUnauthorized());
         mvc.perform(get(path).header("Authorization", "Bearer demo-bob")).andExpect(status().isNotFound());
-        assertEquals("FORBIDDEN", assertThrows(AgentException.class, () -> repository.report(run.id, new AccessScope("demo", "alice", Set.of()), artifact(run))).code());
+        assertEquals("FORBIDDEN", assertThrows(AgentException.class, () -> reports.report(run.id, new AccessScope("demo", "alice", Set.of()), artifact(run))).code());
         assertEquals(1, run.events().after(0).events().stream().filter(e -> e.type().equals("DONE")).count());
         assertTrue(run.events().after(0).events().stream().anyMatch(e -> e.type().equals("ARTIFACT_READY")));
     }
@@ -95,7 +96,7 @@ class DanmakuReportTest {
         assertEquals(Intent.DANMAKU_REPORT, report.preparedRequest().intent());
         assertEquals("danmaku.report", report.task().specification().type());
         assertEquals(DanmakuReportTask.specification(DanmakuReportTask.parse(question(), report.businessDate)).conditions(), report.task().specification().conditions());
-        String html = new String(repository.report(report.id, alice, artifact(report)), StandardCharsets.UTF_8);
+        String html = new String(reports.report(report.id, alice, artifact(report)), StandardCharsets.UTF_8);
         assertTrue(html.contains("videoId 1001"));
         assertFalse(html.contains("直播间弹幕分析报告"));
     }
@@ -118,7 +119,7 @@ class DanmakuReportTest {
         };
         new AgentRuntime(model, tools, harness).execute(run);
         assertEquals(Status.SUCCEEDED, run.snapshot().status(), run.snapshot().errorCode());
-        String html = new String(repository.report(run.id, alice, artifact(run)), StandardCharsets.UTF_8);
+        String html = new String(reports.report(run.id, alice, artifact(run)), StandardCharsets.UTF_8);
         assertTrue(html.contains("&lt;script&gt;")); assertFalse(html.contains("<script>"));
         assertTrue(html.contains("href=\"#sample-100044\""));
         assertTrue(html.contains("id=\"sample-100044\""), "References to merged samples must remain navigable");
@@ -155,7 +156,7 @@ class DanmakuReportTest {
         Dataset data=new Dataset(query,0,0,bins,List.of(),Instant.now(),"fixture",false);
         String id="ev_"+UUID.randomUUID();run.execution().evidence().put(new Evidence(id,run.id,alice,null,data));
         ToolResult result=tools.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id",id,"sections_json","[]")),run);
-        String html=new String(repository.report(run.id,alice,result.data().get("artifact_id").toString()),StandardCharsets.UTF_8);
+        String html=new String(reports.report(run.id,alice,result.data().get("artifact_id").toString()),StandardCharsets.UTF_8);
         assertTrue(html.contains("没有可用于内容分析的片段"));assertTrue(html.contains("弹幕 0 条"));
         assertFalse(html.contains("NaN")); assertFalse(html.contains("Infinity"));
         assertNotNull(result.terminalAnswer());run.cancel();
@@ -181,7 +182,7 @@ class DanmakuReportTest {
         assertEquals(4,run.snapshot().modelCalls());
         assertEquals(1,run.execution().observations().stream().filter(r->r.tool().equals("query_danmaku")).count());
         assertTrue(run.execution().observations().stream().anyMatch(r->"INVALID_REPORT".equals(r.data().get("error_code")) && r.data().containsKey("error_message")));
-        assertTrue(repository.report(run.id,alice,artifact(run)).length>0);
+        assertTrue(reports.report(run.id,alice,artifact(run)).length>0);
     }
     @Test void repeatedInvalidReportsStopAtTheFailureLimit() {
         RunState run=prepared();

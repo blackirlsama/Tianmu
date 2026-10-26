@@ -32,7 +32,7 @@ public class TaskAssembler {
     public PreparedTask assemble(RunState run) {
         run.checkpoint();
         var preparation = Objects.requireNonNull(run.preparedRequest());
-        var specification = meaning.resolve(run.query(), run.businessDate);
+        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate) : preparation.specification();
         boolean conversation = "unclassified".equals(specification.type())
                 && Set.of(com.tianmu.agent.core.PreparationTypes.Intent.KNOWLEDGE, com.tianmu.agent.core.PreparationTypes.Intent.OTHER).contains(preparation.intent());
         if (conversation) specification = new Specification("conversation", Map.of(), Map.of());
@@ -42,7 +42,7 @@ public class TaskAssembler {
             specification = new Specification(specification.type(), specification.conditions(), provenance);
         }
         return new PreparedTask(run.id, run.message, preparation.query(), run.businessDate, "Asia/Shanghai", run.owner,
-                preparation, specification, versions, conversation ? Set.of() : allowedTools, run.deadline(), run.modelCallLimit());
+                preparation, specification, versions, TaskCapabilities.toolsFor(specification.type(), allowedTools), run.deadline(), run.modelCallLimit());
     }
     private String fingerprint(ToolDefinition definition) {
         try {

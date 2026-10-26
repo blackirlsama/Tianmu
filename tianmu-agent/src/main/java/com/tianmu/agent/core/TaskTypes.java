@@ -8,7 +8,11 @@ import java.util.*;
 public final class TaskTypes {
     private TaskTypes() {}
     public record Specification(String type, Map<String, Object> conditions, Map<String, String> provenance) {
-        public Specification { conditions = ImmutablePayload.map(conditions); provenance = Map.copyOf(provenance); }
+        public Specification {
+            conditions = ImmutablePayload.map(conditions); provenance = Map.copyOf(provenance);
+            TaskConditions.read(type, conditions);
+        }
+        public TaskConditions typed() { return TaskConditions.read(type, conditions); }
     }
     public record PreparedTask(UUID runId, String originalQuery, String query, LocalDate businessDate,
             String timezone, AccessScope scope, PreparedRequest preparation, Specification specification,

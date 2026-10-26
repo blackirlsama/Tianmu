@@ -44,7 +44,8 @@ public class RuntimeHarness implements AutoCloseable {
                 run.snapshot().steps()), run::checkpoint);
     }
     public HarnessSession start(RunState run) {
-        HarnessSession session = sessions.computeIfAbsent(run.id, id -> new HarnessSession(run, tracer, hooks, traceDetails));
+        loopControl.arm(run);
+        HarnessSession session = sessions.computeIfAbsent(run.id, id -> new HarnessSession(run, tracer, hooks, traceDetails, policy()));
         run.traceId(session.traceId());
         loopControl.arm(run);
         session.begin();
@@ -58,13 +59,17 @@ public class RuntimeHarness implements AutoCloseable {
     public <T> T modelCall(RunState run, boolean finalizing, Function<CallControl, T> operation) {
         run.modelCallStarted();
         return loopControl.call(run, finalizing ? policy().finalizeTimeout() : policy().modelTimeout(),
-                "MODEL_CALL_TIMEOUT", "MODEL_ERROR", this::contextual, operation);
+                "MODEL_CALL_TIMEOUT", "MODEL_ERROR", this::contextual, operation, timing());
     }
     public <T> T toolCall(RunState run, Function<CallControl, T> operation) {
-        return loopControl.call(run, policy().toolTimeout(), "TOOL_CALL_TIMEOUT", "TOOL_ERROR", this::contextual, operation);
+        return loopControl.toolCall(run, false, policy().toolTimeout(), this::contextual, operation, timing());
     }
     public <T> T videoToolCall(RunState run, Function<CallControl, T> operation) {
-        return loopControl.call(run, java.time.Duration.ofSeconds(120), "TOOL_CALL_TIMEOUT", "TOOL_ERROR", this::contextual, operation);
+        return loopControl.toolCall(run, true, java.time.Duration.ofSeconds(120), this::contextual, operation, timing());
+    }
+    private java.util.function.BiConsumer<String, Long> timing() {
+        Span span = Span.current();
+        return (name, value) -> TraceAttributes.apply(span, Map.of(name, value));
     }
     public void forget(UUID id) { sessions.remove(id); }
     @Override public void close() { if (ownsLoopControl) loopControl.close(); sessions.clear(); }
@@ -84,7 +89,7 @@ public class RuntimeHarness implements AutoCloseable {
         String outcome = "success";
         String error = "";
         Map<String, Object> resultAttributes = new HashMap<>();
-        try (Scope scope = span.makeCurrent(); TraceLogScope mdc = new TraceLogScope(span, run.id.toString())) {
+        try (Scope scope = parent.with(span).makeCurrent(); TraceLogScope mdc = new TraceLogScope(span, run.id.toString())) {
             try {
                 run.checkpoint();
                 if (before != null) session.fire(before, attributes);

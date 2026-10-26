@@ -8,7 +8,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record PreparationPolicy(@DefaultValue("300ms") Duration faqTimeout,
                                 @DefaultValue("2s") Duration understandingTimeout,
                                 @DefaultValue("300ms") Duration emotionTimeout,
-                                @DefaultValue("2s") Duration intentTimeout) {
+                                @DefaultValue("2s") Duration intentTimeout,
+                                @DefaultValue("true") boolean deterministicRouting,
+                                @DefaultValue("false") boolean emotionEnabled) {
+    /** Retains the model-first behavior of explicitly constructed legacy pipelines. */
+    public PreparationPolicy(Duration faq, Duration understanding, Duration emotion, Duration intent) { this(faq, understanding, emotion, intent, false, true); }
     public PreparationPolicy(Duration faq, Duration understanding, Duration emotion) { this(faq, understanding, emotion, understanding); }
     public PreparationPolicy(Duration faq, Duration understanding) { this(faq, understanding, understanding); }
     @org.springframework.boot.context.properties.bind.ConstructorBinding

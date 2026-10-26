@@ -5,7 +5,7 @@ import com.sun.net.httpserver.HttpServer;
 import com.tianmu.agent.core.AgentException;
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.runtime.control.*;
-import com.tianmu.agent.runtime.store.RunRepository;
+import com.tianmu.agent.runtime.store.ResourceScopeStore;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.ObjectProvider;
 import java.net.*;
@@ -16,14 +16,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class BusinessAdapterTest {
-    HttpServer server; RemoteBusinessAdapter adapter; RunRepository repository;
+    HttpServer server; RemoteBusinessAdapter adapter; ResourceScopeStore repository;
     ObjectMapper mapper=new ObjectMapper().findAndRegisterModules();
     List<String> headers=new CopyOnWriteArrayList<>(); Set<Long> allowed=Set.of(1001L); volatile int metricStatus=200;
     volatile boolean oversized;
     volatile List<?> authorizationOverride;
     volatile boolean rawAnalysisSamples;
     @BeforeEach void start() throws Exception {
-        repository=mock(RunRepository.class); ObjectProvider<RunRepository> provider=mock(ObjectProvider.class);
+        repository=mock(ResourceScopeStore.class); ObjectProvider<ResourceScopeStore> provider=mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(repository);
         server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         server.createContext("/internal/agent/", exchange -> {

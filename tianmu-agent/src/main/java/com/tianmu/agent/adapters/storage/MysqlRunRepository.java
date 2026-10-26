@@ -1,5 +1,7 @@
 package com.tianmu.agent.adapters.storage;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.tianmu.agent.application.*;
 import com.tianmu.agent.core.*;
 import com.tianmu.agent.core.AgentTypes.*;
@@ -22,10 +24,11 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 
 /** One authoritative writer per Agent database in v0.7. All terminal rows share one transaction. */
-public final class MysqlRunRepository implements RunRepository, AutoCloseable {
+public final class MysqlRunRepository implements RunRepository, ReportStore, ConversationStore, StorageManagement, AutoCloseable {
     private final JdbcTemplate db; private final TransactionTemplate tx; private final ObjectMapper json;
     private final RedisMemoryCache cache; private final ObjectStore objects; private final Duration timeout; private final int maxCalls;
-    private final MemoryBuilder memoryBuilder = new MemoryBuilder();
+    private final MysqlReportStore reports;
+    private final MysqlConversationStore conversations;
     private final String instance = UUID.randomUUID().toString();
     private final Connection writer; private final String writerLock;
     private final Map<UUID, Map<UUID, Runnable>> listeners = new ConcurrentHashMap<>();
@@ -45,6 +48,29 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
                 }
             }
         } catch (SQLException e) { throw unavailable(); }
+        conversations = new MysqlConversationStore(db, this.json, cache, new MysqlConversationStore.Access() {
+            public <T> T read(Supplier<T> action) { return MysqlRunRepository.this.read(action); }
+            public void session(UUID id, AccessScope owner) { MysqlRunRepository.this.session(id, owner, false); }
+            public MysqlConversationStore.Window window(RunState run) {
+                session(run.sessionId, run.owner);
+                var stored = row(run.id, run.owner, false);
+                if (terminal(stored)) throw new AgentException("RUN_TERMINATED", "Task is terminal");
+                return new MysqlConversationStore.Window(number(stored, "base_history_version"), number(stored, "history_before_turn"));
+            }
+        });
+        reports = new MysqlReportStore(db, objects, new MysqlReportStore.Access() {
+            public RunState load(UUID id, AccessScope owner) { return MysqlRunRepository.this.load(id, owner); }
+            public <T> T read(Supplier<T> action) { return MysqlRunRepository.this.read(action); }
+            public <T> T write(Supplier<T> action) { return MysqlRunRepository.this.write(action); }
+            public MysqlReportStore.ActiveRun lockActive(UUID id, AccessScope owner) {
+                var prior = row(id, owner, false); var sess = session(UUID.fromString(prior.get("session_id").toString()), owner, true);
+                var saved = row(id, owner, true); Meta m = meta(saved); active(sess, saved, m);
+                if (terminal(saved)) throw new AgentException("RUN_TERMINATED", "Task is terminal");
+                return new MysqlReportStore.ActiveRun(m.session(), saved.get("data_expires_at"));
+            }
+            public void ready(UUID id, AccessScope owner) { audit(meta(row(id, owner, true)), "REPORT_CREATED", "READY"); }
+            public byte[] artifact(UUID id, String artifactId, AccessScope owner) { return MysqlRunRepository.this.artifact(id, artifactId, owner); }
+        });
         // Owning the database writer lock proves the former writer has lost its connection.
         recoverInterrupted();
     }
@@ -332,47 +358,13 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
     }
     private Evidence evidenceFacts(String id, Meta m, Object facts) {
         if ("video-content-v1".equals(decode(facts, Map.class).get("kind")))
-            return new Evidence(id, m.id(), m.owner(), null, null, decode(facts, com.tianmu.agent.video.VideoContent.Facts.class));
+            return new Evidence(id, m.id(), m.owner(), null, null, decode(facts, com.tianmu.agent.core.VideoContent.Facts.class));
         if (decode(facts, Map.class).containsKey("query"))
             return new Evidence(id, m.id(), m.owner(), null, decode(facts, com.tianmu.agent.core.DanmakuTypes.Dataset.class));
         return new Evidence(id, m.id(), m.owner(), decode(facts, MetricData.class));
     }
-    private List<MemoryTypes.Message> history(UUID sid, AccessScope owner, long before) {
-        List<Map<String, Object>> turns = db.queryForList("SELECT run_id,access_scope_json FROM agent_run WHERE tenant_id=? AND owner_user_id=? AND session_id=? AND history_visible=1 AND turn_seq<=? AND data_expires_at>UTC_TIMESTAMP(6) ORDER BY turn_seq DESC LIMIT 10", owner.tenantId(), owner.userId(), sid.toString(), before);
-        List<MemoryTypes.Message> messages = new ArrayList<>();
-        for (var turn : turns) if (owner.videoIds().containsAll(decode(turn.get("access_scope_json"), AccessScope.class).videoIds()))
-            messages.addAll(db.query("SELECT message_id,run_id,message_seq,role,content,created_at FROM agent_message WHERE tenant_id=? AND owner_user_id=? AND run_id=? ORDER BY message_seq",
-                    (rs, n) -> new MemoryTypes.Message(UUID.fromString(rs.getString(1)), UUID.fromString(rs.getString(2)), rs.getLong(3), rs.getString(4), rs.getString(5), rs.getTimestamp(6).toInstant()), owner.tenantId(), owner.userId(), turn.get("run_id")));
-        return messages.stream().sorted(Comparator.comparingLong(MemoryTypes.Message::sequence)).toList();
-    }
-    @Override public MemoryTypes.View memory(RunState run) {
-        return read(() -> {
-            var sess = session(run.sessionId, run.owner, false); var stored = row(run.id, run.owner, false);
-            if (terminal(stored)) throw new AgentException("RUN_TERMINATED", "Task is terminal");
-            long version = number(stored, "base_history_version"), before = number(stored, "history_before_turn");
-            String key = cacheKey(run.owner, run.sessionId);
-            var cached = cache.get(key, version, before);
-            List<MemoryTypes.Message> messages;
-            if (cached == null) { messages = history(run.sessionId, run.owner, before); cache.put(key, new RedisMemoryCache.Window(version, before, cacheExpiry(run.sessionId, run.owner, before), messages)); }
-            else messages = cached.messages();
-            return memoryBuilder.build(version, messages);
-        });
-    }
-    private String cacheKey(AccessScope owner, UUID session) { return RedisMemoryCache.key(owner.tenantId(), owner.userId() + ":" + hash(encode(new TreeSet<>(owner.videoIds()))), session); }
-    private Instant cacheExpiry(UUID sid, AccessScope owner, long before) {
-        Timestamp oldest = db.queryForObject("SELECT MIN(data_expires_at) FROM (SELECT data_expires_at FROM agent_run WHERE tenant_id=? AND owner_user_id=? AND session_id=? AND history_visible=1 AND turn_seq<=? AND data_expires_at>UTC_TIMESTAMP(6) ORDER BY turn_seq DESC LIMIT 10) recent", Timestamp.class, owner.tenantId(), owner.userId(), sid.toString(), before);
-        Instant ttl = Instant.now().plus(Duration.ofHours(24)); return oldest != null && oldest.toInstant().isBefore(ttl) ? oldest.toInstant() : ttl;
-    }
-    @Override public List<MemoryTypes.Message> messages(UUID sid, AccessScope owner, long before) {
-        return read(() -> {
-            session(sid, owner, false); if (before < 1) throw new AgentException("INVALID_CURSOR", "Invalid message cursor");
-            var rows = db.queryForList("SELECT m.*,r.access_scope_json FROM agent_message m JOIN agent_run r ON r.tenant_id=m.tenant_id AND r.run_id=m.run_id WHERE m.tenant_id=? AND m.owner_user_id=? AND m.session_id=? AND m.message_seq<? AND r.data_expires_at>UTC_TIMESTAMP(6) ORDER BY m.message_seq DESC LIMIT 50", owner.tenantId(), owner.userId(), sid.toString(), before);
-            List<MemoryTypes.Message> result = new ArrayList<>();
-            for (var row : rows) if (owner.videoIds().containsAll(decode(row.get("access_scope_json"), AccessScope.class).videoIds()))
-                result.add(new MemoryTypes.Message(UUID.fromString(row.get("message_id").toString()), UUID.fromString(row.get("run_id").toString()), number(row,"message_seq"), row.get("role").toString(), row.get("content").toString(), instant(row,"created_at")));
-            return result.stream().sorted(Comparator.comparingLong(MemoryTypes.Message::sequence)).toList();
-        });
-    }
+    @Override public MemoryTypes.View memory(RunState run) { return conversations.memory(run); }
+    @Override public List<MemoryTypes.Message> messages(UUID sid, AccessScope owner, long before) { return conversations.messages(sid, owner, before); }
     @Override public Set<Long> resourcesForRun(UUID id, AccessScope owner) {
         return read(() -> {
             var saved = row(id, owner, false, false);
@@ -393,38 +385,9 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
         return read(() -> { load(runId, owner); return db.queryForList("SELECT artifact_id AS artifactId,media_type AS mediaType,size_bytes AS sizeBytes,content_sha256 AS sha256 FROM agent_artifact WHERE tenant_id=? AND owner_user_id=? AND run_id=? AND status='READY' AND expires_at>UTC_TIMESTAMP(6)", owner.tenantId(), owner.userId(), runId.toString()); });
     }
     @Override public com.tianmu.agent.core.DanmakuTypes.ReportRef saveReport(UUID runId, AccessScope owner, String evidenceId, byte[] html) {
-        if (html.length > 262144) throw new AgentException("ARTIFACT_TOO_LARGE", "Report exceeds 256 KiB");
-        RunState run = load(runId, owner); Evidence evidence = run.execution().evidence().get(evidenceId);
-        if (evidence == null || evidence.analysis() == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
-        String id = "rp_" + UUID.randomUUID(), object = id + ".html", digest = FileObjectStore.hash(html);
-        write(() -> {
-            var prior = row(runId, owner, false); var sess = session(UUID.fromString(prior.get("session_id").toString()), owner, true);
-            var row = row(runId, owner, true); Meta m = meta(row); active(sess, row, m);
-            if (terminal(row)) throw new AgentException("RUN_TERMINATED", "Task is terminal");
-            Integer count = db.queryForObject("SELECT COUNT(*) FROM agent_artifact WHERE tenant_id=? AND run_id=? AND media_type='text/html'", Integer.class, owner.tenantId(), runId.toString());
-            if (count != null && count >= 2) throw new AgentException("CAPACITY_EXCEEDED", "Report limit reached");
-            db.update("INSERT INTO agent_artifact(tenant_id,owner_user_id,session_id,run_id,artifact_id,object_key,media_type,expires_at) VALUES(?,?,?,?,?,?,'text/html',?)",
-                    owner.tenantId(), owner.userId(), m.session().toString(), runId.toString(), id, object, row.get("data_expires_at")); return null;
-        });
-        try {
-            objects.put(object, html);
-            write(() -> {
-                var prior = row(runId, owner, false); var sess = session(UUID.fromString(prior.get("session_id").toString()), owner, true);
-                var row = row(runId, owner, true); Meta m = meta(row); active(sess, row, m);
-                if (terminal(row)) throw new AgentException("RUN_TERMINATED", "Task is terminal");
-                db.update("UPDATE agent_artifact SET status='READY',size_bytes=?,content_sha256=?,ready_at=UTC_TIMESTAMP(6) WHERE tenant_id=? AND artifact_id=?", html.length, digest, owner.tenantId(), id);
-                audit(m, "REPORT_CREATED", "READY"); return null;
-            });
-        } catch (RuntimeException e) { try { objects.delete(object); } catch (RuntimeException ignored) {} throw e; }
-        return new com.tianmu.agent.core.DanmakuTypes.ReportRef(id, "/api/agent/runs/" + runId + "/reports/" + id);
+        return reports.saveReport(runId, owner, evidenceId, html);
     }
-    @Override public byte[] report(UUID runId, AccessScope caller, String artifactId) {
-        load(runId, caller);
-        Integer found = read(() -> db.queryForObject("SELECT COUNT(*) FROM agent_artifact WHERE tenant_id=? AND owner_user_id=? AND run_id=? AND artifact_id=? AND media_type='text/html'", Integer.class,
-                caller.tenantId(), caller.userId(), runId.toString(), artifactId));
-        if (found == null || found != 1) throw new AgentException("RESULT_NOT_FOUND", "Report not found");
-        return artifact(runId, artifactId, caller);
-    }
+    @Override public byte[] report(UUID runId, AccessScope owner, String artifactId) { return reports.report(runId, owner, artifactId); }
     public byte[] artifact(UUID runId, String id, AccessScope owner) {
         Map<String, Object> row = write(() -> {
             var source = row(runId, owner, false); session(UUID.fromString(source.get("session_id").toString()), owner, false);
@@ -432,9 +395,6 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
             if (matches.isEmpty()) throw new AgentException("RESULT_NOT_FOUND", "Artifact not found"); audit(meta(source), "ARTIFACT_READ", "AUTHORIZED"); return matches.get(0);
         });
         return objects.get(row.get("object_key").toString(), number(row, "size_bytes"), row.get("content_sha256").toString());
-    }
-    @Override public void refresh(RunState run) {
-        Snapshot current = read(() -> snapshot(row(run.id, run.owner, false))); run.adoptTerminal(current);
     }
     private void recoverInterrupted() {
         var interrupted = read(() -> db.queryForList("SELECT r.* FROM agent_run r JOIN agent_session s ON s.tenant_id=r.tenant_id AND s.session_id=r.session_id WHERE r.status='RUNNING' AND r.data_expires_at>UTC_TIMESTAMP(6) AND s.status='OPEN' AND s.expires_at>UTC_TIMESTAMP(6)"));
@@ -476,8 +436,8 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
         try { sess = read(() -> session(m.session(), m.owner(), false)); }
         catch (AgentException e) { if (e.code().equals("SESSION_NOT_FOUND")) return; throw e; }
         long version = number(sess, "history_version"), before = number(sess, "next_turn_seq") - 1;
-        List<MemoryTypes.Message> messages = read(() -> history(m.session(), m.owner(), before));
-        if (!cache.put(cacheKey(m.owner(), m.session()), new RedisMemoryCache.Window(version, before, cacheExpiry(m.session(), m.owner(), before), messages)))
+        List<MemoryTypes.Message> messages = read(() -> conversations.history(m.session(), m.owner(), before));
+        if (!cache.put(conversations.cacheKey(m.owner(), m.session()), new RedisMemoryCache.Window(version, before, conversations.cacheExpiry(m.session(), m.owner(), before), messages)))
             throw new AgentException("CACHE_UNAVAILABLE", "Memory refresh will retry");
         signal(m.id());
     }
@@ -507,7 +467,7 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
                 var artifacts = read(() -> db.queryForList("SELECT object_key FROM agent_artifact WHERE tenant_id=? AND session_id=?", tenant, sid));
                 for (var artifact : artifacts) objects.delete(artifact.get("object_key").toString());
                 var oldRuns = read(() -> db.queryForList("SELECT * FROM agent_run WHERE tenant_id=? AND session_id=?", tenant, sid));
-                for (var old : oldRuns) { Meta m = meta(old); cache.evict(cacheKey(m.owner(), m.session())); }
+                for (var old : oldRuns) { Meta m = meta(old); cache.evict(conversations.cacheKey(m.owner(), m.session())); }
                 write(() -> {
                     db.queryForList("SELECT session_id FROM agent_session WHERE tenant_id=? AND session_id=? FOR UPDATE", tenant, sid);
                     for (String table : List.of("agent_clarification", "agent_evidence", "agent_artifact", "agent_message", "agent_run_event", "agent_run"))
@@ -532,7 +492,7 @@ public final class MysqlRunRepository implements RunRepository, AutoCloseable {
                     for (String table : List.of("agent_evidence", "agent_artifact", "agent_message", "agent_run_event", "agent_run"))
                         db.update("DELETE FROM " + table + " WHERE tenant_id=? AND run_id=?", m.owner().tenantId(), m.id().toString());
                     db.update("UPDATE agent_session SET history_version=history_version+1 WHERE tenant_id=? AND session_id=?", m.owner().tenantId(), m.session().toString()); return null;
-                }); cache.evict(cacheKey(m.owner(), m.session()));
+                }); cache.evict(conversations.cacheKey(m.owner(), m.session()));
             }
             var pending = read(() -> db.queryForList("SELECT tenant_id,artifact_id,object_key FROM agent_artifact WHERE status='PENDING' AND created_at<DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR) LIMIT 20"));
             for (var artifact : pending) {

@@ -1,0 +1,28 @@
+{
+  "version": "0.1.0",
+  "status": "draft",
+  "scenario_id": "video_bounded_segment",
+  "assessment_scope": "real_content_manual_review",
+  "prompt": "只分析指定视频第10秒到第20秒发生了什么。",
+  "asset_ref": null,
+  "content_sha256": null,
+  "content_version": null,
+  "scope_ref": null,
+  "snapshot_ref": null,
+  "snapshot_at": null,
+  "timezone": "Asia/Shanghai",
+  "expected": {
+    "query_start_ms": 10000,
+    "query_end_ms": 20000,
+    "facts": [],
+    "evidence_anchors": [],
+    "timestamp_tolerance_ms": null,
+    "prohibited_claims": ["未覆盖片段的具体事件", "没有音频证据的对白"]
+  },
+  "review": {
+    "reviewer_ref": null,
+    "reviewed_at": null,
+    "status": "pending"
+  },
+  "last_result": null
+}

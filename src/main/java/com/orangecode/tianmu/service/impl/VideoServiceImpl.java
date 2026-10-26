@@ -62,20 +62,16 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video>
     private VideoMapper videoMapper;
 
     @Resource
-    @Lazy
     private BulletService bulletService;
 
 
     @Resource
-    @Lazy
     private LikeService likeService;
 
     @Resource
-    @Lazy
     private  FavoriteService favoriteService;
 
     @Resource
-    @Lazy
     private CoinService coinService;
 
     @Resource

@@ -38,7 +38,7 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow>
     implements FollowService {
 
     @Resource
-    private UserService userService;
+    private com.orangecode.tianmu.mapper.UserMapper userReads;
 
     @Resource
     private UserStatsService userStatsService;
@@ -52,7 +52,7 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow>
         // 查询用户是否存在
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.in("user_id", followRequest.getUserId(), followRequest.getCreatorId());
-        List<User> users = userService.list(queryWrapper);
+        List<User> users = userReads.selectList(queryWrapper);
         ThrowUtils.throwIf(users.size() != 2, ErrorCode.USER_NOT_EXISTS);
 
         // 关注
@@ -90,7 +90,7 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow>
         // 查询用户是否存在
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.in("user_id", followRequest.getUserId(), followRequest.getCreatorId());
-        List<User> users = userService.list(queryWrapper);
+        List<User> users = userReads.selectList(queryWrapper);
         ThrowUtils.throwIf(users.size() != 2, ErrorCode.USER_NOT_EXISTS);
 
         QueryWrapper<Follow> queryFollowWrapper = new QueryWrapper<>();
@@ -122,7 +122,7 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow>
         }
 
         // 查询用户信息
-        List<User> userList = userService.listByIds(followList.stream().map(Follow::getCreatorId).collect(Collectors.toSet()));
+        List<User> userList = userReads.selectBatchIds(followList.stream().map(Follow::getCreatorId).collect(Collectors.toSet()));
         Map<Long, User> userMap = userList.stream().collect(Collectors.toMap(User::getUserId, user -> user));
         List<UserListResponse> userListResponses = new ArrayList<>();
         for (Follow follow : followList) {
@@ -150,7 +150,7 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow>
         }
 
         // 查询用户信息
-        List<User> userList = userService.listByIds(followList.stream().map(Follow::getUserId).collect(Collectors.toSet()));
+        List<User> userList = userReads.selectBatchIds(followList.stream().map(Follow::getUserId).collect(Collectors.toSet()));
         Map<Long, User> userMap = userList.stream().collect(Collectors.toMap(User::getUserId, user -> user));
         List<UserListResponse> userListResponses = new ArrayList<>();
         for (Follow follow : followList) {

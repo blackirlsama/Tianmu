@@ -113,15 +113,24 @@ services:
     depends_on: [business]
     networks: [shared]
 secrets:
-  site-mysql-root-password: {file: '${SITE_CONFIG_DIR}/secrets/site-mysql-root-password'}
-  business-db-password: {file: '${SITE_CONFIG_DIR}/secrets/business-db-password'}
-  agent-db-password: {file: '${SITE_CONFIG_DIR}/secrets/agent-db-password'}
-  redis-password: {file: '${SITE_CONFIG_DIR}/secrets/redis-password'}
-  jwt-secret: {file: '${SITE_CONFIG_DIR}/secrets/jwt-secret'}
-  model-api-key: {file: '${SITE_CONFIG_DIR}/secrets/model-api-key'}
-  video-model-api-key: {file: '${SITE_CONFIG_DIR}/secrets/video-model-api-key'}
-  minio-access-key: {file: '${SITE_CONFIG_DIR}/secrets/minio-access-key'}
-  minio-secret-key: {file: '${SITE_CONFIG_DIR}/secrets/minio-secret-key'}
+  site-mysql-root-password:
+    file: '${SITE_CONFIG_DIR}/secrets/site-mysql-root-password'
+  business-db-password:
+    file: '${SITE_CONFIG_DIR}/secrets/business-db-password'
+  agent-db-password:
+    file: '${SITE_CONFIG_DIR}/secrets/agent-db-password'
+  redis-password:
+    file: '${SITE_CONFIG_DIR}/secrets/redis-password'
+  jwt-secret:
+    file: '${SITE_CONFIG_DIR}/secrets/jwt-secret'
+  model-api-key:
+    file: '${SITE_CONFIG_DIR}/secrets/model-api-key'
+  video-model-api-key:
+    file: '${SITE_CONFIG_DIR}/secrets/video-model-api-key'
+  minio-access-key:
+    file: '${SITE_CONFIG_DIR}/secrets/minio-access-key'
+  minio-secret-key:
+    file: '${SITE_CONFIG_DIR}/secrets/minio-secret-key'
 volumes:
   business-mysql-data:
   minio-data:

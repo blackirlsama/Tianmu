@@ -31,7 +31,7 @@ final class DeepSeekHarnessModel implements ModelPort {
         input.put("preparation", context.preparation()); input.put("finalizing", context.finalizing());
         if (context.task() != null) input.put("taskSpecification", context.task().specification());
         String prompt = systemPrompt + "\n\n" + focusPrompt + (context.finalizing() ? "\n\n" + context.systemDirective() : "") + "\n\n" + commonPrompt;
-        JsonNode result = client.complete(config.harnessModel(), messages(prompt, input, mapper), config.harnessMaxTokens(), control);
+        JsonNode result = client.complete(config.harnessModel(), client.messages(prompt, input), config.harnessMaxTokens(), control);
         try {
             return switch (text(result, "kind")) {
                 case "TOOL" -> {

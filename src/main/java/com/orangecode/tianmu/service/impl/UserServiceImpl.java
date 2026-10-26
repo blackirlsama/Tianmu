@@ -76,10 +76,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private UserStatsService userStatsService;
 
     /**
-     * 关注服务，用于查询用户间的关注关系（延迟注入避免循环依赖）
+     * 关注服务，用于查询用户间的关注关系
      */
     @Resource
-    @Lazy
     private FollowService followService;
 
     /**

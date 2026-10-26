@@ -20,6 +20,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LoopControlTest {
+    @Test void failedTimingObserverCannotChangeCallResultOrCancellation() {
+        try (var control = new LoopControl(LoopPolicy.defaults())) {
+            RunState run = new RunState(new AccessScope("t", "u", Set.of(1001L)), "query");
+            assertEquals("ok", control.call(run, Duration.ofSeconds(1), "TIMEOUT", "FAILED", task -> task,
+                    call -> { call.checkpoint(); return "ok"; }, (name, value) -> { throw new IllegalStateException("observer down"); }));
+            run.cancel();
+            assertEquals("CANCELLED", assertThrows(AgentException.class, () -> control.call(run, Duration.ofSeconds(1), "TIMEOUT", "FAILED", task -> task,
+                    call -> { fail("Cancelled call must not execute"); return "late"; }, (name, value) -> {})).code());
+        }
+    }
     static LoopPolicy policy(int turns) {
         return new LoopPolicy(turns, Duration.ofSeconds(5), Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofMillis(100), 3, true);
     }

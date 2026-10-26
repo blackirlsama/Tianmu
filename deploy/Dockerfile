@@ -7,6 +7,7 @@ WORKDIR /build
 ENV MAVEN_OPTS="-Xmx384m -XX:MaxMetaspaceSize=192m"
 COPY tianmu-agent/pom.xml ./pom.xml
 COPY tianmu-agent/src ./src
+COPY tianmu-agent/eval ./eval
 COPY deploy/HealthProbe.java /probe/HealthProbe.java
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package \
     && javac --release 17 -d /probe/classes /probe/HealthProbe.java

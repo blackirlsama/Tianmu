@@ -19,6 +19,7 @@ public final class HarnessSession {
     private final Context context;
     private final Tracer tracer;
     private final TraceUsage usage = new TraceUsage();
+    private final com.tianmu.agent.runtime.control.ModelBudget budget;
     private final AtomicBoolean begun = new AtomicBoolean();
     private final AtomicBoolean observedTerminal = new AtomicBoolean();
     private final AtomicBoolean ended = new AtomicBoolean();
@@ -26,12 +27,13 @@ public final class HarnessSession {
     private volatile Snapshot terminal;
     private volatile Instant terminalAt;
 
-    HarnessSession(RunState run, Tracer tracer, HookDispatcher hooks, TraceDetails details) {
+    HarnessSession(RunState run, Tracer tracer, HookDispatcher hooks, TraceDetails details, com.tianmu.agent.runtime.control.LoopPolicy policy) {
         this.run = run;
         this.hooks = hooks;
         this.tracer = tracer;
         root = tracer.spanBuilder("agent.run").startSpan();
         TraceNode.begin(root, "agent.run");
+        budget = run.modelBudget();
         Context base = Context.current().with(root).with(TraceUsage.KEY, usage);
         context = details == null ? base : details.bind(base, run.id);
         TraceAttributes.apply(root, TraceSemantics.identity(run));
@@ -88,12 +90,13 @@ public final class HarnessSession {
     private void finishIfIdle() {
         Snapshot snapshot = terminal;
         if (snapshot == null || workers.get() != 0 || !ended.compareAndSet(false, true)) return;
-        long totalModelCalls = snapshot.totalModelCalls() + usage.externalCalls();
+        long totalModelCalls = snapshot.totalModelCalls();
         try (Scope scope = context.makeCurrent(); TraceLogScope mdc = new TraceLogScope(root, run.id.toString())) {
             TraceAttributes.apply(root, Map.of("run.status", snapshot.status().name(), "run.steps", snapshot.steps(),
                     "run.stop_reason", snapshot.stopReason().name(), "run.model_calls", snapshot.modelCalls(),
                     "run.preparation_calls", snapshot.preparationCalls(), "run.total_model_calls", totalModelCalls));
             Map<String, Object> finish = new HashMap<>(usage.totals());
+            finish.putAll(budget.attributes());
             finish.put("usage.complete", ((Number) finish.get("usage.reported_calls")).longValue() == totalModelCalls);
             long reported = ((Number) finish.get("usage.reported_calls")).longValue();
             finish.put("usage.state", totalModelCalls == 0 ? "NOT_APPLICABLE" : reported == 0 ? "NOT_REPORTED" : reported == totalModelCalls ? "REPORTED" : "PARTIAL");

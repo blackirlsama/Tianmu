@@ -50,6 +50,49 @@ class DeepSeekAdapterTest {
     CallControl control() { return new CallControl(Instant.now().plusSeconds(2), new CancellationToken()); }
     Input input() { return new Input("视频1001昨天的弹幕数", LocalDate.of(2026, 10, 21), new AccessScope("private-tenant", "private-user", Set.of(1001L))); }
     ModelContext context() { return new ModelContext(input().query(), input().businessDate(), input().scope(), Set.of(), List.of(), List.of(), 6); }
+    @Test void springBindsContextLimitsIntoSharedClient() {
+        new org.springframework.boot.test.context.runner.ApplicationContextRunner()
+                .withInitializer(context -> context.getEnvironment().setActiveProfiles("deepseek"))
+                .withUserConfiguration(DeepSeekAdapters.class)
+                .withBean(ObjectMapper.class, () -> mapper).withBean(PromptCatalog.class, PromptCatalog::new)
+                .withPropertyValues("agent.models.api-key=test-secret", "agent.context.max-input-bytes=1024", "agent.context.max-history-bytes=0")
+                .run(context -> {
+                    assertNull(context.getStartupFailure());
+                    var error = assertThrows(AgentException.class, () -> context.getBean(DeepSeekClient.class).messages("s".repeat(2000), Map.of("query", "q")));
+                    assertEquals("MODEL_CONTEXT_TOO_LARGE", error.code());
+                });
+    }
+    @Test void oversizedDirectMessagesAreRejectedBeforeNetworkAndTokenReservation() {
+        var bounded = new DeepSeekClient(properties, mapper, new com.tianmu.agent.model.ContextPolicy(1024, 0));
+        var budget = new ModelBudget(100, 50);
+        try (var scope = io.opentelemetry.context.Context.current().makeCurrent()) {
+            var error = assertThrows(AgentException.class, () -> bounded.complete(properties.harnessModel(),
+                    List.of(Map.of("role", "user", "content", "x".repeat(2000))), 128, control().withBudget(budget)));
+            assertEquals("MODEL_CONTEXT_TOO_LARGE", error.code());
+            assertEquals(0L, budget.attributes().get("budget.charged_tokens"));
+            assertTrue(requests.isEmpty());
+        }
+    }
+    @Test void bothPreparationAndHarnessSendCompactedHistoryWithoutMutatingSource() throws Exception {
+        var bounded = new DeepSeekClient(properties, mapper, new com.tianmu.agent.model.ContextPolicy(98304, 256));
+        var memory = new com.tianmu.agent.core.MemoryTypes.View(1, "old".repeat(2000), List.of(), false, "untrusted");
+        var adapters = new DeepSeekAdapters();
+        answer = request -> request.path("model").asText().equals(properties.preparationModel())
+                ? "{\"emotion\":\"NEUTRAL\"}" : "{\"kind\":\"CLARIFY\",\"clarification\":\"Which date?\"}";
+        adapters.deepSeekPreparation(bounded, properties, mapper, new PromptCatalog()).emotion(
+                new Input(input().query(), input().businessDate(), input().scope(), memory), control());
+        adapters.deepSeekHarnessModel(bounded, properties, mapper, new PromptCatalog()).decide(
+                new ModelContext(input().query(), input().businessDate(), input().scope(), Set.of(), List.of(), List.of(), 6,
+                        false, "", null, null, memory), control());
+        assertEquals(2, requests.size());
+        for (JsonNode request : requests) {
+            JsonNode payload = mapper.readTree(request.path("messages").get(1).path("content").asText());
+            assertEquals(input().query(), payload.path("query").asText());
+            assertTrue(payload.path("memory").path("truncated").asBoolean());
+            assertEquals("", payload.path("memory").path("olderSummary").asText());
+        }
+        assertFalse(memory.truncated()); assertEquals(6000, memory.olderSummary().length());
+    }
     @Test void modelTraceCapturesActualMessagesProviderResponseAndReportedUsageWithoutCredentials() throws Exception {
         var exported = new CopyOnWriteArrayList<io.opentelemetry.sdk.trace.data.SpanData>();
         var exporter = new io.opentelemetry.sdk.trace.export.SpanExporter() {

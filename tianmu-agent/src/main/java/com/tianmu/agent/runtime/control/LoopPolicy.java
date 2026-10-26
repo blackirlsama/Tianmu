@@ -12,12 +12,18 @@ public record LoopPolicy(@DefaultValue("6") int maxTurns,
         @DefaultValue("3s") Duration finalizeTimeout,
         @DefaultValue("3") int consecutiveToolFailures,
         @DefaultValue("true") boolean finalizeEnabled,
-        @DefaultValue("16") int maxModelCalls) {
+        @DefaultValue("16") int maxModelCalls,
+        @DefaultValue("0") long maxTokens,
+        @DefaultValue("8192") long tokenReservation) {
+    public LoopPolicy(int turns, Duration request, Duration model, Duration tool, Duration fin, int failures, boolean finalizeEnabled, int maxModelCalls) {
+        this(turns, request, model, tool, fin, failures, finalizeEnabled, maxModelCalls, 0, 8192);
+    }
     public LoopPolicy(int turns, Duration request, Duration model, Duration tool, Duration finalizeTimeout, int failures, boolean finalizeEnabled) {
         this(turns, request, model, tool, finalizeTimeout, failures, finalizeEnabled, 16);
     }
     @org.springframework.boot.context.properties.bind.ConstructorBinding
     public LoopPolicy {
+        if (maxTokens < 0 || tokenReservation < 1 || tokenReservation > 1_000_000_000L) throw new IllegalArgumentException("Invalid token budget");
         if (maxTurns < 1 || maxTurns > 100 || consecutiveToolFailures < 1 || consecutiveToolFailures > 10 || maxModelCalls < 1 || maxModelCalls > 500)
             throw new IllegalArgumentException("Invalid loop limits");
         for (Duration timeout : new Duration[]{requestTimeout, modelTimeout, toolTimeout, finalizeTimeout})

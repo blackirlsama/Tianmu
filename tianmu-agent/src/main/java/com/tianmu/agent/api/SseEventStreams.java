@@ -17,13 +17,15 @@ import java.util.concurrent.atomic.*;
 public class SseEventStreams implements AutoCloseable {
     private final Tracer tracer;
     public SseEventStreams() { this(io.opentelemetry.api.OpenTelemetry.noop().getTracer("tianmu.sse")); }
-    @org.springframework.beans.factory.annotation.Autowired
     public SseEventStreams(Tracer tracer) { this.tracer = tracer; }
     private final Semaphore capacity = new Semaphore(64);
     private final Set<Subscription> subscriptions = ConcurrentHashMap.newKeySet();
-    private final ThreadPoolExecutor delivery = new ThreadPoolExecutor(4, 4, 30, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(128), task -> { Thread t = new Thread(task, "agent-sse"); t.setDaemon(true); return t; },
-            new ThreadPoolExecutor.AbortPolicy());
+    private org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor delivery = com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-sse", 4, 4, 128);
+    private boolean ownsExecutor = true;
+    @org.springframework.beans.factory.annotation.Autowired
+    public SseEventStreams(Tracer tracer, @org.springframework.beans.factory.annotation.Qualifier("sseExecutor") org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor executor) {
+        this(tracer); delivery.shutdown(); delivery = executor; ownsExecutor = false;
+    }
     protected SseEmitter newEmitter() { return new SseEmitter(60000L); }
     public SseEmitter subscribe(RunState run, long after) {
         run.events().after(after);
@@ -99,5 +101,5 @@ public class SseEventStreams implements AutoCloseable {
             subscriptions.remove(this); capacity.release();
         }
     }
-    @Override @PreDestroy public void close() { subscriptions.forEach(Subscription::stop); delivery.shutdownNow(); }
+    @Override @PreDestroy public void close() { subscriptions.forEach(Subscription::stop); if (ownsExecutor) delivery.shutdown(); }
 }

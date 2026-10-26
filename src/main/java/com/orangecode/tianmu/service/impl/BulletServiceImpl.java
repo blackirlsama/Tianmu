@@ -39,7 +39,7 @@ public class BulletServiceImpl extends ServiceImpl<BulletMapper, Bullet> impleme
     private UserService userService;
 
     @Resource
-    private VideoService videoService;
+    private com.orangecode.tianmu.application.VideoLookup videoLookup;
 
     @Resource
     private VideoStatsService videoStatsService;
@@ -64,7 +64,7 @@ public class BulletServiceImpl extends ServiceImpl<BulletMapper, Bullet> impleme
         Long bulletId = deleteBulletRequest.getBulletId();
 
         // 校验视频是否存在（优化为 exists 查询）
-        ThrowUtils.throwIf(!videoService.lambdaQuery().eq(Video::getVideoId, videoId).exists(), ErrorCode.VIDEO_NOT_FOUND_ERROR);
+        videoLookup.requireExists(videoId);
 
         // 校验用户是否存在
         ThrowUtils.throwIf(!userService.lambdaQuery().eq(User::getUserId, userId).exists(), ErrorCode.USER_NOT_EXISTS);

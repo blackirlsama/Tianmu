@@ -7,7 +7,7 @@ import java.util.*;
 /** Export allowlist is the final boundary, including for attributes added by third-party hooks. */
 public final class TraceAttributes {
     private TraceAttributes() {}
-    private static final Set<String> ALLOWED = Set.of("video.frame_count", "video.audio_available", "video.id", "video.source_version", "video.start_ms", "video.end_ms", "video.cache_hit", "run.id", "run.status", "run.steps", "run.stop_reason", "run.model_calls", "run.finalizing", "loop.step",
+    private static final Set<String> ALLOWED = Set.of("video.shared_wait", "video.shared_wait_ms", "budget.token_limit", "budget.charged_tokens", "budget.reported_calls", "budget.unsettled_calls", "video.frame_count", "video.audio_available", "video.id", "video.source_version", "video.start_ms", "video.end_ms", "video.cache_hit", "run.id", "run.status", "run.steps", "run.stop_reason", "run.model_calls", "run.finalizing", "loop.step",
             "tool.name", "tool.call_id", "skill.name", "skill.version", "hook.name", "hook.point", "hook.mode",
             "hook.failed", "operation.executed", "operation.outcome", "error.code", "exception.type",
             "input.char_count", "context.observation_count", "answer.evidence_count", "http.method", "http.route", "http.status_code",
@@ -23,7 +23,7 @@ public final class TraceAttributes {
             "node.type", "node.status", "execution.attempt", "execution.retry_count", "execution.retryable", "execution.timeout_ms", "execution.queue_ms", "execution.active_ms", "execution.wait_ms",
             "model.provider", "model.usage_state", "model.total_tokens", "model.cache_hit_tokens", "model.cache_miss_tokens", "model.reasoning_tokens", "model.finish_reason", "model.temperature", "model.max_tokens", "model.streaming", "model.first_token_state", "model.response_ms", "model.message_count", "model.reasoning_state", "model.http_status",
             "usage.external_model_calls", "usage.total_tokens", "usage.cache_hit_tokens", "usage.reasoning_tokens", "usage.state",
-            "context.input_bytes", "context.output_bytes", "context.changed",
+            "context.history_removed", "context.schemas_removed", "context.byte_limit", "context.input_bytes", "context.output_bytes", "context.changed",
             "detail.input_ref", "detail.input_state", "detail.input_bytes", "detail.input_redacted",
             "detail.output_ref", "detail.output_state", "detail.output_bytes", "detail.output_redacted",
             "detail.provider_output_ref", "detail.provider_output_state", "detail.provider_output_bytes", "detail.provider_output_redacted",

@@ -14,9 +14,9 @@ public final class AnalyzeVideoContentTool implements AgentTool {
     public String name() { return "analyze_video_content"; }
     public ToolResult execute(ToolCall call, ToolContext context) {
         long id=ToolArguments.integer(call,"video_id");
-        context.checkVideoQuery(id);
         Long start=call.arguments().containsKey("start_ms")?ToolArguments.integer(call,"start_ms"):null;
         Long end=call.arguments().containsKey("end_ms")?ToolArguments.integer(call,"end_ms"):null;
+        context.checkVideoQuery(id,start,end);
         String focus=call.arguments().containsKey("focus")?ToolArguments.text(call,"focus"):"";
         var facts=context.videoQuery(control -> video.analyze(id,start,end,focus,context.scope(),control));
         Evidence evidence=context.registerVideoEvidence(facts);

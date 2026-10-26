@@ -1,5 +1,7 @@
 package com.tianmu.agent.video;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tianmu.agent.core.*;
 import com.tianmu.agent.core.AgentTypes.*;

@@ -106,7 +106,9 @@ def main():
                         assert value in run["answer"]["text"] and "模拟" in run["answer"]["text"]
                         intent = "DANMAKU_REPORT" if "报告" in message else "VIDEO_METRIC"
                         assert run["preparation"]["intent"] == intent, "Intent was not merged into the task"
-                        assert 2 <= run["preparationCalls"] <= 3, "Critical recognition branches must be counted"
+                        assert run["preparationCalls"] == 0, "Explicit tasks must skip recognition models"
+                        assert {"intent", "understanding", "emotion", "rewrite"}.issubset(run["preparation"]["skippedStages"])
+                        assert run["preparation"]["specification"] == run["task"]["specification"], "Assembly must preserve prepared conditions"
                     else:
                         assert run["totalModelCalls"] == 0
                         assert "intent" in run["preparation"]["skippedStages"]
@@ -172,13 +174,14 @@ def main():
                     # Snapshot and SSE HTTP requests carry run.id on their own server spans;
                     # inspect the run's actual parent-child trace independently.
                     run_trace = [event for event in run_spans if event.get("traceId") == trace_id]
-                    assert len(run_trace) >= 25, "The report trace did not collect its full span chain"
                     attrs = [event.get("attributes", {}) for event in run_trace]
                     span_types = {item.get("span.type") for item in attrs if item.get("span.type")}
-                    required = {"receive_query", "pre_route", "faq_lookup", "emotion_recognition", "intent_recognition",
-                                "query_understanding", "context_build", "agent_start", "llm_inference", "read_skill",
+                    required = {"receive_query", "pre_route", "faq_lookup", "context_build", "agent_start", "llm_inference", "read_skill",
                                 "tool_call", "agent_end", "finish"}
                     assert required.issubset(span_types), "The report trace is missing stages: " + repr(sorted(required - span_types))
+                    assert not {"emotion_recognition", "intent_recognition", "query_understanding"} & span_types, "Skipped recognition must not produce inference spans"
+                    assert roots[0]["attributes"].get("run.preparation_calls") == 0, "Trace must count actual preparation calls"
+                    assert roots[0]["attributes"].get("preparation.skipped_count", 0) >= 4, "Trace must disclose skipped preparation"
                     assert any(item.get("preparation.intent") == "DANMAKU_REPORT" for item in attrs), "Intent is missing from the trace"
                     assert any(item.get("request.route") == "HARNESS" for item in attrs), "Route is missing from the trace"
                     assert any(item.get("finish.type") == "TOOL_DELIVERY" and item.get("run.status") == "SUCCEEDED" for item in attrs), "Terminal delivery is missing from the trace"

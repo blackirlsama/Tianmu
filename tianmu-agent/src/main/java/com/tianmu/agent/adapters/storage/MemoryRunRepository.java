@@ -13,7 +13,7 @@ import java.util.*;
 /** Explicitly ephemeral development mode; durable mode never falls back to this adapter. */
 @Component
 @ConditionalOnProperty(name="agent.storage.mode", havingValue="memory", matchIfMissing=true)
-public final class MemoryRunRepository implements RunRepository {
+public final class MemoryRunRepository implements RunRepository, ReportStore, ConversationStore {
     private final Map<UUID, RunState> runs = new HashMap<>();
     private final Map<String, UUID> keys = new HashMap<>();
     private final Map<UUID, RequestContext> contexts = new HashMap<>();

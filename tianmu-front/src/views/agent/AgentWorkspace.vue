@@ -240,20 +240,19 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/store/user';
+import { useAgentRunMonitor } from '@/composables/useAgentRunMonitor';
+import { useAgentHistory } from '@/composables/useAgentHistory';
 import {
   cancelAgentRun,
   createAgentRun,
   getAgentReport,
   getAgentRun,
-  readAgentEvents,
 } from '@/api/agent';
 import {
   answerReport,
   answerPresentation,
   formatDataUpdatedAt,
   buildChatRequest,
-  progressLabel,
-  reportPath,
   terminal,
   validRunId,
   yesterdayRange,
@@ -308,13 +307,12 @@ const running = computed(() => !!activeTurn.value && !terminal(activeTurn.value.
 const busy = computed(() => submitting.value || running.value || loadingRun.value);
 const needsInput = computed(() => activeTurn.value?.snapshot?.status === 'NEEDS_INPUT');
 const ownerId = computed(() => String(userStore.user.userId || ''));
-const historyKey = computed(() => `TIANMU_agent_runs_${ownerId.value}`);
-let monitor,
-  submitController,
+let submitController,
   reportControllers = new Set(),
-  pollTimer,
   pendingRequest,
   restoreTicket;
+const { readHistory, saveHistory } = useAgentHistory({ ownerId, history, turns });
+const runMonitor = useAgentRunMonitor({ applySnapshot, notice });
 const clockTimer = setInterval(() => {
   clock.value = Date.now();
 }, 1000);
@@ -372,43 +370,10 @@ function displayAnswer(text) {
   );
 }
 
-function readHistory() {
-  try {
-    const data = JSON.parse(localStorage.getItem(historyKey.value));
-    history.value = Array.isArray(data)
-      ? data
-          .filter((item) => item && validRunId(item.runId) && typeof item.title === 'string')
-          .slice(0, 30)
-      : [];
-  } catch {
-    history.value = [];
-  }
-}
-function saveHistory(turn) {
-  const item = {
-    runId: turn.runId,
-    title: (turns.value[0]?.message || turn.message).slice(0, 44),
-    sessionId: turn.snapshot.sessionId,
-    createdAt: turn.snapshot.createdAt,
-    status: turn.snapshot.status,
-    videoId: turn.videoId,
-  };
-  history.value = [
-    item,
-    ...history.value.filter(
-      (entry) =>
-        entry.runId !== item.runId && (!item.sessionId || entry.sessionId !== item.sessionId)
-    ),
-  ].slice(0, 30);
-  try {
-    localStorage.setItem(historyKey.value, JSON.stringify(history.value));
-  } catch {
-    /* History storage must not interrupt an analysis. */
-  }
-}
+
 function stopMonitoring(cancelReports = true) {
-  monitor?.abort();
-  clearTimeout(pollTimer);
+  runMonitor.stop();
+  restoreTicket?.abort();
   if (cancelReports) {
     reportControllers.forEach((controller) => controller.abort());
     reportControllers.clear();
@@ -437,91 +402,6 @@ function applySnapshot(turn, snapshot) {
   if (snapshot.status === 'SUCCEEDED' && turn.reportPath) loadReport(turn);
 }
 
-function startMonitoring(turn) {
-  stopMonitoring(false);
-  const controller = new AbortController();
-  monitor = controller;
-  const signal = controller.signal;
-  let sequence = 0;
-  const refresh = async () => {
-    const snapshot = await getAgentRun(turn.runId, signal);
-    if (!signal.aborted) {
-      notice.value = '';
-      applySnapshot(turn, snapshot);
-    }
-  };
-  const fatal = (error) => error.status === 401 || error.status === 403 || error.status === 404;
-  const poll = async () => {
-    try {
-      await refresh();
-      if (signal.aborted) return;
-      if (terminal(turn.snapshot?.status)) {
-        controller.abort();
-        return;
-      }
-    } catch (error) {
-      if (signal.aborted) return;
-      notice.value = error.message;
-      if (fatal(error)) {
-        controller.abort();
-        return;
-      }
-    }
-    if (!signal.aborted) pollTimer = setTimeout(poll, 2500);
-  };
-  pollTimer = setTimeout(poll, 2500);
-  const stream = async () => {
-    while (!signal.aborted) {
-      try {
-        await readAgentEvents(turn.runId, sequence, signal, (event) => {
-          if (signal.aborted) return;
-          const payload = event.payload,
-            seq = Number(payload.sequence || event.id);
-          if (!Number.isSafeInteger(seq) || seq <= sequence) return;
-          sequence = seq;
-          const data = payload.data || {};
-          if (event.type === 'PROGRESS') {
-            turn.events.push({
-              sequence: seq,
-              label: progressLabel(data),
-              at: payload.at,
-            });
-            turn.events = turn.events.slice(-60);
-          }
-          if (event.type === 'ARTIFACT_READY')
-            turn.reportPath = reportPath(turn.runId, data.url) || turn.reportPath;
-        });
-        await refresh();
-        if (signal.aborted) return;
-        if (terminal(turn.snapshot?.status)) {
-          clearTimeout(pollTimer);
-          return;
-        }
-      } catch (error) {
-        if (signal.aborted) return;
-        notice.value = error.message;
-        if (fatal(error)) {
-          controller.abort();
-          clearTimeout(pollTimer);
-          return;
-        }
-        if (error.code === 'EVENT_CURSOR_EXPIRED' || error.code === 'INVALID_CURSOR') sequence = 0;
-      }
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 1500);
-        signal.addEventListener(
-          'abort',
-          () => {
-            clearTimeout(timer);
-            resolve();
-          },
-          { once: true }
-        );
-      });
-    }
-  };
-  stream();
-}
 
 function createKey() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -585,7 +465,7 @@ async function submit() {
     turns.value.push(turn);
     focus.value = '';
     applySnapshot(turn, snapshot);
-    startMonitoring(turn);
+    runMonitor.start(turn);
     await replaceRun(snapshot.runId);
     await nextTick();
     conversationElement.value?.scrollTo({
@@ -604,7 +484,7 @@ async function restoreRun(id) {
   notice.value = '';
   loadingRun.value = true;
   const controller = new AbortController();
-  monitor = controller;
+
   restoreTicket = controller;
   try {
     const snapshot = await getAgentRun(id, controller.signal);
@@ -637,7 +517,7 @@ async function restoreRun(id) {
     turn.videoId = form.videoId;
     turns.value = [turn];
     applySnapshot(turn, snapshot);
-    startMonitoring(turn);
+    runMonitor.start(turn);
   } catch (error) {
     if (error.name !== 'AbortError') {
       notice.value = error.message;
@@ -661,7 +541,7 @@ function newAnalysis() {
 }
 function resume() {
   notice.value = '';
-  if (activeTurn.value) startMonitoring(activeTurn.value);
+  if (activeTurn.value) runMonitor.start(activeTurn.value);
   else if (validRunId(currentQueryRun.value)) restoreRun(currentQueryRun.value);
 }
 async function cancel() {
@@ -669,7 +549,7 @@ async function cancel() {
   cancelling.value = true;
   const turn = activeTurn.value;
   try {
-    applySnapshot(turn, await cancelAgentRun(turn.runId, monitor?.signal));
+    applySnapshot(turn, await cancelAgentRun(turn.runId, runMonitor.signal));
   } catch (error) {
     if (error.name !== 'AbortError') notice.value = error.message;
   } finally {

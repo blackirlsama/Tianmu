@@ -1,5 +1,7 @@
 package com.tianmu.agent.adapters.business;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.fasterxml.jackson.databind.*;
 import com.tianmu.agent.access.IdentityPort;
 import com.tianmu.agent.core.AgentException;
@@ -8,7 +10,7 @@ import com.tianmu.agent.core.DanmakuTypes;
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.query.BusinessQueryPort;
 import com.tianmu.agent.runtime.control.CallControl;
-import com.tianmu.agent.runtime.store.RunRepository;
+import com.tianmu.agent.runtime.store.ResourceScopeStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.*;
@@ -26,7 +28,7 @@ public class BusinessAdapters {
     @Bean com.tianmu.agent.preparation.FaqPort businessFaq() {
         return new com.tianmu.agent.faq.ClasspathFaqPort(new org.springframework.core.io.ClassPathResource("faq/business.json"), null);
     }
-    @Bean RemoteBusinessAdapter remoteBusinessAdapter(BusinessProperties properties, ObjectMapper json, ObjectProvider<RunRepository> repositories) {
+    @Bean RemoteBusinessAdapter remoteBusinessAdapter(BusinessProperties properties, ObjectMapper json, ObjectProvider<ResourceScopeStore> repositories) {
         return new RemoteBusinessAdapter(properties, json, repositories);
     }
 }
@@ -37,10 +39,10 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
             List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo) {}
     private final BusinessProperties config;
     private final ObjectMapper json;
-    private final ObjectProvider<RunRepository> repositories;
+    private final ObjectProvider<ResourceScopeStore> repositories;
     private final HttpClient http;
     private final BusinessCredentials credentials = new BusinessCredentials();
-    RemoteBusinessAdapter(BusinessProperties config, ObjectMapper json, ObjectProvider<RunRepository> repositories) {
+    RemoteBusinessAdapter(BusinessProperties config, ObjectMapper json, ObjectProvider<ResourceScopeStore> repositories) {
         this.config = config; this.json = json.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
         this.repositories = repositories;
         http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(config.timeoutMillis())).followRedirects(HttpClient.Redirect.NEVER).build();
@@ -144,18 +146,18 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Analysis schema mismatch"); }
     }
-    @Override public com.tianmu.agent.video.VideoContent.Source source(long videoId, AccessScope scope, CallControl control) {
+    @Override public com.tianmu.agent.core.VideoContent.Source source(long videoId, AccessScope scope, CallControl control) {
         if (!scope.videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside prepared scope");
         JsonNode result = request("GET", "/internal/agent/video-source?videoId=" + videoId,
                 credentials.token(scope.authorizationRef()), null, control);
-        try { return json.treeToValue(result, com.tianmu.agent.video.VideoContent.Source.class); }
+        try { return json.treeToValue(result, com.tianmu.agent.core.VideoContent.Source.class); }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Video metadata schema mismatch"); }
     }
-    @Override public com.tianmu.agent.video.VideoContent.Media media(long videoId, String version, long startMs, long endMs, AccessScope scope, CallControl control) {
+    @Override public com.tianmu.agent.core.VideoContent.Media media(long videoId, String version, long startMs, long endMs, AccessScope scope, CallControl control) {
         if (!scope.videoIds().contains(videoId) || !version.matches("[a-f0-9]{64}")) throw new AgentException("FORBIDDEN", "Video outside scope");
         JsonNode result = request("GET", "/internal/agent/video-content-media?videoId=" + videoId + "&version=" + version + "&startMs=" + startMs + "&endMs=" + endMs,
                 credentials.token(scope.authorizationRef()), null, control, 8_000_000, 60_000);
-        try { return json.treeToValue(result, com.tianmu.agent.video.VideoContent.Media.class); }
+        try { return json.treeToValue(result, com.tianmu.agent.core.VideoContent.Media.class); }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Video media schema mismatch"); }
     }
 

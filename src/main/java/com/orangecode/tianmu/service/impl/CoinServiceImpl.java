@@ -29,7 +29,7 @@ public class CoinServiceImpl extends ServiceImpl<CoinMapper, Coin> implements Co
     private UserService userService;
 
     @Resource
-    private VideoService videoService;
+    private com.orangecode.tianmu.application.VideoLookup videoLookup;
 
     @Resource
     private UserStatsService userStatsService;
@@ -43,7 +43,7 @@ public class CoinServiceImpl extends ServiceImpl<CoinMapper, Coin> implements Co
         ThrowUtils.throwIf(this.lambdaQuery().eq(Coin::getVideoId, videoActionRequest.getVideoId()).eq(Coin::getUserId, videoActionRequest.getUserId()).exists(), ErrorCode.VIDEO_COIN_ERROR);
 
         // 校验判断视频是否存在
-        ThrowUtils.throwIf(!videoService.lambdaQuery().eq(Video::getVideoId, videoActionRequest.getVideoId()).exists(), ErrorCode.VIDEO_NOT_FOUND_ERROR);
+        videoLookup.requireExists(videoActionRequest.getVideoId());
 
         // 校验判断用户是否存在
         User user = userService.lambdaQuery().eq(User::getUserId, videoActionRequest.getUserId()).one();

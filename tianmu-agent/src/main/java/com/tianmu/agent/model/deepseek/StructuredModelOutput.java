@@ -15,9 +15,4 @@ final class StructuredModelOutput {
         if (!value.isTextual() || value.textValue().isBlank()) throw new IllegalArgumentException("Missing model field");
         return value.textValue();
     }
-    static List<Map<String, String>> messages(String instruction, Object input, ObjectMapper mapper) {
-        try { return List.of(Map.of("role", "system", "content", instruction),
-                Map.of("role", "user", "content", mapper.writeValueAsString(input))); }
-        catch (Exception e) { throw new IllegalArgumentException("Cannot serialize model input"); }
-    }
 }

@@ -1,5 +1,7 @@
 package com.tianmu.agent.tool;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.tianmu.agent.core.AgentException;
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.harness.RuntimeHarness;
@@ -18,12 +20,13 @@ import com.tianmu.agent.harness.trace.TraceDetails;
 @Component
 public class ToolDispatcher {
     private final SkillCatalog skills;
+    private final com.tianmu.agent.application.BusinessEvidencePolicy business = new com.tianmu.agent.application.BusinessEvidencePolicy();
     private final RuntimeHarness harness;
     private final ToolRegistry registry;
-    private final com.tianmu.agent.runtime.store.RunRepository reports;
+    private final com.tianmu.agent.application.ReportArtifacts artifacts;
     @org.springframework.beans.factory.annotation.Autowired
-    public ToolDispatcher(SkillCatalog skills, RuntimeHarness harness, ToolRegistry registry, com.tianmu.agent.runtime.store.RunRepository reports) {
-        this.skills = skills; this.harness = harness; this.registry = registry; this.reports = reports;
+    public ToolDispatcher(SkillCatalog skills, RuntimeHarness harness, ToolRegistry registry, com.tianmu.agent.runtime.store.ReportStore reports) {
+        this.skills = skills; this.harness = harness; this.registry = registry; this.artifacts = new com.tianmu.agent.application.ReportArtifacts(reports);
     }
     public ToolDispatcher(SkillCatalog skills, RuntimeHarness harness, ToolRegistry registry) { this(skills, harness, registry, null); }
     public List<ToolDefinition> definitions(Set<String> activeSkills) { return registry.definitions(activeSkills); }
@@ -95,63 +98,15 @@ public class ToolDispatcher {
                 throw new AgentException("RESULT_NOT_FOUND", "Result is not accessible in this run");
             return value;
         }
-        public void checkQuery(MetricQuery query) {
-            checkpoint();
-            if (run.task() != null && run.task().specification().type().equals("danmaku.report"))
-                throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Use the prepared danmaku analysis query for report tasks");
-            if (!scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "Out-of-scope video");
-            if (query.date().isBefore(businessDate().minusDays(30)) || !query.date().isBefore(businessDate()))
-                throw new AgentException("DATE_OUT_OF_RANGE", "Only completed days within the previous 30 days are supported");
-            if (run.task() != null && run.task().specification().type().equals("video.metric")) {
-                Map<String, Object> expected = run.task().specification().conditions();
-                if (((Number) expected.get("video_id")).longValue() != query.videoId() || !expected.get("date").equals(query.date().toString())
-                        || !expected.get("metric").equals(query.metric())) throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Tool query changed the prepared task conditions");
-            }
-        }
-        public Evidence registerEvidence(MetricData data) {
-            checkpoint();
-            if (!data.complete() || !"Asia/Shanghai".equals(data.timezone()) || data.value() < 0)
-                throw new AgentException("INVALID_EVIDENCE", "Query adapter returned incomplete or inconsistent evidence");
-            checkQuery(new MetricQuery(data.videoId(), data.date(), data.metric()));
-            Evidence value = new Evidence("ev_" + UUID.randomUUID(), run.id, run.owner, data);
-            run.execution().evidence().put(value); return value;
-        }
+        public void checkQuery(MetricQuery query) { business.checkQuery(run, query); }
+        public Evidence registerEvidence(MetricData data) { return business.registerEvidence(run, data); }
         public <T> T query(Function<CallControl, T> operation) { return harness.toolCall(run, operation); }
         public <T> T videoQuery(Function<CallControl, T> operation) { return harness.videoToolCall(run, operation); }
-        public void checkVideoQuery(long videoId) {
-            checkpoint();
-            if (!scope().videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside scope");
-            if (run.task() != null && run.task().specification().type().equals("danmaku.report")) {
-                Object target = run.task().specification().conditions().get("video_id");
-                if (!(target instanceof Number n) || n.longValue() != videoId)
-                    throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Video differs from prepared report");
-            }
-        }
-        public Evidence registerVideoEvidence(com.tianmu.agent.video.VideoContent.Facts facts) {
-            checkVideoQuery(facts.videoId());
-            Evidence value = new Evidence("ev_" + UUID.randomUUID(), run.id, run.owner, null, null, facts);
-            run.execution().evidence().put(value); return value;
-        }
-        public void checkDanmakuQuery(com.tianmu.agent.core.DanmakuTypes.Query query) {
-            checkpoint(); query.checkTime(Instant.now());
-            if (!scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "videoId is outside scope");
-            if (run.task() == null || !run.task().specification().type().equals("danmaku.report")
-                    || !run.task().specification().conditions().equals(com.tianmu.agent.preparation.DanmakuReportTask.specification(query).conditions()))
-                throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Analysis differs from the prepared task");
-        }
-        public Evidence registerDanmakuEvidence(com.tianmu.agent.core.DanmakuTypes.Dataset data) {
-            checkDanmakuQuery(data.query());
-            Evidence evidence = new Evidence("ev_" + UUID.randomUUID(), run.id, run.owner, null, data);
-            run.execution().evidence().put(evidence); return evidence;
-        }
-        public com.tianmu.agent.core.DanmakuTypes.ReportRef saveReport(String evidenceId, byte[] html) {
-            Evidence value = evidence(evidenceId);
-            if (value.analysis() == null) throw new AgentException("INVALID_EVIDENCE", "A danmaku analysis snapshot is required");
-            checkDanmakuQuery(value.analysis().query());
-            if (reports == null) throw new AgentException("STORAGE_REQUIRED", "Report storage unavailable");
-            var ref = reports.saveReport(run.id, run.owner, evidenceId, html);
-            checkpoint(); run.emit("ARTIFACT_READY", Map.of("artifact_id", ref.artifactId(), "url", ref.url(), "media_type", "text/html"));
-            return ref;
-        }
+        public void checkVideoQuery(long videoId) { business.checkVideoQuery(run, videoId); }
+        public void checkVideoQuery(long videoId, Long startMs, Long endMs) { business.checkVideoQuery(run, videoId, startMs, endMs); }
+        public Evidence registerVideoEvidence(com.tianmu.agent.core.VideoContent.Facts facts) { return business.registerVideoEvidence(run, facts); }
+        public void checkDanmakuQuery(com.tianmu.agent.core.DanmakuTypes.Query query) { business.checkDanmakuQuery(run, query); }
+        public Evidence registerDanmakuEvidence(com.tianmu.agent.core.DanmakuTypes.Dataset data) { return business.registerDanmakuEvidence(run, data); }
+        public com.tianmu.agent.core.DanmakuTypes.ReportRef saveReport(String evidenceId, byte[] html) { return artifacts.save(run, evidenceId, html); }
     }
 }

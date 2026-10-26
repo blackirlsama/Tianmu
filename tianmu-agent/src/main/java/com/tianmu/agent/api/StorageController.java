@@ -1,7 +1,7 @@
 package com.tianmu.agent.api;
 
 import com.tianmu.agent.access.IdentityPort;
-import com.tianmu.agent.adapters.storage.MysqlRunRepository;
+import com.tianmu.agent.runtime.store.StorageManagement;
 import com.tianmu.agent.core.*;
 import com.tianmu.agent.core.AgentTypes.AccessScope;
 import com.tianmu.agent.runtime.RunService;
@@ -13,13 +13,13 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/agent")
 public class StorageController {
-    private final RunService runs; private final IdentityPort identity; private final ObjectProvider<MysqlRunRepository> storage;
-    public StorageController(RunService runs, IdentityPort identity, ObjectProvider<MysqlRunRepository> storage) { this.runs = runs; this.identity = identity; this.storage = storage; }
+    private final RunService runs; private final IdentityPort identity; private final ObjectProvider<StorageManagement> storage;
+    public StorageController(RunService runs, IdentityPort identity, ObjectProvider<StorageManagement> storage) { this.runs = runs; this.identity = identity; this.storage = storage; }
     private AccessScope access(String auth) {
         if (auth == null || !auth.startsWith("Bearer ")) throw new AgentException("UNAUTHORIZED", "Bearer authentication is required");
         return identity.authenticate(auth.substring(7));
     }
-    private MysqlRunRepository persistent() {
+    private StorageManagement persistent() {
         var repository = storage.getIfAvailable();
         if (repository == null) throw new AgentException("STORAGE_REQUIRED", "Enable persistent storage for this endpoint"); return repository;
     }

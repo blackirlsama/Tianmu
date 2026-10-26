@@ -54,12 +54,9 @@ public class DeliveryService {
             if (reason == StopReason.FINALIZED_ANSWER) answer = new Answer("【轮次已达上限，仅基于已获取证据收尾】\n" + answer.text(), answer.evidenceIds());
             validateAnswer(answer, run);
             // Notes are derived from validated, owned evidence rather than model-generated metadata.
-            List<AnswerNote> notes = answer.evidenceIds().stream().distinct()
-                    .map(id -> run.execution().evidence().get(id).data())
-                    .filter(data -> data != null && "mysql:bullet:retained-persisted-v1".equals(data.source()))
-                    .map(data -> new AnswerNote("视频" + data.videoId() + " · " + data.date(),
-                            "按创建日期统计当前保留的已入库弹幕；不含已删除记录，也不代表全部已发送弹幕。",
-                            data.dataAsOf(), data.timezone())).toList();
+            List<Evidence> evidence = answer.evidenceIds().stream().distinct().map(id -> run.execution().evidence().get(id)).toList();
+            if (run.task() != null) EvidencePresentation.requireKind(run.task().specification(), evidence);
+            List<AnswerNote> notes = EvidencePresentation.notes(evidence);
             answer = new Answer(answer.text(), answer.evidenceIds(), notes);
             run.checkpoint();
             run.succeed(reservation, answer, reason);

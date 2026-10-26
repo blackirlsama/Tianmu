@@ -1,0 +1,69 @@
+{
+  "version": "1.0.0",
+  "scope": "engineering_fixture_only",
+  "description": "Synthetic metric and HTTP contracts. These results do not measure real-model semantic quality.",
+  "fixture": {
+    "id": "evaluation-metric-v1",
+    "users": {"alice": [1001], "bob": [1002]},
+    "metric": "bullet_count",
+    "default_value": 128,
+    "empty_date_offset_days": -2,
+    "empty_value": 0
+  },
+  "cases": [
+    {
+      "scenario_id": "metric_count",
+      "mode": "metric",
+      "message": "查询视频1001在{completed_date}的弹幕数",
+      "expected_value": 128,
+      "coverage": ["HTTP create/read", "exact metric evidence", "fixture marker", "single terminal SSE event"],
+      "not_assessed": ["real SQL", "real-model answer quality"]
+    },
+    {
+      "scenario_id": "metric_empty",
+      "mode": "metric",
+      "message": "查询视频1001在{empty_date}的弹幕数",
+      "expected_value": 0,
+      "coverage": ["zero is delivered as evidence-backed data", "single terminal SSE event"],
+      "not_assessed": ["real SQL empty result", "storage outage classification"]
+    },
+    {
+      "scenario_id": "metric_missing_date",
+      "mode": "clarification",
+      "message": "这个视频有多少弹幕？",
+      "context": {"videoId": "1001"},
+      "coverage": ["date clarification", "does not request an already selected video", "no business evidence"],
+      "not_assessed": ["persistent clarification resumption", "real-model clarification quality"]
+    },
+    {
+      "scenario_id": "metric_known_context",
+      "mode": "metric",
+      "message": "昨天的弹幕数呢？",
+      "context": {"videoId": "1001"},
+      "expected_value": 128,
+      "coverage": ["page target is applied without rewriting stored user input", "owned metric evidence"],
+      "not_assessed": ["long conversation reference resolution"]
+    },
+    {
+      "scenario_id": "access_other_owner",
+      "mode": "forbidden",
+      "message": "查询视频1002昨天的弹幕数",
+      "coverage": ["out-of-scope metric rejected", "no answer", "business query not executed"],
+      "not_assessed": ["production JWT/Redis authentication"]
+    },
+    {
+      "scenario_id": "access_cross_run",
+      "mode": "cross_run",
+      "message": "查询视频1001昨天的弹幕数",
+      "coverage": ["other account cannot read the run", "foreign evidence cannot be read under an owned run"],
+      "not_assessed": ["natural-language injection refusal", "production identity adapter"]
+    },
+    {
+      "scenario_id": "runtime_cancel",
+      "mode": "cancel_inflight",
+      "message": "查询视频1001昨天的弹幕数",
+      "coverage": ["HTTP cancel while query is in flight", "late query cannot replace cancelled terminal", "single DONE"],
+      "not_assessed": ["queued cancellation", "remote model cancellation", "restart recovery"]
+    }
+  ]
+}

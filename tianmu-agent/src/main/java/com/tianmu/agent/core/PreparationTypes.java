@@ -50,7 +50,11 @@ public final class PreparationTypes {
                 throw new IllegalArgumentException("Invalid curated FAQ entry");
         }
     }
-    public record PreparedRequest(String originalQuery, String query, Emotion emotion, Set<String> degradedStages, Set<String> skippedStages, Intent intent) {
+    public record PreparedRequest(String originalQuery, String query, Emotion emotion, Set<String> degradedStages, Set<String> skippedStages, Intent intent,
+                                  TaskTypes.Specification specification) {
+        public PreparedRequest(String originalQuery, String query, Emotion emotion, Set<String> degraded, Set<String> skipped, Intent intent) {
+            this(originalQuery, query, emotion, degraded, skipped, intent, null);
+        }
         public PreparedRequest(String originalQuery, String query, Emotion emotion, Set<String> degraded, Set<String> skipped) {
             this(originalQuery, query, emotion, degraded, skipped, Intent.UNKNOWN);
         }

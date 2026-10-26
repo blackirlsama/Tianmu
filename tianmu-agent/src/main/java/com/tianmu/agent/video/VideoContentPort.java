@@ -1,5 +1,7 @@
 package com.tianmu.agent.video;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.tianmu.agent.core.AgentTypes.AccessScope;
 import com.tianmu.agent.runtime.control.CallControl;
 

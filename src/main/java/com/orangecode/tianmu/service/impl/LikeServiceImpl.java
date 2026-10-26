@@ -32,7 +32,7 @@ public class LikeServiceImpl extends ServiceImpl<LikeMapper, Like>
 
 
     @Resource
-    private VideoService videoService;
+    private com.orangecode.tianmu.application.VideoLookup videoLookup;
 
     @Resource
     private VideoStatsService videoStatsService;
@@ -52,7 +52,7 @@ public class LikeServiceImpl extends ServiceImpl<LikeMapper, Like>
         crawlerLikeDetect(videoActionRequest);
 
          //校验判断视频是否存在
-        ThrowUtils.throwIf(!videoService.lambdaQuery().eq(Video::getVideoId, videoActionRequest.getVideoId()).exists(), ErrorCode.VIDEO_NOT_FOUND_ERROR);
+        videoLookup.requireExists(videoActionRequest.getVideoId());
 
 
         // 校验判断用户是否存在

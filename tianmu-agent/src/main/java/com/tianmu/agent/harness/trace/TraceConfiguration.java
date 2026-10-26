@@ -45,6 +45,7 @@ public class TraceConfiguration {
         if (!kafka.saslJaasConfig().isBlank()) config.put("sasl.jaas.config", kafka.saslJaasConfig());
         return new KafkaTraceSink(new KafkaProducer<>(config), kafka.topic());
     }
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnExpression("'${harness.trace.sink:file}' != 'otlp'")
     @Bean(destroyMethod = "") OutboxSpanExporter spanExporter(TraceProperties properties, ObjectProvider<TraceSink> customSinks,
             ObjectMapper mapper, TraceExportStats stats) throws Exception {
         TraceSink custom = customSinks.getIfAvailable();
@@ -58,10 +59,19 @@ public class TraceConfiguration {
             throw e;
         }
     }
-    @Bean(destroyMethod = "close") SdkTracerProvider harnessTracerProvider(OutboxSpanExporter exporter) {
+    @Bean(destroyMethod = "")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name="harness.trace.sink", havingValue="otlp")
+    io.opentelemetry.sdk.trace.export.SpanExporter otlpExporter(
+            @org.springframework.beans.factory.annotation.Value("${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://127.0.0.1:4318/v1/traces}") String endpoint) {
+        return io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter.builder().setEndpoint(endpoint)
+                .setTimeout(java.time.Duration.ofSeconds(3)).build();
+    }
+    @Bean(destroyMethod = "close") SdkTracerProvider harnessTracerProvider(io.opentelemetry.sdk.trace.export.SpanExporter exporter) {
         return SdkTracerProvider.builder().setSampler(Sampler.alwaysOn()).setResource(Resource.create(Attributes.of(
                 AttributeKey.stringKey("service.name"), "tianmu-operations-agent")))
-                .addSpanProcessor(SimpleSpanProcessor.create(exporter)).build();
+                .addSpanProcessor(exporter instanceof OutboxSpanExporter ? SimpleSpanProcessor.create(exporter) :
+                        io.opentelemetry.sdk.trace.export.BatchSpanProcessor.builder(exporter).setMaxQueueSize(2048)
+                                .setScheduleDelay(java.time.Duration.ofMillis(200)).build()).build();
     }
     @Bean Tracer harnessTracer(SdkTracerProvider provider) { return provider.get("com.tianmu.agent.harness", "0.7.0"); }
 }

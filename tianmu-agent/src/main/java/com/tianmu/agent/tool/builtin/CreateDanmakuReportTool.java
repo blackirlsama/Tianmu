@@ -1,5 +1,7 @@
 package com.tianmu.agent.tool.builtin;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.fasterxml.jackson.databind.*;
 import com.tianmu.agent.core.*;
 import com.tianmu.agent.core.AgentTypes.*;
@@ -25,7 +27,7 @@ public final class CreateDanmakuReportTool implements AgentTool {
         if (data == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
         context.checkDanmakuQuery(data.query());
         List<Map<String, Object>> sections = sections(ToolArguments.text(call, "sections_json"), data);
-        com.tianmu.agent.video.VideoContent.Facts video = null;
+        com.tianmu.agent.core.VideoContent.Facts video = null;
         String videoEvidence = null;
         if (call.arguments().containsKey("video_evidence_id")) {
             videoEvidence = ToolArguments.text(call,"video_evidence_id");
@@ -168,7 +170,7 @@ public final class CreateDanmakuReportTool implements AgentTool {
             @media(max-width:640px){body{padding:18px 12px}.hero{padding:25px 22px 22px;border-radius:14px}.range{align-items:flex-start}.section{margin-top:27px}.section h2{font-size:20px}.metrics{grid-template-columns:1fr}.metric{min-height:112px;padding:17px 20px}.table-wrap th,.table-wrap td{padding:10px 12px}.time-cell{min-width:245px}.samples{grid-template-columns:1fr}.insight-card{padding:18px}.methodology-content dl{grid-template-columns:1fr;gap:2px}.methodology-content dd{margin-bottom:8px}}
             @media print{html,body{background:#fff}.report{max-width:none}.hero{box-shadow:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}.section,.metric,.insight-card,.sample-card,.methodology{break-inside:avoid}.methodology-content{display:block}}
             """;
-    private static String renderVideo(com.tianmu.agent.video.VideoContent.Facts video, String evidenceId) {
+    private static String renderVideo(com.tianmu.agent.core.VideoContent.Facts video, String evidenceId) {
         StringBuilder html = new StringBuilder("<section class=\"section\"><h2>视频内容证据</h2><p>");
         html.append(esc(video.summary())).append("</p><p>播放范围：").append(playback(video.startMs())).append(" — ").append(playback(video.endMs()))
                 .append("；采样画面 ").append(video.sampledAtMs().size()).append(" 张。")

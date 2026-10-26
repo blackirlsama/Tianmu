@@ -16,4 +16,4 @@
 - rewrittenQuery 只精简措辞和空白，保留用户给出的数字、视频、日期、指标和约束；禁止新增、删除或替换业务条件。无需改写时原样返回 query。
 - rewrittenQuery 不得超过 2000 字符；条件值只允许标量；不要输出推理过程、答案、额外字段或 Markdown。
 
-- 用户要求理解指定视频的画面、剧情、镜头、对白或内容时，conditions 仅为 video_id（整数），无需日期；播放区间由工具参数表达，rewrittenQuery 保留原始播放范围。不要为视频内容理解补充弹幕统计的start/end/date/metric字段。
+- 用户要求理解指定视频的画面、剧情、镜头、对白或内容时，conditions 包含 video_id（整数），无需日期。若明确播放区间，同时提取 start_ms、end_ms（整数毫秒，例如第2秒到第6秒为2000和6000）；两者必须成对，区间最多120秒。未指定区间时只提取 video_id。范围不明确时先澄清，不能丢弃或扩大；rewrittenQuery 保留原始播放范围。不要补充弹幕统计的start/end/date/metric字段。

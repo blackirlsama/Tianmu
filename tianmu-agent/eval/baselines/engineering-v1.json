@@ -1,0 +1,504 @@
+{
+  "suite_version" : "1.0.0",
+  "generated_at" : "2026-10-26T07:07:12.240751700Z",
+  "assessment_scope" : "engineering_fixture_only",
+  "calendar_anchor" : "2026-10-26",
+  "paid_model_calls" : 0,
+  "semantic_quality" : "NOT_ASSESSED",
+  "java_version" : "17.0.17",
+  "os" : "Windows 11",
+  "inventory_size" : 24,
+  "bound_cases" : 7,
+  "executed_cases" : 7,
+  "passed_checks" : 7,
+  "source_sha256" : {
+    "eval/engineering-cases.json" : "4a3e5d49ef405d23488f6890fd2f95bc31e1d04c6601d064e04f22fbe4d21606",
+    "eval/scenarios.json" : "0795f071c66fdfb252167c37b418017e0a1a0dd3f8f5b2927d8f9d5604e8e676",
+    "src/main/java/com/tianmu/agent/demo/DemoAdapters.java" : "a8125b5448fbdd73f09cefcc8bd178b6d98d1bf38142e6c0276c2c42542f8445",
+    "src/main/resources/application.yml" : "2df40254f78ceda540d03704782c011ff66710a3c1a67d3e4e7c7931610e5542",
+    "src/main/resources/prompts/index.json" : "a364dec8935ee9243b7df58223eea0d824d75374c1572fd6aef76a4003d12294",
+    "src/test/java/com/tianmu/agent/evaluation/EvaluationBaselineTest.java" : "dc97bcfb65569c00f194ca4a812d5509db8563d1e20628b04125fe49b1e7cfff"
+  },
+  "results" : [ {
+    "scenario_id" : "metric_count",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "查询视频1001在2026-10-25的弹幕数"
+    },
+    "coverage" : [ "HTTP create/read", "exact metric evidence", "fixture marker", "single terminal SSE event" ],
+    "not_assessed" : [ "real SQL", "real-model answer quality" ],
+    "status" : "PASS",
+    "terminal_status" : "SUCCEEDED",
+    "route" : "HARNESS",
+    "total_model_calls" : 6,
+    "trace_id" : "08739599c9779af5cc4fc91ae3bcd157",
+    "task" : {
+      "runId" : "efe5cf8f-4239-4777-ac2c-a4ac1f3f269a",
+      "originalQuery" : "查询视频1001在2026-10-25的弹幕数",
+      "query" : "查询视频1001在2026-10-25的弹幕数",
+      "businessDate" : "2026-10-26",
+      "timezone" : "Asia/Shanghai",
+      "scope" : {
+        "tenantId" : "demo",
+        "userId" : "alice",
+        "videoIds" : [ 1001 ],
+        "authorizationRef" : ""
+      },
+      "preparation" : {
+        "originalQuery" : "查询视频1001在2026-10-25的弹幕数",
+        "query" : "查询视频1001在2026-10-25的弹幕数",
+        "emotion" : "NEUTRAL",
+        "degradedStages" : [ ],
+        "skippedStages" : [ ],
+        "intent" : "VIDEO_METRIC"
+      },
+      "specification" : {
+        "type" : "video.metric",
+        "conditions" : {
+          "date" : "2026-10-25",
+          "video_id" : 1001,
+          "metric" : "bullet_count"
+        },
+        "provenance" : {
+          "date" : "user_input",
+          "video_id" : "user_input",
+          "metric" : "user_input"
+        }
+      },
+      "resourceVersions" : {
+        "tool:list_skills" : "01c291525f241303181c7453a338f874381b79f432835594b97211e5c93bc6c5",
+        "prompt:harness.system" : "1.4.0",
+        "skill:danmaku-analysis" : "1.3.0",
+        "prompt:preparation.emotion" : "1.1.0",
+        "tool:query_danmaku" : "5ba524c1cf14024c16c4681a9c6c06debfac24158ac3be6c48436716721ae32a",
+        "tool:query_video_metrics" : "aac62515dd018bd8ea53461056f14f7f2a58bdeec91551cd601a318f844525c9",
+        "skill:video-metrics" : "1.4.0",
+        "tool:read_skill" : "f6eb3220b554896768d12c1209d3b1318adcaa7d6b6b32bd02bf7473c61ff8ac",
+        "skill-content:video-metrics" : "4b057d794bc418c677bbab9a0b60df518577a22c2c89cd6b70c8c455d7468464",
+        "tool:create_danmaku_report" : "bf4d269274ffc44062dec5451c49ea7793634c7dafc0babbe8b3af78c201f114",
+        "skill:video-content" : "1.1.1",
+        "prompt:preparation.understanding" : "1.4.0",
+        "skill-content:danmaku-analysis" : "63bcb31da225dccafea9b772964d95d7a287f4d3754544da4be23892bbc4789f",
+        "prompt:preparation.intent" : "1.4.0",
+        "skill-content:video-content" : "39cd51f38041340d36bb9b5e5541a4a61e74abe0e308aed36a6f5b467186a779",
+        "prompt:common.current-focus-boundary" : "1.1.0",
+        "prompt:common.json-output" : "1.0.0",
+        "prompt:harness.finalize" : "1.0.0",
+        "tool:analyze_video_content" : "7c96cf66a88184df0bee00833f3d6b53658c935da72126dafa77d571900f5075",
+        "tool:read_result" : "a2db614f46c021e4d7ea57e09b4d445af921cbc86f0bc824d1d35810e24c58f9"
+      },
+      "allowedTools" : [ "read_result", "list_skills", "query_danmaku", "create_danmaku_report", "analyze_video_content", "query_video_metrics", "read_skill" ],
+      "deadline" : "2026-10-26T07:07:37.245703300Z",
+      "maxModelCalls" : 16
+    },
+    "run_id" : "efe5cf8f-4239-4777-ac2c-a4ac1f3f269a",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 864
+  }, {
+    "scenario_id" : "metric_empty",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "查询视频1001在2026-10-24的弹幕数"
+    },
+    "coverage" : [ "zero is delivered as evidence-backed data", "single terminal SSE event" ],
+    "not_assessed" : [ "real SQL empty result", "storage outage classification" ],
+    "status" : "PASS",
+    "terminal_status" : "SUCCEEDED",
+    "route" : "HARNESS",
+    "total_model_calls" : 6,
+    "trace_id" : "c4596213c708494b16adb28b417184f5",
+    "task" : {
+      "runId" : "b9feb800-60be-4fb6-af91-418b6a5bc049",
+      "originalQuery" : "查询视频1001在2026-10-24的弹幕数",
+      "query" : "查询视频1001在2026-10-24的弹幕数",
+      "businessDate" : "2026-10-26",
+      "timezone" : "Asia/Shanghai",
+      "scope" : {
+        "tenantId" : "demo",
+        "userId" : "alice",
+        "videoIds" : [ 1001 ],
+        "authorizationRef" : ""
+      },
+      "preparation" : {
+        "originalQuery" : "查询视频1001在2026-10-24的弹幕数",
+        "query" : "查询视频1001在2026-10-24的弹幕数",
+        "emotion" : "NEUTRAL",
+        "degradedStages" : [ ],
+        "skippedStages" : [ ],
+        "intent" : "VIDEO_METRIC"
+      },
+      "specification" : {
+        "type" : "video.metric",
+        "conditions" : {
+          "date" : "2026-10-24",
+          "video_id" : 1001,
+          "metric" : "bullet_count"
+        },
+        "provenance" : {
+          "date" : "user_input",
+          "video_id" : "user_input",
+          "metric" : "user_input"
+        }
+      },
+      "resourceVersions" : {
+        "tool:list_skills" : "01c291525f241303181c7453a338f874381b79f432835594b97211e5c93bc6c5",
+        "prompt:harness.system" : "1.4.0",
+        "skill:danmaku-analysis" : "1.3.0",
+        "prompt:preparation.emotion" : "1.1.0",
+        "tool:query_danmaku" : "5ba524c1cf14024c16c4681a9c6c06debfac24158ac3be6c48436716721ae32a",
+        "tool:query_video_metrics" : "aac62515dd018bd8ea53461056f14f7f2a58bdeec91551cd601a318f844525c9",
+        "skill:video-metrics" : "1.4.0",
+        "tool:read_skill" : "f6eb3220b554896768d12c1209d3b1318adcaa7d6b6b32bd02bf7473c61ff8ac",
+        "skill-content:video-metrics" : "4b057d794bc418c677bbab9a0b60df518577a22c2c89cd6b70c8c455d7468464",
+        "tool:create_danmaku_report" : "bf4d269274ffc44062dec5451c49ea7793634c7dafc0babbe8b3af78c201f114",
+        "skill:video-content" : "1.1.1",
+        "prompt:preparation.understanding" : "1.4.0",
+        "skill-content:danmaku-analysis" : "63bcb31da225dccafea9b772964d95d7a287f4d3754544da4be23892bbc4789f",
+        "prompt:preparation.intent" : "1.4.0",
+        "skill-content:video-content" : "39cd51f38041340d36bb9b5e5541a4a61e74abe0e308aed36a6f5b467186a779",
+        "prompt:common.current-focus-boundary" : "1.1.0",
+        "prompt:common.json-output" : "1.0.0",
+        "prompt:harness.finalize" : "1.0.0",
+        "tool:analyze_video_content" : "7c96cf66a88184df0bee00833f3d6b53658c935da72126dafa77d571900f5075",
+        "tool:read_result" : "a2db614f46c021e4d7ea57e09b4d445af921cbc86f0bc824d1d35810e24c58f9"
+      },
+      "allowedTools" : [ "read_result", "list_skills", "query_danmaku", "create_danmaku_report", "analyze_video_content", "query_video_metrics", "read_skill" ],
+      "deadline" : "2026-10-26T07:07:38.107694300Z",
+      "maxModelCalls" : 16
+    },
+    "run_id" : "b9feb800-60be-4fb6-af91-418b6a5bc049",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 720
+  }, {
+    "scenario_id" : "metric_missing_date",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "这个视频有多少弹幕？",
+      "context" : {
+        "videoId" : "1001"
+      }
+    },
+    "coverage" : [ "date clarification", "does not request an already selected video", "no business evidence" ],
+    "not_assessed" : [ "persistent clarification resumption", "real-model clarification quality" ],
+    "status" : "PASS",
+    "terminal_status" : "NEEDS_INPUT",
+    "route" : "CLARIFY",
+    "total_model_calls" : 3,
+    "trace_id" : "cbb082e19b1698919c7f881aa717d478",
+    "task" : null,
+    "run_id" : "bf61fd7e-33c3-4a01-8dfa-f12845d33c6c",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 306
+  }, {
+    "scenario_id" : "metric_known_context",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "昨天的弹幕数呢？",
+      "context" : {
+        "videoId" : "1001"
+      }
+    },
+    "coverage" : [ "page target is applied without rewriting stored user input", "owned metric evidence" ],
+    "not_assessed" : [ "long conversation reference resolution" ],
+    "status" : "PASS",
+    "terminal_status" : "SUCCEEDED",
+    "route" : "HARNESS",
+    "total_model_calls" : 6,
+    "trace_id" : "d075c64338308e0500a0f2fca7068441",
+    "task" : {
+      "runId" : "999a88a3-029a-4984-acf2-da07caae099b",
+      "originalQuery" : "昨天的弹幕数呢？",
+      "query" : "昨天的弹幕数呢？ 当前视频：视频1001",
+      "businessDate" : "2026-10-26",
+      "timezone" : "Asia/Shanghai",
+      "scope" : {
+        "tenantId" : "demo",
+        "userId" : "alice",
+        "videoIds" : [ 1001 ],
+        "authorizationRef" : ""
+      },
+      "preparation" : {
+        "originalQuery" : "昨天的弹幕数呢？",
+        "query" : "昨天的弹幕数呢？ 当前视频：视频1001",
+        "emotion" : "NEUTRAL",
+        "degradedStages" : [ ],
+        "skippedStages" : [ ],
+        "intent" : "VIDEO_METRIC"
+      },
+      "specification" : {
+        "type" : "video.metric",
+        "conditions" : {
+          "date" : "2026-10-25",
+          "video_id" : 1001,
+          "metric" : "bullet_count"
+        },
+        "provenance" : {
+          "date" : "server_validated_input",
+          "video_id" : "server_validated_input",
+          "metric" : "server_validated_input"
+        }
+      },
+      "resourceVersions" : {
+        "tool:list_skills" : "01c291525f241303181c7453a338f874381b79f432835594b97211e5c93bc6c5",
+        "prompt:harness.system" : "1.4.0",
+        "skill:danmaku-analysis" : "1.3.0",
+        "prompt:preparation.emotion" : "1.1.0",
+        "tool:query_danmaku" : "5ba524c1cf14024c16c4681a9c6c06debfac24158ac3be6c48436716721ae32a",
+        "tool:query_video_metrics" : "aac62515dd018bd8ea53461056f14f7f2a58bdeec91551cd601a318f844525c9",
+        "skill:video-metrics" : "1.4.0",
+        "tool:read_skill" : "f6eb3220b554896768d12c1209d3b1318adcaa7d6b6b32bd02bf7473c61ff8ac",
+        "skill-content:video-metrics" : "4b057d794bc418c677bbab9a0b60df518577a22c2c89cd6b70c8c455d7468464",
+        "tool:create_danmaku_report" : "bf4d269274ffc44062dec5451c49ea7793634c7dafc0babbe8b3af78c201f114",
+        "skill:video-content" : "1.1.1",
+        "prompt:preparation.understanding" : "1.4.0",
+        "skill-content:danmaku-analysis" : "63bcb31da225dccafea9b772964d95d7a287f4d3754544da4be23892bbc4789f",
+        "prompt:preparation.intent" : "1.4.0",
+        "skill-content:video-content" : "39cd51f38041340d36bb9b5e5541a4a61e74abe0e308aed36a6f5b467186a779",
+        "prompt:common.current-focus-boundary" : "1.1.0",
+        "prompt:common.json-output" : "1.0.0",
+        "prompt:harness.finalize" : "1.0.0",
+        "tool:analyze_video_content" : "7c96cf66a88184df0bee00833f3d6b53658c935da72126dafa77d571900f5075",
+        "tool:read_result" : "a2db614f46c021e4d7ea57e09b4d445af921cbc86f0bc824d1d35810e24c58f9"
+      },
+      "allowedTools" : [ "read_result", "list_skills", "query_danmaku", "create_danmaku_report", "analyze_video_content", "query_video_metrics", "read_skill" ],
+      "deadline" : "2026-10-26T07:07:39.152649400Z",
+      "maxModelCalls" : 16
+    },
+    "run_id" : "999a88a3-029a-4984-acf2-da07caae099b",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 570
+  }, {
+    "scenario_id" : "access_other_owner",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "查询视频1002昨天的弹幕数"
+    },
+    "coverage" : [ "out-of-scope metric rejected", "no answer", "business query not executed" ],
+    "not_assessed" : [ "production JWT/Redis authentication" ],
+    "status" : "PASS",
+    "terminal_status" : "FAILED",
+    "route" : "HARNESS",
+    "total_model_calls" : 5,
+    "trace_id" : "387031293e90c8e8b68ee395b3e6eaf0",
+    "task" : {
+      "runId" : "3f35b620-a908-4928-9f99-efdd27c4d914",
+      "originalQuery" : "查询视频1002昨天的弹幕数",
+      "query" : "查询视频1002昨天的弹幕数",
+      "businessDate" : "2026-10-26",
+      "timezone" : "Asia/Shanghai",
+      "scope" : {
+        "tenantId" : "demo",
+        "userId" : "alice",
+        "videoIds" : [ 1001 ],
+        "authorizationRef" : ""
+      },
+      "preparation" : {
+        "originalQuery" : "查询视频1002昨天的弹幕数",
+        "query" : "查询视频1002昨天的弹幕数",
+        "emotion" : "NEUTRAL",
+        "degradedStages" : [ ],
+        "skippedStages" : [ ],
+        "intent" : "VIDEO_METRIC"
+      },
+      "specification" : {
+        "type" : "video.metric",
+        "conditions" : {
+          "date" : "2026-10-25",
+          "video_id" : 1002,
+          "metric" : "bullet_count"
+        },
+        "provenance" : {
+          "date" : "relative_date@2026-10-26",
+          "video_id" : "user_input",
+          "metric" : "user_input"
+        }
+      },
+      "resourceVersions" : {
+        "tool:list_skills" : "01c291525f241303181c7453a338f874381b79f432835594b97211e5c93bc6c5",
+        "prompt:harness.system" : "1.4.0",
+        "skill:danmaku-analysis" : "1.3.0",
+        "prompt:preparation.emotion" : "1.1.0",
+        "tool:query_danmaku" : "5ba524c1cf14024c16c4681a9c6c06debfac24158ac3be6c48436716721ae32a",
+        "tool:query_video_metrics" : "aac62515dd018bd8ea53461056f14f7f2a58bdeec91551cd601a318f844525c9",
+        "skill:video-metrics" : "1.4.0",
+        "tool:read_skill" : "f6eb3220b554896768d12c1209d3b1318adcaa7d6b6b32bd02bf7473c61ff8ac",
+        "skill-content:video-metrics" : "4b057d794bc418c677bbab9a0b60df518577a22c2c89cd6b70c8c455d7468464",
+        "tool:create_danmaku_report" : "bf4d269274ffc44062dec5451c49ea7793634c7dafc0babbe8b3af78c201f114",
+        "skill:video-content" : "1.1.1",
+        "prompt:preparation.understanding" : "1.4.0",
+        "skill-content:danmaku-analysis" : "63bcb31da225dccafea9b772964d95d7a287f4d3754544da4be23892bbc4789f",
+        "prompt:preparation.intent" : "1.4.0",
+        "skill-content:video-content" : "39cd51f38041340d36bb9b5e5541a4a61e74abe0e308aed36a6f5b467186a779",
+        "prompt:common.current-focus-boundary" : "1.1.0",
+        "prompt:common.json-output" : "1.0.0",
+        "prompt:harness.finalize" : "1.0.0",
+        "tool:analyze_video_content" : "7c96cf66a88184df0bee00833f3d6b53658c935da72126dafa77d571900f5075",
+        "tool:read_result" : "a2db614f46c021e4d7ea57e09b4d445af921cbc86f0bc824d1d35810e24c58f9"
+      },
+      "allowedTools" : [ "read_result", "list_skills", "query_danmaku", "create_danmaku_report", "analyze_video_content", "query_video_metrics", "read_skill" ],
+      "deadline" : "2026-10-26T07:07:39.732474100Z",
+      "maxModelCalls" : 16
+    },
+    "run_id" : "3f35b620-a908-4928-9f99-efdd27c4d914",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 626
+  }, {
+    "scenario_id" : "access_cross_run",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "查询视频1001昨天的弹幕数"
+    },
+    "coverage" : [ "other account cannot read the run", "foreign evidence cannot be read under an owned run" ],
+    "not_assessed" : [ "natural-language injection refusal", "production identity adapter" ],
+    "status" : "PASS",
+    "terminal_status" : "SUCCEEDED",
+    "route" : "HARNESS",
+    "total_model_calls" : 6,
+    "trace_id" : "e6f753bccfff81a22ac19ccfac7674e5",
+    "task" : {
+      "runId" : "50f1362e-e740-4d72-9c98-73c1cfb87e6e",
+      "originalQuery" : "查询视频1001昨天的弹幕数",
+      "query" : "查询视频1001昨天的弹幕数",
+      "businessDate" : "2026-10-26",
+      "timezone" : "Asia/Shanghai",
+      "scope" : {
+        "tenantId" : "demo",
+        "userId" : "alice",
+        "videoIds" : [ 1001 ],
+        "authorizationRef" : ""
+      },
+      "preparation" : {
+        "originalQuery" : "查询视频1001昨天的弹幕数",
+        "query" : "查询视频1001昨天的弹幕数",
+        "emotion" : "NEUTRAL",
+        "degradedStages" : [ ],
+        "skippedStages" : [ ],
+        "intent" : "VIDEO_METRIC"
+      },
+      "specification" : {
+        "type" : "video.metric",
+        "conditions" : {
+          "date" : "2026-10-25",
+          "video_id" : 1001,
+          "metric" : "bullet_count"
+        },
+        "provenance" : {
+          "date" : "relative_date@2026-10-26",
+          "video_id" : "user_input",
+          "metric" : "user_input"
+        }
+      },
+      "resourceVersions" : {
+        "tool:list_skills" : "01c291525f241303181c7453a338f874381b79f432835594b97211e5c93bc6c5",
+        "prompt:harness.system" : "1.4.0",
+        "skill:danmaku-analysis" : "1.3.0",
+        "prompt:preparation.emotion" : "1.1.0",
+        "tool:query_danmaku" : "5ba524c1cf14024c16c4681a9c6c06debfac24158ac3be6c48436716721ae32a",
+        "tool:query_video_metrics" : "aac62515dd018bd8ea53461056f14f7f2a58bdeec91551cd601a318f844525c9",
+        "skill:video-metrics" : "1.4.0",
+        "tool:read_skill" : "f6eb3220b554896768d12c1209d3b1318adcaa7d6b6b32bd02bf7473c61ff8ac",
+        "skill-content:video-metrics" : "4b057d794bc418c677bbab9a0b60df518577a22c2c89cd6b70c8c455d7468464",
+        "tool:create_danmaku_report" : "bf4d269274ffc44062dec5451c49ea7793634c7dafc0babbe8b3af78c201f114",
+        "skill:video-content" : "1.1.1",
+        "prompt:preparation.understanding" : "1.4.0",
+        "skill-content:danmaku-analysis" : "63bcb31da225dccafea9b772964d95d7a287f4d3754544da4be23892bbc4789f",
+        "prompt:preparation.intent" : "1.4.0",
+        "skill-content:video-content" : "39cd51f38041340d36bb9b5e5541a4a61e74abe0e308aed36a6f5b467186a779",
+        "prompt:common.current-focus-boundary" : "1.1.0",
+        "prompt:common.json-output" : "1.0.0",
+        "prompt:harness.finalize" : "1.0.0",
+        "tool:analyze_video_content" : "7c96cf66a88184df0bee00833f3d6b53658c935da72126dafa77d571900f5075",
+        "tool:read_result" : "a2db614f46c021e4d7ea57e09b4d445af921cbc86f0bc824d1d35810e24c58f9"
+      },
+      "allowedTools" : [ "read_result", "list_skills", "query_danmaku", "create_danmaku_report", "analyze_video_content", "query_video_metrics", "read_skill" ],
+      "deadline" : "2026-10-26T07:07:40.370984300Z",
+      "maxModelCalls" : 16
+    },
+    "run_id" : "50f1362e-e740-4d72-9c98-73c1cfb87e6e",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 1381
+  }, {
+    "scenario_id" : "runtime_cancel",
+    "assessment_scope" : "engineering_fixture_only",
+    "input" : {
+      "message" : "查询视频1001昨天的弹幕数"
+    },
+    "coverage" : [ "HTTP cancel while query is in flight", "late query cannot replace cancelled terminal", "single DONE" ],
+    "not_assessed" : [ "queued cancellation", "remote model cancellation", "restart recovery" ],
+    "status" : "PASS",
+    "terminal_status" : "CANCELLED",
+    "route" : "HARNESS",
+    "total_model_calls" : 5,
+    "trace_id" : "e9e86d090e76ae804b097610af1b6b14",
+    "task" : {
+      "runId" : "bbe9d20e-694c-440d-9290-5f54a8909b30",
+      "originalQuery" : "查询视频1001昨天的弹幕数",
+      "query" : "查询视频1001昨天的弹幕数",
+      "businessDate" : "2026-10-26",
+      "timezone" : "Asia/Shanghai",
+      "scope" : {
+        "tenantId" : "demo",
+        "userId" : "alice",
+        "videoIds" : [ 1001 ],
+        "authorizationRef" : ""
+      },
+      "preparation" : {
+        "originalQuery" : "查询视频1001昨天的弹幕数",
+        "query" : "查询视频1001昨天的弹幕数",
+        "emotion" : "NEUTRAL",
+        "degradedStages" : [ ],
+        "skippedStages" : [ ],
+        "intent" : "VIDEO_METRIC"
+      },
+      "specification" : {
+        "type" : "video.metric",
+        "conditions" : {
+          "date" : "2026-10-25",
+          "video_id" : 1001,
+          "metric" : "bullet_count"
+        },
+        "provenance" : {
+          "date" : "relative_date@2026-10-26",
+          "video_id" : "user_input",
+          "metric" : "user_input"
+        }
+      },
+      "resourceVersions" : {
+        "tool:list_skills" : "01c291525f241303181c7453a338f874381b79f432835594b97211e5c93bc6c5",
+        "prompt:harness.system" : "1.4.0",
+        "skill:danmaku-analysis" : "1.3.0",
+        "prompt:preparation.emotion" : "1.1.0",
+        "tool:query_danmaku" : "5ba524c1cf14024c16c4681a9c6c06debfac24158ac3be6c48436716721ae32a",
+        "tool:query_video_metrics" : "aac62515dd018bd8ea53461056f14f7f2a58bdeec91551cd601a318f844525c9",
+        "skill:video-metrics" : "1.4.0",
+        "tool:read_skill" : "f6eb3220b554896768d12c1209d3b1318adcaa7d6b6b32bd02bf7473c61ff8ac",
+        "skill-content:video-metrics" : "4b057d794bc418c677bbab9a0b60df518577a22c2c89cd6b70c8c455d7468464",
+        "tool:create_danmaku_report" : "bf4d269274ffc44062dec5451c49ea7793634c7dafc0babbe8b3af78c201f114",
+        "skill:video-content" : "1.1.1",
+        "prompt:preparation.understanding" : "1.4.0",
+        "skill-content:danmaku-analysis" : "63bcb31da225dccafea9b772964d95d7a287f4d3754544da4be23892bbc4789f",
+        "prompt:preparation.intent" : "1.4.0",
+        "skill-content:video-content" : "39cd51f38041340d36bb9b5e5541a4a61e74abe0e308aed36a6f5b467186a779",
+        "prompt:common.current-focus-boundary" : "1.1.0",
+        "prompt:common.json-output" : "1.0.0",
+        "prompt:harness.finalize" : "1.0.0",
+        "tool:analyze_video_content" : "7c96cf66a88184df0bee00833f3d6b53658c935da72126dafa77d571900f5075",
+        "tool:read_result" : "a2db614f46c021e4d7ea57e09b4d445af921cbc86f0bc824d1d35810e24c58f9"
+      },
+      "allowedTools" : [ "read_result", "list_skills", "query_danmaku", "create_danmaku_report", "analyze_video_content", "query_video_metrics", "read_skill" ],
+      "deadline" : "2026-10-26T07:07:41.761927700Z",
+      "maxModelCalls" : 16
+    },
+    "run_id" : "bbe9d20e-694c-440d-9290-5f54a8909b30",
+    "model" : "scripted-demo",
+    "provider_usage_state" : "NOT_APPLICABLE_SCRIPTED_MODEL",
+    "elapsed_ms" : 477
+  } ],
+  "implementation_tree_sha256" : "f5a147d4ad03a448b424124b801b683e03edfcbe2087933105c37855a45c69e8"
+}

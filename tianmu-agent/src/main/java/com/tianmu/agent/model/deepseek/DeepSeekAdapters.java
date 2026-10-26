@@ -9,9 +9,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 
 @Configuration
 @Profile("deepseek")
-@EnableConfigurationProperties(DeepSeekProperties.class)
+@EnableConfigurationProperties({DeepSeekProperties.class, com.tianmu.agent.model.ContextPolicy.class})
 public class DeepSeekAdapters {
-    @Bean DeepSeekClient deepSeekClient(DeepSeekProperties properties, ObjectMapper mapper) { return new DeepSeekClient(properties, mapper); }
+    @Bean DeepSeekClient deepSeekClient(DeepSeekProperties properties, ObjectMapper mapper, com.tianmu.agent.model.ContextPolicy policy) { return new DeepSeekClient(properties, mapper, policy); }
     @Bean PreparationModelPort deepSeekPreparation(DeepSeekClient client, DeepSeekProperties properties, ObjectMapper mapper, PromptCatalog prompts) {
         return new DeepSeekPreparationModel(client, properties, mapper, prompts);
     }

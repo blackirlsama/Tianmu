@@ -28,7 +28,19 @@ management:
         readiness:
           include: readinessState,agentStorage
 agent:
+  execution:
+    runs: {core: 2, max: 4, queue: 32}
+    preparation: {core: 6, max: 6, queue: 48}
+    model: {core: 2, max: 4, queue: 16}
+    tools: {core: 2, max: 4, queue: 16}
+    video: {core: 2, max: 4, queue: 8}
+    sse: {core: 4, max: 4, queue: 128}
+  context:
+    max-input-bytes: ${AGENT_CONTEXT_MAX_INPUT_BYTES:98304}
+    max-history-bytes: ${AGENT_CONTEXT_MAX_HISTORY_BYTES:16384}
   preparation:
+    deterministic-routing: true
+    emotion-enabled: false
     faq-timeout: 300ms
     understanding-timeout: 2s
     emotion-timeout: 300ms
@@ -36,6 +48,8 @@ harness:
   loop:
     max-turns: 6
     max-model-calls: 16
+    max-tokens: ${AGENT_MAX_TOKENS:0}
+    token-reservation: ${AGENT_TOKEN_RESERVATION:8192}
     request-timeout: 30s
     model-timeout: 5s
     tool-timeout: 5s

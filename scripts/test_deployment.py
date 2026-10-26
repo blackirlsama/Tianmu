@@ -14,6 +14,12 @@ spec.loader.exec_module(deployment)
 
 
 class DeploymentContract(unittest.TestCase):
+    def test_agent_image_build_includes_evaluation_inputs_required_by_default_tests(self):
+        dockerfile = (ROOT / 'deploy' / 'Dockerfile').read_text(encoding='utf-8')
+        ignore = (ROOT / '.dockerignore').read_text(encoding='utf-8')
+        self.assertIn('COPY tianmu-agent/eval ./eval', dockerfile)
+        self.assertIn('!tianmu-agent/eval/**', ignore)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

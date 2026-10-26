@@ -1,5 +1,7 @@
 package com.tianmu.agent.tool;
 
+import com.tianmu.agent.core.VideoContent;
+
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.runtime.control.CallControl;
 import java.time.LocalDate;
@@ -28,7 +30,8 @@ public interface ToolContext {
         checkpoint();
         if (!scope().videoIds().contains(videoId)) throw new com.tianmu.agent.core.AgentException("FORBIDDEN", "Video outside scope");
     }
-    default Evidence registerVideoEvidence(com.tianmu.agent.video.VideoContent.Facts facts) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Video evidence unavailable"); }
+    default void checkVideoQuery(long videoId, Long startMs, Long endMs) { checkVideoQuery(videoId); }
+    default Evidence registerVideoEvidence(com.tianmu.agent.core.VideoContent.Facts facts) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Video evidence unavailable"); }
     default <T> T videoQuery(Function<CallControl, T> operation) { return query(operation); }
     void checkQuery(MetricQuery query);
     <T> T query(Function<CallControl, T> operation);

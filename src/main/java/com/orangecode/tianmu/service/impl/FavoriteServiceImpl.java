@@ -43,7 +43,7 @@ public class FavoriteServiceImpl extends ServiceImpl<FavoriteMapper, Favorite> i
     private UserService userService;
 
     @Resource
-    private VideoService videoService;
+    private com.orangecode.tianmu.application.VideoLookup videoLookup;
 
     @Resource
     private CounterUtil counterUtil;
@@ -62,7 +62,7 @@ public class FavoriteServiceImpl extends ServiceImpl<FavoriteMapper, Favorite> i
         crawlerFavoriteDetect(videoActionRequest);
 
         // 校验判断视频是否存在
-        ThrowUtils.throwIf(!videoService.lambdaQuery().eq(Video::getVideoId, videoActionRequest.getVideoId()).exists(), ErrorCode.VIDEO_NOT_FOUND_ERROR);
+        videoLookup.requireExists(videoActionRequest.getVideoId());
 
         // 校验判断用户是否存在
         ThrowUtils.throwIf(!userService.lambdaQuery().eq(User::getUserId, videoActionRequest.getUserId()).exists(), ErrorCode.USER_NOT_EXISTS);

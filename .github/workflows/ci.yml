@@ -14,6 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tianmu-front
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tianmu-front/package-lock.json
+      - run: npm ci
+      - run: npm run test:agent
+      - run: npm run build
+
   publication:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -80,6 +97,14 @@ jobs:
       - name: Verify Agent module against isolated services
         if: matrix.module == 'agent'
         run: mvn -B -ntp -f tianmu-agent/pom.xml verify
+      - name: Retain the engineering evaluation baseline
+        if: always() && matrix.module == 'agent'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-engineering-baseline
+          path: tianmu-agent/target/evaluation/engineering-baseline.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify default no-key demo over HTTP and SSE
         if: matrix.module == 'agent'
         run: python scripts/smoke_demo.py --jar tianmu-agent/target/operations-agent-0.7.0-SNAPSHOT.jar

@@ -9,6 +9,7 @@
 - `manual-case.example.json`：真实素材的标注模板。没有绑定授权素材、数据版本和人工/SQL 对照时，保持 draft。
 - `baselines/engineering-v1.json`：2026-10-26 实际运行并核对源码指纹的首份参考结果，7个工程绑定通过；不是业务语义质量成绩。
 - `baselines/real-video-v1.md`：服务器现有版本的一次真实视频观测；素材与 SQL 已核对，内容由助手预标注，等待人工复核，不作为候选代码的在线验收。
+- `baselines/real-video-v2.md`：架构迭代版本上线后的真实验收；功能链路通过，记录了视频连续运动推断问题，语义状态未通过人工验收。
 - `../src/test/java/com/tianmu/agent/evaluation/EvaluationBaselineTest.java`：真实 HTTP Controller/任务执行/SSE 链路中的确定性回归。
 
 ## 运行

@@ -78,6 +78,12 @@ public final class BusinessDanmakuAnalysis {
                     long left=Math.round(rs.getLong("bin")*positionWidth*1000);return new Position(left,Math.min(left+Math.round(positionWidth*1000),Math.max(left+1,Math.round(supported*1000))),rs.getLong("n"));
                 },videoId,from,to,supported);
         long located=playback.stream().mapToLong(Position::count).sum();
+        if(supported>0){
+            Map<Long,Long> positions=new HashMap<>();playback.forEach(p->positions.put(p.startMs(),p.count()));
+            List<Position> complete=new ArrayList<>();long step=Math.round(positionWidth*1000),end=Math.round(supported*1000);
+            for(long left=0;left<end;left+=step)complete.add(new Position(left,Math.min(left+step,end),positions.getOrDefault(left,0L)));
+            playback=List.copyOf(complete);
+        }
         List<TextGroup> corpus = db.query("SELECT b.bullet_id,COALESCE(b.content,'') excerpt,0 clipped,g.n,"
                 + "CASE WHEN b.playback_time>=0 AND b.playback_time<? THEN ROUND(b.playback_time*1000) ELSE NULL END playback_ms FROM ("
                 + "SELECT MIN(bullet_id) id,COUNT(*) n" + scope + " GROUP BY BINARY content ORDER BY id LIMIT 5001) g JOIN bullet b ON b.bullet_id=g.id ORDER BY g.id",

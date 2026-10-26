@@ -13,6 +13,7 @@
 | MinIO Java SDK | 对象存储客户端；服务端镜像有独立授权条款 |
 | Elasticsearch / Redis | 搜索与缓存；不同版本、服务方式可能适用不同条款 |
 | OpenTelemetry / Kafka client | Trace 与消息输出 |
+| Apache Lucene Smart Chinese Analyzer 9.12.3 | 报告词云的中文分词，使用内置词典；[上游文档](https://lucene.apache.org/core/9_12_3/analysis/smartcn/org/apache/lucene/analysis/cn/smart/SmartChineseAnalyzer.html)，Apache-2.0；随依赖保留其 LICENSE/NOTICE |
 | JJWT / Commons Email / Hutool / Lombok | 认证、邮件和工具 |
 | JUnit / Mockito / Spring Boot Test | 测试依赖 |
 

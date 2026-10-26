@@ -49,6 +49,7 @@ class BusinessIntegrationTest {
         assertEquals(5,result.totalMessages());assertEquals(2,result.uniqueSenders());
         var a=result.audience();assertEquals(5,a.corpusMessages());assertEquals(4,a.corpus().size());
         assertEquals(2,a.unknownPlayback());assertEquals(3,a.playback().stream().mapToLong(BusinessDanmakuAnalysis.Position::count).sum());
+        assertEquals(10,a.playback().size());assertTrue(a.playback().stream().anyMatch(p->p.count()==0));
         assertTrue(a.playback().stream().allMatch(p->p.endMs()<=20000));
         assertEquals("881",a.interactions().get(0).userId());assertEquals(3,a.interactions().get(0).messages());assertEquals(2,a.interactions().get(0).activeDays());
         var sizes=a.corpus().stream().filter(g->g.text().equals("尺寸？")).findFirst().orElseThrow();

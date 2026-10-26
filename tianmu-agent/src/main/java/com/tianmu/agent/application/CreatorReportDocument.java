@@ -10,7 +10,7 @@ import java.util.*;
 
 /** Versioned JSON presentation contract. Evidence and classification remain separate from display examples. */
 public record CreatorReportDocument(String schemaVersion,String title,String period,boolean synthetic,Metrics metrics,
-        List<String> conclusions,VideoSummary video,List<TopicCard> topics,List<Viewer> activeViewers,
+        List<String> conclusions,VideoSummary video,List<TopicCard> topics,List<Word> wordCloud,List<Viewer> activeViewers,
         List<Bar> playback,List<Bar> activity,String activitySummary,long unknownPlayback,String dataAsOf,String videoUrl) {
     public record Metrics(long messages,long viewers,int topics,long analyzedMessages) {}
     public record VideoSummary(String text,int sampledPositions) {}
@@ -21,8 +21,9 @@ public record CreatorReportDocument(String schemaVersion,String title,String per
     }
     public record Viewer(String name,long messages,int activeDays) {}
     public record Bar(String label,long count,String url) {}
+    public record Word(String text,long count) {}
     public CreatorReportDocument{
-        conclusions=List.copyOf(conclusions);topics=List.copyOf(topics);activeViewers=List.copyOf(activeViewers);playback=List.copyOf(playback);activity=List.copyOf(activity);
+        conclusions=List.copyOf(conclusions);topics=List.copyOf(topics);wordCloud=wordCloud==null?List.of():List.copyOf(wordCloud);activeViewers=List.copyOf(activeViewers);playback=List.copyOf(playback);activity=List.copyOf(activity);
     }
     private static final DateTimeFormatter DATE=DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm");
     private static final DateTimeFormatter SHORT=DateTimeFormatter.ofPattern("M月d日 HH:mm");
@@ -61,9 +62,9 @@ public record CreatorReportDocument(String schemaVersion,String title,String per
         var peak=data.buckets().stream().max(Comparator.comparingLong(com.tianmu.agent.core.DanmakuTypes.Bucket::count)).orElseThrow();
         String peakText=peak.count()==0?"当前时段没有讨论记录。":"最活跃的时段是 "+SHORT.format(data.query().start().plusSeconds(peak.index()*width))+" — "+SHORT.format(data.query().start().plusSeconds(Math.min(duration,(peak.index()+1)*width)))+"，收到 "+peak.count()+" 条弹幕。";
         List<Bar> activity=data.buckets().stream().filter(b->b.index()*width<duration).map(b->new Bar(SHORT.format(data.query().start().plusSeconds(b.index()*width)),b.count(),null)).toList();
-        return new CreatorReportDocument("1.0","观众都在聊什么",DATE.format(data.query().start())+" — "+DATE.format(data.query().end())+" · 北京时间",
+        return new CreatorReportDocument("1.1","观众都在聊什么",DATE.format(data.query().start())+" — "+DATE.format(data.query().end())+" · 北京时间",
                 data.demo() || audience.interactions().stream().anyMatch(f->f.nickname().startsWith("模拟")),new Metrics(data.totalMessages(),data.uniqueSenders(),cards.size(),audience.corpusMessages()),
-                conclusions,video==null?null:new VideoSummary(video.summary(),video.sampledAtMs().size()),cards,viewers,playback,activity,peakText,audience.unknownPlayback(),
+                conclusions,video==null?null:new VideoSummary(video.summary(),video.sampledAtMs().size()),cards,ReportWordCloud.terms(audience.corpus()),viewers,playback,activity,peakText,audience.unknownPlayback(),
                 DATE.format(LocalDateTime.ofInstant(data.dataAsOf(),DanmakuTypes.ZONE)),"/video/"+data.query().videoId());
     }
     private static Link link(long video,long at,String label){return new Link(label,"/video/"+video+"?t="+at/1000.0);}

@@ -51,6 +51,7 @@ class ReportSkillFlowTest {
         String html=new String(saved.getValue(),StandardCharsets.UTF_8);
         assertTrue(html.contains("先看结论"));assertTrue(html.contains("已分析本时段全部 200 条弹幕"));assertTrue(html.contains("模拟·布丁"));assertTrue(html.contains("200 条相关弹幕"));
         assertFalse(html.contains("7000000000000000000"));assertFalse(html.contains("canonical"));assertFalse(html.contains("[0, 0"));assertFalse(html.contains("videoId "));
+        assertFalse(html.contains("本报告包含模拟测试数据"));assertTrue(html.contains("class=\"trend-line\""));assertTrue(html.contains("class=\"word-cloud\""));
         verify(c,never()).query(any());verify(c,never()).videoQuery(any());
         Path out=Path.of("target/report-preview");Files.createDirectories(out);Files.write(out.resolve("full-audience-report.html"),saved.getValue());
         Files.writeString(out.resolve("full-audience-report.json"),json.writerWithDefaultPrettyPrinter().writeValueAsString(result.data().get("report_document")),StandardCharsets.UTF_8);
@@ -118,5 +119,14 @@ class ReportSkillFlowTest {
         var error=assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",args),c));assertTrue(error.getMessage().contains("video_context"));assertEquals(0,progress.get().offset());
         topic.put("video_context","画面能看清小鸭绒毛，与观众的外观反馈相关。");topic.put("video_at_ms",List.of(2500));args.put("topics_json",json.writeValueAsString(Map.of("topics",List.of(topic))));
         assertNotNull(tool.execute(new ToolCall("create_danmaku_report",args),c).terminalAnswer());
+    }
+    @Test void wordCloudCountsAllRepeatedOriginalsAndChartsAreScriptFree(){
+        var words=ReportWordCloud.terms(List.of(new TextGroup("1","绒毛 镜头 绒毛 只 做 挺 没有",3,1000L,false),new TextGroup("2","绒毛 原声",2,2000L,false)));
+        assertEquals(8,words.stream().filter(w->w.text().equals("绒毛")).findFirst().orElseThrow().count());
+        assertTrue(words.stream().noneMatch(w->Set.of("只","做","挺","没有").contains(w.text())));
+        var base=data(2);var topic=new Topic("T1","小鸭外观","观众喜欢绒毛","保留近景",base.audience().corpus().stream().map(TextGroup::id).toList(),2,"",List.of());
+        String html=CreatorAudienceReport.render(base,List.of(topic),null);
+        assertEquals(2,html.split("<polyline class=\"trend-line\"",-1).length-1);assertFalse(html.contains("<script"));assertFalse(html.contains("NaN"));assertFalse(html.contains("Infinity"));
+        String empty=CreatorAudienceReport.render(data(0),List.of(),null);assertFalse(empty.contains("NaN"));assertFalse(empty.contains("Infinity"));
     }
 }

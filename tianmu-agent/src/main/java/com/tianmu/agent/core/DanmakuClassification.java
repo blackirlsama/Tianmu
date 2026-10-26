@@ -20,9 +20,13 @@ public record DanmakuClassification(int offset, List<Topic> topics, String video
     }
     public Map<String,Object> view(Overview data){
         List<TextGroup> batch=batch(data,offset);
+        List<Map<String,Object>> rows=new ArrayList<>();
+        for(int i=0;i<batch.size();i++){
+            TextGroup g=batch.get(i);Map<String,Object> row=new LinkedHashMap<>();row.put("id","G"+(offset+i+1));row.put("text",g.text());row.put("count",g.count());row.put("playbackMs",g.playbackMs());rows.add(row);
+        }
         return Map.of("offset",offset,"processed_groups",offset,"total_groups",data.corpus().size(),"processed_messages",topics.stream().mapToLong(Topic::messages).sum(),
                 "total_messages",data.totalMessages(),"complete",offset==data.corpus().size(),
-                "groups",batch.stream().map(g->{Map<String,Object> row=new LinkedHashMap<>();row.put("id",g.id());row.put("text",g.text());row.put("count",g.count());row.put("playbackMs",g.playbackMs());return row;}).toList(),
+                "groups",rows,
                 "topics",topics.stream().map(t->Map.of("topic_key",t.id(),"title",t.title(),"observation",t.observation(),"recommendation",t.recommendation(),"messages",t.messages())).toList());
     }
 }

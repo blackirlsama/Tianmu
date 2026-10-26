@@ -97,4 +97,26 @@ class ReportSkillFlowTest {
         assertEquals(List.of("拍摄设备和镜头参数可以放在简介里吗"),document.topics().get(0).quotes().stream().map(CreatorReportDocument.Quote::text).toList());
         assertEquals(2,document.metrics().analyzedMessages());
     }
+    @Test void wrappedRealModelTopicsAndShortAliasesPreserveCompleteCoverage() throws Exception {
+        var data=data(2);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
+        String wrapped=json.writeValueAsString(Map.of("topics",List.of(Map.of("topic_key","T1","title","小鸭外观","observation","观众喜欢绒毛","recommendation","保留近景","sample_ids",List.of("G1","G2")))));
+        var result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",wrapped)),c);
+        assertNotNull(result.terminalAnswer());assertEquals(data.audience().corpus().stream().map(TextGroup::id).toList(),progress.get().topics().get(0).sampleIds());
+    }
+    @Test void missingAliasesAreNamedInRepairFeedbackAndNoPartialDraftIsSaved() throws Exception {
+        var data=data(2);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
+        String topics=json.writeValueAsString(Map.of("topics",List.of(Map.of("topic_key","T1","title","小鸭外观","observation","观众喜欢绒毛","recommendation","保留近景","sample_ids",List.of("G1")))));
+        var error=assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",topics)),c));
+        assertTrue(error.getMessage().contains("G2"));assertEquals(0,progress.get().offset());verify(c,never()).saveReport(anyString(),any());
+    }
+    @Test void videoEvidenceMustActuallyBeConnectedToAReportTopicBeforeDraftCommit() throws Exception {
+        var data=data(1);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
+        var video=new VideoContent.Facts("video-content-v1",1001,"v",0,5000,"黄色小鸭",List.of(new VideoContent.Moment(2500,"小鸭绒毛清晰可见")),"","SAMPLED_FRAMES",List.of(2500L),"vision",Instant.now());
+        var source=c.evidence("ev_full");when(c.evidence("ev_video")).thenReturn(new Evidence("ev_video",source.runId(),source.owner(),null,null,video));
+        var topic=new LinkedHashMap<String,Object>(Map.of("topic_key","T1","title","小鸭外观","observation","观众喜欢绒毛","recommendation","保留近景","sample_ids",List.of("G1")));
+        var args=new LinkedHashMap<String,Object>(Map.of("evidence_id","ev_full","offset",0,"video_evidence_id","ev_video","topics_json",json.writeValueAsString(Map.of("topics",List.of(topic)))));
+        var error=assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",args),c));assertTrue(error.getMessage().contains("video_context"));assertEquals(0,progress.get().offset());
+        topic.put("video_context","画面能看清小鸭绒毛，与观众的外观反馈相关。");topic.put("video_at_ms",List.of(2500));args.put("topics_json",json.writeValueAsString(Map.of("topics",List.of(topic))));
+        assertNotNull(tool.execute(new ToolCall("create_danmaku_report",args),c).terminalAnswer());
+    }
 }

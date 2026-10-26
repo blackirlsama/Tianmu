@@ -30,12 +30,31 @@ final class ReportDraftEditor {
         }
         List<String> keys=new ArrayList<>();JsonNode nodes;
         try{
-            nodes=json.readTree(ToolArguments.text(call,"topics_json"));if(!nodes.isArray())throw new IllegalArgumentException();
-            for(JsonNode node:nodes){String key=node.path("topic_key").asText();if(!key.matches("T[1-6]") || keys.contains(key))throw new IllegalArgumentException();keys.add(key);((ObjectNode)node).remove("topic_key");}
-        }catch(Exception e){throw new AgentException("INVALID_REPORT","Use topic_key T1..T6, with each batch ID exactly once");}
+            nodes=json.readTree(ToolArguments.text(call,"topics_json"));
+            if(nodes.isObject() && nodes.size()==1 && nodes.has("topics"))nodes=nodes.get("topics");
+            if(!nodes.isArray())throw new IllegalArgumentException();
+            Map<String,String> aliases=new LinkedHashMap<>();Set<String> canonical=new HashSet<>(),assigned=new HashSet<>();
+            for(int i=0;i<batch.size();i++){aliases.put("G"+(progress.offset()+i+1),batch.get(i).id());canonical.add(batch.get(i).id());}
+            for(JsonNode node:nodes){
+                String key=node.path("topic_key").asText();if(!key.matches("T[1-6]") || keys.contains(key))throw new IllegalArgumentException();keys.add(key);((ObjectNode)node).remove("topic_key");
+                JsonNode refs=node.path("sample_ids");if(!refs.isArray())throw new IllegalArgumentException();
+                for(int i=0;i<refs.size();i++){
+                    if(!refs.get(i).isTextual())throw new IllegalArgumentException();String supplied=refs.get(i).textValue();
+                    String member=aliases.get(supplied);if(member==null && canonical.contains(supplied))member=supplied;
+                    if(member==null)throw new AgentException("INVALID_REPORT","Unknown batch ID: "+supplied+". Use only IDs in the current classification.groups.");
+                    if(!assigned.add(member))throw new AgentException("INVALID_REPORT","Repeated batch ID: "+supplied+". Assign each ID once.");
+                    ((com.fasterxml.jackson.databind.node.ArrayNode)refs).set(i,com.fasterxml.jackson.databind.node.TextNode.valueOf(member));
+                }
+            }
+            List<String> missing=aliases.entrySet().stream().filter(e->!assigned.contains(e.getValue())).map(Map.Entry::getKey).toList();
+            if(!missing.isEmpty())throw new AgentException("INVALID_REPORT","Missing batch IDs: "+String.join(",",missing)+". Resubmit this entire batch, including these IDs exactly once.");
+        }catch(AgentException e){throw e;}
+        catch(Exception e){throw new AgentException("INVALID_REPORT","topics_json must be an array or {\"topics\":[...]}; use topic_key T1..T6 and assign every current batch ID exactly once.");}
         long total=batch.stream().mapToLong(TextGroup::count).sum();
         Overview subset=new Overview(List.of(),List.of(),total,batch,total,total);
         List<Topic> parsed=AudienceTopics.parse(json,nodes.toString(),subset,video);
+        if(video!=null && parsed.stream().noneMatch(t->!t.videoContext().isBlank()) && progress.topics().stream().noneMatch(t->!t.videoContext().isBlank()))
+            throw new AgentException("INVALID_REPORT","Add video_context and actual sampled video_at_ms to at least one relevant topic. Explain the visible relationship, or what the video cannot confirm; do not invent visual facts. Resubmit this full batch.");
         if(parsed.stream().mapToInt(t->t.sampleIds().size()).sum()!=batch.size())throw new AgentException("INVALID_REPORT","Every ID in the current batch must be assigned exactly once; sample_ids are all members, not examples");
         Map<String,Topic> merged=new LinkedHashMap<>();progress.topics().forEach(t->merged.put(t.id(),t));
         for(int i=0;i<parsed.size();i++){

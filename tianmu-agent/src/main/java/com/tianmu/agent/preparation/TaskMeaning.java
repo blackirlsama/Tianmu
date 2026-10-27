@@ -9,7 +9,7 @@ import java.util.*;
 public class TaskMeaning {
     private final List<TaskSpecificationResolver> resolvers;
     public TaskMeaning(List<TaskSpecificationResolver> resolvers) { this.resolvers = List.copyOf(resolvers); }
-    public static TaskMeaning defaults() { return new TaskMeaning(List.of(new MetricTaskSpecificationResolver(), new DanmakuReportSpecificationResolver(), new VideoContentSpecificationResolver())); }
+    public static TaskMeaning defaults() { return new TaskMeaning(List.of(new MetricTaskSpecificationResolver(), new DanmakuReportSpecificationResolver(), new VideoContentSpecificationResolver(), new CommentAnalysisSpecificationResolver(), new AudienceReportSpecificationResolver())); }
     public Specification resolve(String text, LocalDate date) {
         return resolve(text, date, date.atStartOfDay(java.time.ZoneId.of("Asia/Shanghai")).toInstant());
     }

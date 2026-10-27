@@ -9,7 +9,7 @@ import java.util.Map;
 @Configuration(proxyBeanMethods=false)
 @Profile("agent-bridge-standalone")
 @EnableAutoConfiguration
-@Import({AgentBridgeConfiguration.class, AgentBridgeController.class})
+@Import({AgentBridgeConfiguration.class, AgentBridgeController.class, CommentAnalysisController.class})
 public class AgentBridgeApplication {
     public static void main(String[] args) {
         SpringApplication application = new SpringApplication(AgentBridgeApplication.class);

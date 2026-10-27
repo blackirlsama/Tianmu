@@ -9,6 +9,13 @@ import java.util.*;
 
 /** Business admission and evidence rules, independent of tool discovery and dispatch. */
 public final class BusinessEvidencePolicy {
+        public void checkCommentQuery(EvidenceContext run, com.tianmu.agent.core.DanmakuTypes.Query query) {
+            run.checkpoint(); query.checkTime(Instant.now());
+            if (!run.scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "Video outside scope");
+            if (run.task() == null || !"comments.analysis".equals(run.task().specification().type())
+                    || !((TaskConditions.Report) run.task().specification().typed()).query().equals(query))
+                throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Comments differ from prepared task");
+        }
         public void checkQuery(EvidenceContext run, MetricQuery query) {
             run.checkpoint();
             if (run.task() != null && run.task().specification().type().equals("danmaku.report"))
@@ -52,12 +59,14 @@ public final class BusinessEvidencePolicy {
         public void checkDanmakuQuery(EvidenceContext run, com.tianmu.agent.core.DanmakuTypes.Query query) {
             run.checkpoint(); query.checkTime(Instant.now());
             if (!run.scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "videoId is outside scope");
-            if (run.task() == null || !Set.of("danmaku.report","danmaku.overview").contains(run.task().specification().type())
+            if (run.task() == null || !Set.of("danmaku.report","danmaku.overview","audience.report").contains(run.task().specification().type())
                     || !((TaskConditions.Report) run.task().specification().typed()).query().equals(query))
                 throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Analysis differs from the prepared task");
         }
         public Evidence registerDanmakuEvidence(EvidenceContext run, com.tianmu.agent.core.DanmakuTypes.Dataset data) {
             checkDanmakuQuery(run, data.query());
+            if("audience.report".equals(run.task().specification().type()) != (data.sources()!=null))
+                throw new AgentException("INVALID_EVIDENCE","Report sources differ from the prepared task");
             Evidence evidence = new Evidence("ev_" + UUID.randomUUID(), run.runId(), run.scope(), null, data);
             run.evidenceStore().put(evidence); return evidence;
         }

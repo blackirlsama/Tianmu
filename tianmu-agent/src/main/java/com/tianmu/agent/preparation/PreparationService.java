@@ -81,9 +81,10 @@ public class PreparationService implements AutoCloseable {
             }
             Intent known = switch (specification.type()) {
                 case "video.metric" -> Intent.VIDEO_METRIC;
-                case "danmaku.report" -> Intent.DANMAKU_REPORT;
+                case "danmaku.report", "audience.report" -> Intent.DANMAKU_REPORT;
                 case "video.content" -> Intent.OTHER;
                 case "danmaku.overview" -> Intent.OTHER;
+                case "comments.analysis" -> Intent.OTHER;
                 default -> Intent.UNKNOWN;
             };
             if (known != Intent.UNKNOWN) {
@@ -135,7 +136,7 @@ public class PreparationService implements AutoCloseable {
     }
     private boolean validIntent(String type, Intent intent) {
         return switch (type) {
-            case "danmaku.report" -> intent == Intent.DANMAKU_REPORT;
+            case "danmaku.report", "audience.report" -> intent == Intent.DANMAKU_REPORT;
             case "video.metric" -> intent == Intent.VIDEO_METRIC;
             default -> intent != Intent.VIDEO_METRIC && intent != Intent.DANMAKU_REPORT;
         };

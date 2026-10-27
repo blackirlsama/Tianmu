@@ -208,7 +208,7 @@
               </div>
             </div>
           </div>
-          <section class="operations-entry">
+            <section v-if="isVideoAuthor" class="operations-entry">
             <div class="operations-entry-heading"><span class="operations-icon">✦</span><div><strong>天幕运营助手</strong><span>你的内容运营搭档</span></div><small>AI</small></div>
             <p>聊聊观众反馈，一起找到<br>下一个内容灵感。</p>
             <button class="open-assistant" @click="openAssistant">和助手聊聊 <span>↗</span></button>
@@ -259,7 +259,7 @@
       </div>
     </div>
     <el-drawer v-model="assistantOpen" class="operations-drawer" title="天幕运营助手" append-to-body size="min(1120px, 96vw)" :with-header="false" :close-on-click-modal="false" @closed="assistantClosed">
-      <AgentWorkspace v-if="assistantMounted" embedded :video-id="String($route.params.videoId)" :video-title="videoDetail.title || ''" @close="assistantOpen = false" />
+      <AgentWorkspace v-if="assistantMounted && isVideoAuthor" embedded :video-id="String($route.params.videoId)" :video-title="videoDetail.title || ''" @close="assistantOpen = false" />
     </el-drawer>
   </div>
 </template>
@@ -368,7 +368,6 @@ export default {
     this.getVideoDetail();
   },
   mounted() {
-    if (this.$route.query.assistant === '1' && this.isLogin) this.openAssistant();
     // 延时100ms，确保组件渲染完成，再连接websocket
     setTimeout(() => {
       // 连接WebSocket
@@ -384,6 +383,11 @@ export default {
   },
   computed: {
     ...mapState(useUserStore, ["user", "isLogin"]),
+    isVideoAuthor() {
+      return this.isLogin && this.user.userId != null && this.videoDetail.userId != null
+        && String(this.videoDetail.videoId) === String(this.$route.params.videoId)
+        && String(this.user.userId) === String(this.videoDetail.userId);
+    },
     focusText() {
       if (this.videoUserInfo.follow === 2) {
         return "已互粉";
@@ -394,13 +398,21 @@ export default {
       return "+ 关注";
     },
   },
+  watch: {
+    isVideoAuthor: {
+      immediate: true,
+      handler(allowed) {
+        if (!allowed) {
+          this.assistantOpen = false;
+          this.assistantMounted = false;
+        } else if (this.$route.query.assistant === '1') this.openAssistant();
+      },
+    },
+  },
   methods: {
     mediaVideoUrl,
     openAssistant() {
-      if (!this.isLogin) {
-        ElMessage.info('登录后就可以和运营助手对话');
-        return this.updateDialogVisible(true);
-      }
+      if (!this.isVideoAuthor) return;
       this.assistantMounted = true;
       this.assistantOpen = true;
       if (this.$route.query.assistant !== '1') {

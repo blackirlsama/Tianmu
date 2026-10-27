@@ -79,14 +79,18 @@ public final class AgentTypes {
                              String metricVersion, String source, Instant dataAsOf,
                              String timezone, boolean complete, boolean demo) {}
     public record Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis,
-                           com.tianmu.agent.core.VideoContent.Facts videoContent) {
+                           com.tianmu.agent.core.VideoContent.Facts videoContent, VideoComments.Dataset comments,ReportCheckpoint reportCheckpoint) {
+        public Evidence(String id,UUID runId,AccessScope owner,MetricData data,DanmakuTypes.Dataset analysis,VideoContent.Facts video,VideoComments.Dataset comments){this(id,runId,owner,data,analysis,video,comments,null);}
+        public Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis, VideoContent.Facts video) {
+            this(id, runId, owner, data, analysis, video, null);
+        }
         public Evidence(String id, UUID runId, AccessScope owner, MetricData data) { this(id, runId, owner, data, null, null); }
         public Evidence(String id, UUID runId, AccessScope owner, MetricData data, DanmakuTypes.Dataset analysis) { this(id, runId, owner, data, analysis, null); }
         public Evidence {
-            if ((data == null ? 0 : 1) + (analysis == null ? 0 : 1) + (videoContent == null ? 0 : 1) != 1)
+            if ((data == null ? 0 : 1) + (analysis == null ? 0 : 1) + (videoContent == null ? 0 : 1) + (comments == null ? 0 : 1) + (reportCheckpoint==null?0:1) != 1)
                 throw new IllegalArgumentException("Evidence must contain exactly one fact type");
         }
-        public Object facts() { return videoContent != null ? videoContent : analysis == null ? data : analysis; }
+        public Object facts() { return reportCheckpoint!=null?reportCheckpoint:comments != null ? comments : videoContent != null ? videoContent : analysis == null ? data : analysis; }
     }
     public record Event(long sequence, String type, Object data, Instant at) {}
     public record Snapshot(UUID runId, Status status, Instant createdAt, int steps,

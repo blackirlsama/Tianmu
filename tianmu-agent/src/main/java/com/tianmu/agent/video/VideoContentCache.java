@@ -16,6 +16,7 @@ public final class VideoContentCache {
 
     private final JdbcTemplate db;
     private final ObjectMapper json;
+    private volatile long retryAfter;
     private final com.github.benmanes.caffeine.cache.Cache<String, VideoContent.Facts> memory = com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
             .maximumSize(128).expireAfterWrite(java.time.Duration.ofHours(1)).build();
     @org.springframework.beans.factory.annotation.Autowired
@@ -24,18 +25,23 @@ public final class VideoContentCache {
     }
     VideoContentCache(JdbcTemplate db, ObjectMapper json) { this.db = db; this.json = json; }
     public VideoContent.Facts get(String key) {
-        if (db == null) return memory.getIfPresent(key);
-        var rows = db.queryForList("SELECT facts_json FROM agent_video_content_cache WHERE cache_key=? AND expires_at>UTC_TIMESTAMP(6)", String.class, key);
+        if (db == null || !available()) return memory.getIfPresent(key);
+        List<String> rows;
+        try{rows=db.queryForList("SELECT facts_json FROM agent_video_content_cache WHERE cache_key=? AND expires_at>UTC_TIMESTAMP(6)", String.class, key);}
+        catch(org.springframework.dao.DataAccessException e){unavailable();return memory.getIfPresent(key);}
         if (rows.isEmpty()) return null;
         try { return json.readValue(rows.get(0), VideoContent.Facts.class); }
-        catch (Exception e) { db.update("DELETE FROM agent_video_content_cache WHERE cache_key=? AND facts_json=CAST(? AS JSON)",key,rows.get(0)); return null; }
+        catch (Exception e) { try{db.update("DELETE FROM agent_video_content_cache WHERE cache_key=? AND facts_json=CAST(? AS JSON)",key,rows.get(0));}catch(org.springframework.dao.DataAccessException failure){unavailable();}return null; }
     }
     public void put(String key, VideoContent.Facts facts) {
-        if (db == null) { memory.put(key, facts); return; }
+        memory.put(key,facts);if (db == null || !available())return;
         try {
             String body = json.writeValueAsString(facts);
             db.update("INSERT INTO agent_video_content_cache(cache_key,facts_json,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 DAY)) ON DUPLICATE KEY UPDATE facts_json=VALUES(facts_json),expires_at=VALUES(expires_at)",key,body);
             db.update("DELETE FROM agent_video_content_cache WHERE expires_at<=UTC_TIMESTAMP(6) LIMIT 100");
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalArgumentException("Invalid video cache payload"); }
+        catch(org.springframework.dao.DataAccessException e){unavailable();}
     }
+    private boolean available(){return retryAfter==0 || System.nanoTime()-retryAfter>=0;}
+    private void unavailable(){retryAfter=System.nanoTime()+java.time.Duration.ofSeconds(2).toNanos();org.slf4j.LoggerFactory.getLogger(getClass()).warn("video_cache_storage_unavailable");}
 }

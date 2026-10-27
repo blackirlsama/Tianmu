@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 @Profile("business")
 @EnableConfigurationProperties(BusinessProperties.class)
 public class BusinessAdapters {
-    @Bean com.tianmu.agent.preparation.FaqPort businessFaq() {
+    @Bean com.tianmu.agent.faq.ClasspathFaqPort businessFaq() {
         return new com.tianmu.agent.faq.ClasspathFaqPort(new org.springframework.core.io.ClassPathResource("faq/business.json"), null);
     }
     @Bean RemoteBusinessAdapter remoteBusinessAdapter(BusinessProperties properties, ObjectMapper json, ObjectProvider<ResourceScopeStore> repositories) {
@@ -33,10 +33,10 @@ public class BusinessAdapters {
     }
 }
 
-final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.video.VideoContentPort {
+final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.query.CommentQueryPort, com.tianmu.agent.query.AudienceQueryPort, com.tianmu.agent.video.VideoContentPort {
     private record RawSample(String id, int bucket, String text, boolean truncated, Long playbackMs) {}
     private record AnalysisResponse(DanmakuTypes.Query query, long totalMessages, long uniqueSenders,
-            List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo, com.tianmu.agent.core.AudienceData.Overview audience) {}
+            List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo, com.tianmu.agent.core.AudienceData.Overview audience,com.tianmu.agent.core.AudienceReportData.Sources sources) {}
     private final BusinessProperties config;
     private final ObjectMapper json;
     private final ObjectProvider<ResourceScopeStore> repositories;
@@ -66,6 +66,11 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
                 if (control != null) control.checkpoint();
                 if (response.statusCode() == 401) throw new AgentException("UNAUTHORIZED", "Business login is no longer valid");
                 if (response.statusCode() == 403) throw new AgentException("FORBIDDEN", "Video is outside your current scope");
+                if (response.statusCode() == 422) {
+                    String code = json.readTree(response.body()).path("code").asText();
+                    if (Set.of("FULL_ANALYSIS_TOO_LARGE", "COMMENT_CONTEXT_TOO_DEEP", "INVALID_COMMENT_CONTEXT").contains(code))
+                        throw new AgentException(code, "评论数据或回复上下文超出完整分析范围，请缩小时间范围后重试。");
+                }
                 if (response.statusCode() != 200 || response.body().length > maxBytes)
                     throw new AgentException("BUSINESS_UNAVAILABLE", "Business service response unavailable");
                 return json.readTree(response.body());
@@ -140,6 +145,7 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         try {
             // The bridge returns raw snippets. Grouped occurrences belong to the Agent's tool/evidence model.
             AnalysisResponse raw = json.treeToValue(answer, AnalysisResponse.class);
+            if(raw.sources()!=null)throw new IllegalArgumentException("Expected standalone danmaku evidence");
             return new DanmakuTypes.Dataset(raw.query(), raw.totalMessages(), raw.uniqueSenders(), raw.buckets(),
                     raw.samples().stream().map(s -> new DanmakuTypes.Sample(s.id(), s.bucket(), s.text(), s.truncated(), List.of(new DanmakuTypes.SampleOccurrence(s.id(),s.bucket(),s.truncated(),s.playbackMs())))).toList(),
                     raw.dataAsOf(), raw.source(), raw.demo(), raw.audience());
@@ -152,6 +158,28 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
                 credentials.token(scope.authorizationRef()), null, control);
         try { return json.treeToValue(result, com.tianmu.agent.core.VideoContent.Source.class); }
         catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Video metadata schema mismatch"); }
+    }
+    @Override public com.tianmu.agent.core.VideoComments.Dataset comments(DanmakuTypes.Query query, AccessScope scope, CallControl control) {
+        if (!scope.videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "Video outside prepared scope");
+        query.checkTime(Instant.now());
+        String start = URLEncoder.encode(query.start().toString(), java.nio.charset.StandardCharsets.UTF_8);
+        String end = URLEncoder.encode(query.end().toString(), java.nio.charset.StandardCharsets.UTF_8);
+        JsonNode answer = request("GET", "/internal/agent/comments-analysis?videoId=" + query.videoId() + "&start=" + start + "&end=" + end,
+                credentials.token(scope.authorizationRef()), null, control, 4_194_304, 10_000);
+        try { return json.treeToValue(answer, com.tianmu.agent.core.VideoComments.Dataset.class); }
+        catch (Exception e) { throw new AgentException("INVALID_EVIDENCE", "Comment response is incomplete or inconsistent"); }
+    }
+    @Override public DanmakuTypes.Dataset audience(DanmakuTypes.Query query,AccessScope scope,CallControl control) {
+        if(!scope.videoIds().contains(query.videoId()))throw new AgentException("FORBIDDEN","Video outside prepared scope");
+        query.checkTime(Instant.now());
+        String start=URLEncoder.encode(query.start().toString(),java.nio.charset.StandardCharsets.UTF_8),end=URLEncoder.encode(query.end().toString(),java.nio.charset.StandardCharsets.UTF_8);
+        JsonNode answer=request("GET","/internal/agent/audience-analysis?videoId="+query.videoId()+"&start="+start+"&end="+end,
+                credentials.token(scope.authorizationRef()),null,control,8_388_608,10_000);
+        try {
+            var snapshot=json.treeToValue(answer,com.tianmu.agent.core.AudienceReportData.Snapshot.class);
+            return com.tianmu.agent.core.AudienceReportData.combine(snapshot,scope.userId());
+        }catch(AgentException e){throw e;}
+        catch(Exception e){throw new AgentException("INVALID_EVIDENCE","Combined feedback snapshot is inconsistent");}
     }
     @Override public com.tianmu.agent.core.VideoContent.Media media(long videoId, String version, long startMs, long endMs, AccessScope scope, CallControl control) {
         if (!scope.videoIds().contains(videoId) || !version.matches("[a-f0-9]{64}")) throw new AgentException("FORBIDDEN", "Video outside scope");

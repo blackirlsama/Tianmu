@@ -21,6 +21,43 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="BUSINESS_IT", matches="true")
 class BusinessIntegrationTest {
+    @Test void jointSnapshotKeepsSourceCountsAndSeparatesAuthorsBeforeCompression() {
+        db.update("DELETE FROM comment WHERE video_id=1001");
+        bullet(5001,start());
+        db.update("INSERT INTO bullet(bullet_id,video_id,user_id,content,playback_time,create_time) VALUES(5002,1001,882,'fixture',1,?)",Timestamp.from(start()));
+        comment(5001,1001,882L,null,"观众问题",start());
+        comment(5003,1001,881L,5001L,"作者补充",start().plusSeconds(1));
+        var config=new BridgeProperties("tianmu",Set.of("normal"),"Asia/Shanghai",5);
+        var service=new BusinessAudienceAnalysis(db,config,new BusinessDanmakuAnalysis(db,config),new BusinessCommentAnalysis(db,config));
+        var snapshot=service.query(principal(),1001,day.atStartOfDay(),day.plusDays(1).atStartOfDay());
+        assertEquals(2,snapshot.danmaku().totalMessages());assertEquals(2,snapshot.danmaku().audience().corpus().size());
+        assertEquals(1,snapshot.danmaku().audience().corpus().stream().filter(BusinessDanmakuAnalysis.TextGroup::author).count());
+        assertEquals(2,snapshot.comments().totalComments());assertEquals(1,snapshot.comments().audienceComments());
+        assertEquals(1,snapshot.uniqueAudience());
+    }
+    @Test void commentThreadsPreserveIdenticalRepliesAndOldAncestorsWithoutCountingThem() {
+        db.update("DELETE FROM comment WHERE video_id IN (1001,1002)");
+        comment(4001,1001,881L,null,"作者的问题",start().minusSeconds(1));
+        comment(4002,1001,882L,4001L,"同意",start());
+        comment(4003,1001,882L,4002L,"同意",start().plusSeconds(1));
+        comment(4004,1001,881L,null,"作者补充",start().plusSeconds(2));
+        comment(4005,1002,882L,null,"其他视频",start().plusSeconds(2));
+        comment(4006,1001,882L,4005L,"跨视频父评论",start().plusSeconds(3));
+        comment(4007,1001,882L,null,"右端点不计入",start().plusSeconds(86400));
+        var service = new BusinessCommentAnalysis(db,new BridgeProperties("tianmu",Set.of("normal"),"Asia/Shanghai",5));
+        var result = service.query(principal(),1001,day.atStartOfDay(),day.plusDays(1).atStartOfDay());
+        assertEquals(4,result.totalComments()); assertEquals(3,result.audienceComments()); assertEquals(1,result.uniqueAudience());
+        assertEquals(5,result.comments().size());
+        assertEquals(2,result.comments().stream().filter(c->c.text().equals("同意")).count());
+        assertFalse(result.comments().stream().filter(c->c.id().equals("4001")).findFirst().orElseThrow().inPeriod());
+        assertEquals("4002",result.comments().stream().filter(c->c.id().equals("4003")).findFirst().orElseThrow().parentId());
+        assertTrue(result.comments().stream().filter(c->c.id().equals("4006")).findFirst().orElseThrow().parentUnavailable());
+        assertFalse(result.comments().stream().anyMatch(c->c.id().equals("4005")));
+        assertEquals(403,assertThrows(BridgeException.class,()->service.query(principal(),1002,day.atStartOfDay(),day.plusDays(1).atStartOfDay())).status());
+    }
+    private void comment(long id,long video,Long user,Long parent,String text,Instant at) {
+        db.update("INSERT INTO comment(comment_id,video_id,user_id,parent_comment_id,content,create_time) VALUES(?,?,?,?,?,?)",id,video,user,parent,text,Timestamp.from(at));
+    }
     @Test void completeCorpusContainsAllTwoHundredTextsWithoutClippingAndUsesShortVideoBins(){
         db.update("UPDATE video SET duration=31.698 WHERE video_id=1001");
         db.update("UPDATE user SET nickname='模拟·布丁' WHERE user_id=881");
@@ -47,13 +84,15 @@ class BusinessIntegrationTest {
         var service=new BusinessDanmakuAnalysis(db,new BridgeProperties("tianmu",Set.of("normal"),"Asia/Shanghai",5));
         var result=service.query(principal(),1001,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay());
         assertEquals(5,result.totalMessages());assertEquals(2,result.uniqueSenders());
-        var a=result.audience();assertEquals(5,a.corpusMessages());assertEquals(4,a.corpus().size());
+        var a=result.audience();assertEquals(5,a.corpusMessages());assertEquals(5,a.corpus().size());
         assertEquals(2,a.unknownPlayback());assertEquals(3,a.playback().stream().mapToLong(BusinessDanmakuAnalysis.Position::count).sum());
         assertEquals(10,a.playback().size());assertTrue(a.playback().stream().anyMatch(p->p.count()==0));
         assertTrue(a.playback().stream().allMatch(p->p.endMs()<=20000));
         assertEquals("881",a.interactions().get(0).userId());assertEquals(3,a.interactions().get(0).messages());assertEquals(2,a.interactions().get(0).activeDays());
-        var sizes=a.corpus().stream().filter(g->g.text().equals("尺寸？")).findFirst().orElseThrow();
-        assertEquals(2,sizes.count());assertEquals(2,sizes.trend().stream().mapToLong(Long::longValue).sum());
+        var sizes=a.corpus().stream().filter(g->g.text().equals("尺寸？")).toList();
+        assertEquals(2,sizes.stream().mapToLong(BusinessDanmakuAnalysis.TextGroup::count).sum());
+        assertEquals(2,sizes.stream().flatMap(g->g.trend().stream()).mapToLong(Long::longValue).sum());
+        assertEquals(1,sizes.stream().filter(BusinessDanmakuAnalysis.TextGroup::author).count());
         assertTrue(a.corpus().stream().noneMatch(g->g.text().contains("13812345678")));
         db.update("UPDATE video SET duration=NULL WHERE video_id=1001");
         var unknown=service.query(principal(),1001,day.minusDays(6).atStartOfDay(),day.plusDays(1).atStartOfDay()).audience();

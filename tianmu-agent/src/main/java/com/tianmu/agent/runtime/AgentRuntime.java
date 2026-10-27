@@ -105,7 +105,7 @@ public class AgentRuntime {
         finalizeWithoutTools(run, message);
     }
     private int maxTurns(RunState run){
-        return run.task()!=null && "danmaku.report".equals(run.task().specification().type())
+        return run.task()!=null && Set.of("danmaku.report", "audience.report", "comments.analysis").contains(run.task().specification().type())
                 ?Math.max(harness.policy().maxTurns(),Math.min(32,run.modelCallLimit()-1)):harness.policy().maxTurns();
     }
     private ModelContext context(RunState run, String message, int remaining, boolean finalizing) {

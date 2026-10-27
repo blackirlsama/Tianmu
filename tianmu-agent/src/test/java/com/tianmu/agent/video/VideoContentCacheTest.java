@@ -1,12 +1,13 @@
 package com.tianmu.agent.video;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tianmu.agent.core.VideoContent;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import java.util.*;
+import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class VideoContentCacheTest {
@@ -28,5 +29,13 @@ class VideoContentCacheTest {
         when(db.queryForList(anyString(), eq(String.class), eq("key"))).thenReturn(List.of("{}"));
         assertNull(new VideoContentCache(db, new ObjectMapper()).get("key"));
         verify(db).update("DELETE FROM agent_video_content_cache WHERE cache_key=? AND facts_json=CAST(? AS JSON)", "key", "{}");
+    }
+    @Test void cachePersistenceFailureDoesNotDiscardFreshFactsOrBreakTheAnalysis(){
+        JdbcTemplate db=mock(JdbcTemplate.class);
+        when(db.update(anyString(),any(Object[].class))).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("offline"));
+        var cache=new VideoContentCache(db,new ObjectMapper().findAndRegisterModules());
+        var facts=new VideoContent.Facts("video-content-v1",1001,"version",0,3000,"草地上的小鸭",List.of(),"","SAMPLED_FRAMES",List.of(1000L),"vision",Instant.now());
+        assertDoesNotThrow(()->cache.put("key",facts));assertEquals(facts,cache.get("key"));
+        verify(db,never()).queryForList(anyString(),eq(String.class),any(Object[].class));
     }
 }

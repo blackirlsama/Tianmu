@@ -49,7 +49,7 @@ const input = {
 test('report requests preserve long video IDs and explicit Beijing wall times', () => {
   assert.equal(
     buildReportMessage(input, now),
-    '请分析视频987654321098765432从2026-10-24 20:00到2026-10-24 22:00的弹幕，生成一份弹幕分析报告。重点关注：分析互动高峰'
+    '请分析视频987654321098765432从2026-10-24 20:00到2026-10-24 22:00的弹幕和评论，生成一份观众反馈报告。重点关注：分析互动高峰'
   )
   for (const changes of [
     { videoId: '9223372036854775808' },

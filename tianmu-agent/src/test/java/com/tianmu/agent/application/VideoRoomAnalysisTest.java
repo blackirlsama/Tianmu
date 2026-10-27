@@ -39,7 +39,10 @@ class VideoRoomAnalysisTest {
         var topics=AudienceTopics.parse(json,source,audience(),null);
         assertEquals(3,topics.get(0).messages());
         LocalDateTime end=LocalDateTime.now(DanmakuTypes.ZONE).minusSeconds(1).withNano(0);
-        String html=CreatorAudienceReport.render(data(new Query(1001,end.minusDays(7),end)),topics,null);
+        var dataset=data(new Query(1001,end.minusDays(7),end));
+        assertThrows(AgentException.class,()->CreatorAudienceReport.render(dataset,topics,null));
+        var full=new ArrayList<>(topics);full.add(new Topic("tail","颜色问题","询问颜色","补充说明",List.of("2"),1,"",List.of()));
+        String html=CreatorAudienceReport.render(dataset,full,null);
         assertTrue(html.contains("&lt;script&gt;"));assertFalse(html.contains("<script>bad"));assertTrue(html.contains("尺寸？"));
         assertTrue(html.contains("3 条相关弹幕"));assertTrue(html.contains("另有 1 条缺少有效播放位置"));
         assertThrows(AgentException.class,()->AudienceTopics.parse(json,source.replace("\"1\"","\"999\""),audience(),null));

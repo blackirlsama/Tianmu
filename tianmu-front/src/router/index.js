@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { hasAuthToken } from '@/lib/auth'
+import { checkCreatorAccess } from '@/api/agent'
 
 const routes = [
   { path: '/agent', name: 'AgentWorkspace', component: () => import('@/views/agent/AgentWorkspace.vue'), meta: { requestAuth: true } },
@@ -55,13 +56,20 @@ const router = createRouter({
   routes
 })
 // 本地没有用户信息就不跳转
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   if (to.meta.requestAuth && !hasAuthToken()) {
     ElMessage.warning("请先登录");
     return next("/");
-  } else {
-    return next();
   }
+  if (to.name === 'AgentWorkspace') {
+    try {
+      await checkCreatorAccess(to.query.videoId)
+    } catch {
+      ElMessage.warning('运营助手仅供作者在本人视频中使用')
+      return next('/')
+    }
+  }
+  return next();
 });
 router.afterEach((to) => {
   document.documentElement.classList.toggle('agent-workspace-page', to.name === 'AgentWorkspace')

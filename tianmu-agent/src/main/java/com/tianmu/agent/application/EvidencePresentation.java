@@ -11,7 +11,9 @@ public final class EvidencePresentation {
         boolean supported = switch (specification.type()) {
             case "video.metric" -> evidence.stream().anyMatch(e -> e.data() != null);
             case "video.content" -> evidence.stream().anyMatch(e -> e.videoContent() != null);
-            case "danmaku.report", "danmaku.overview" -> evidence.stream().anyMatch(e -> e.analysis() != null);
+            case "comments.analysis" -> evidence.stream().anyMatch(e -> e.comments() != null);
+            case "danmaku.report", "danmaku.overview" -> evidence.stream().anyMatch(e -> e.analysis() != null && e.analysis().sources()==null);
+            case "audience.report" -> evidence.stream().anyMatch(e -> e.analysis()!=null && e.analysis().sources()!=null);
             default -> true;
         };
         if (!supported) throw new AgentException("INVALID_EVIDENCE", "Answer lacks evidence required by the prepared task");
@@ -19,6 +21,9 @@ public final class EvidencePresentation {
     public static List<AnswerNote> notes(List<Evidence> evidence) {
         List<AnswerNote> notes = new ArrayList<>();
         for (Evidence value : evidence) {
+            var comments = value.comments();
+            if (comments != null) notes.add(new AnswerNote("视频" + comments.query().videoId() + " · 评论",
+                    "统计所选时间内当前保留的评论和回复；作者发言单独计数。区间外的父评论仅供理解上下文，不计入区间互动。", comments.dataAsOf(), "Asia/Shanghai"));
             var data = value.data();
             if (data != null && "mysql:bullet:retained-persisted-v1".equals(data.source()))
                 notes.add(new AnswerNote("视频" + data.videoId() + " · " + data.date(),

@@ -17,8 +17,10 @@ import java.util.*;
 public final class CreateDanmakuReportTool implements AgentTool {
     private final ObjectMapper json;
     private final ReportDraftEditor drafts;
-    public CreateDanmakuReportTool(ObjectMapper json) {
-        this.drafts=new ReportDraftEditor(json);
+    public CreateDanmakuReportTool(ObjectMapper json) { this(json,new com.tianmu.agent.application.ReportAnalysisCache(json)); }
+    @org.springframework.beans.factory.annotation.Autowired
+    public CreateDanmakuReportTool(ObjectMapper json, com.tianmu.agent.application.ReportAnalysisCache cache) {
+        this.drafts=new ReportDraftEditor(json,cache);
         this.json = json.copy().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     }
@@ -28,9 +30,20 @@ public final class CreateDanmakuReportTool implements AgentTool {
         Dataset data = evidence.analysis();
         if (data == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
         context.checkDanmakuQuery(data.query());
+        var prepared=context.reportClassification(evidence.id());
+        boolean hasAudience=data.sources()!=null && data.totalMessages()>data.sources().danmakuAuthors()+data.sources().commentAuthors();
+        if(hasAudience && context.reportRequiresVideo() && !call.arguments().containsKey("video_evidence_id") && prepared.videoEvidenceId()==null)
+            throw new AgentException("INVALID_REPORT","请先读取同一视频并提供 video_evidence_id，再提交联合反馈分类。只有用户明确不读取视频时可省略。");
+        if(call.arguments().containsKey("merge_json") && call.arguments().containsKey("topics_json"))throw new AgentException("INVALID_REPORT","Submit classification and global merging as separate stages");
         if(data.audience()!=null && call.arguments().containsKey("topics_json")){
             ToolResult progress=drafts.append(call,context);
             if(context.reportClassification(evidence.id()).offset()<data.audience().corpus().size())return progress;
+        }
+        if(call.arguments().containsKey("merge_json"))drafts.merge(call,context);
+        var current=context.reportClassification(evidence.id());
+        if(data.sources()!=null && data.totalMessages()>0 && current.offset()==data.audience().corpus().size() && !current.merged()) {
+            return new ToolResult(name(),Map.of("evidence_id",evidence.id(),"classification",current.view(data.audience()),"stage","MERGE_TOPICS",
+                    "instruction","All records are classified. Now submit merge_json covering all topic_keys exactly once; preserve minority views and video anchors. No report is published until merging and coverage checks pass."),evidence.id());
         }
         String sectionSource=call.arguments().containsKey("sections_json")?ToolArguments.text(call,"sections_json"):"[]";
         List<Map<String, Object>> sections = data.audience()==null?sections(sectionSource,data):List.of();
@@ -43,6 +56,8 @@ public final class CreateDanmakuReportTool implements AgentTool {
             video = context.evidence(videoEvidence).videoContent();
             if (video == null || video.videoId()!=data.query().videoId()) throw new AgentException("INVALID_EVIDENCE","Video evidence must match report video");
         }
+        if(hasAudience && video==null && context.reportRequiresVideo())
+            throw new AgentException("INVALID_REPORT","联合报告需要同一视频的内容证据；请先读取视频并提供 video_evidence_id。仅用户明确要求不读取视频时可省略。");
         String document;Map<String,Object> reportDocument=null;
         if(data.audience()!=null){
             var progress=Objects.requireNonNullElse(context.reportClassification(evidence.id()),DanmakuClassification.empty());
@@ -64,7 +79,8 @@ public final class CreateDanmakuReportTool implements AgentTool {
         }
         byte[] html = document.getBytes(StandardCharsets.UTF_8);
         var report = context.saveReport(evidence.id(), html);
-        String text = (data.demo() ? "【模拟数据】" : "") + "videoId " + data.query().videoId() + " 的弹幕分析报告已生成。\n"
+        String text = data.sources()!=null?"视频"+data.query().videoId()+"的观众反馈报告已生成。\n已完整分析 "+data.sources().danmaku()+" 条弹幕和 "+data.sources().comments()+" 条评论及回复，作者发言单独标记。\n[查看 HTML 报告]("+report.url()+")（需登录鉴权）":
+                (data.demo() ? "【模拟数据】" : "") + "videoId " + data.query().videoId() + " 的弹幕分析报告已生成。\n"
                 + "范围：" + data.query().start() + " 至 " + data.query().end() + "（Asia/Shanghai，结束时刻不包含）。\n"
                 + "已入库且仍保留的弹幕 " + data.totalMessages() + " 条，非空用户ID去重 " + data.uniqueSenders() + " 人。\n"
                 + (data.audience()==null?"内容观察基于 " + data.sampleOccurrenceCount() + " 条抽样片段，按文本去重为 " + data.samples().size() + " 种内容；不代表全量话题或情绪占比。\n":

@@ -45,7 +45,7 @@ public class DeliveryService {
         });
     }
     public void answer(RunState run, Answer raw, TurnControl.Reservation reservation, StopReason reason) {
-        if (run.task() != null && "danmaku.report".equals(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
+        if (run.task() != null && Set.of("danmaku.report","audience.report").contains(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
             throw new AgentException("REPORT_REQUIRED", "Create the requested report before delivering an answer");
         harness.stage(run, "agent.deliver", HookPoint.PRE_DELIVER, HookPoint.POST_DELIVER,
                 Map.of("answer.evidence_count", raw == null ? 0 : raw.evidenceIds().size()), () -> {
@@ -56,6 +56,9 @@ public class DeliveryService {
             // Notes are derived from validated, owned evidence rather than model-generated metadata.
             List<Evidence> evidence = answer.evidenceIds().stream().distinct().map(id -> run.execution().evidence().get(id)).toList();
             if (run.task() != null) EvidencePresentation.requireKind(run.task().specification(), evidence);
+            for (Evidence value : evidence) if (value.comments() != null
+                    && run.execution().commentOffset(value.id()) != value.comments().totalComments())
+                throw new AgentException("FULL_ANALYSIS_INCOMPLETE", "尚未阅读全部评论，不能交付完整评论分析。");
             List<AnswerNote> notes = EvidencePresentation.notes(evidence);
             answer = new Answer(answer.text(), answer.evidenceIds(), notes);
             run.checkpoint();

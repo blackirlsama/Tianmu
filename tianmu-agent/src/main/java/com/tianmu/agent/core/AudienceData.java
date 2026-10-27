@@ -3,7 +3,7 @@ package com.tianmu.agent.core;
 import java.time.Instant;
 import java.util.*;
 
-/** Exact SQL statistics are separate from the bounded text corpus used for interpretation. */
+/** Exact statistics and source-aware full text groups remain distinct from presentation examples. */
 public final class AudienceData {
     private AudienceData() {}
     public record Interaction(String userId, long messages, int activeDays, long distinctTexts, Instant lastAt, String nickname) {
@@ -17,11 +17,16 @@ public final class AudienceData {
     public record Position(long startMs, long endMs, long count) {
         public Position { if (startMs < 0 || endMs <= startMs || count < 0) throw new IllegalArgumentException("Invalid playback aggregate"); }
     }
-    public record TextGroup(String id, String text, long count, Long playbackMs, boolean truncated, List<Long> trend) {
+    public record TextGroup(String id, String text, long count, Long playbackMs, boolean truncated, List<Long> trend,
+                            String source, String originalId, String context, boolean author) {
+        public TextGroup(String id,String text,long count,Long playbackMs,boolean truncated,List<Long> trend){this(id,text,count,playbackMs,truncated,trend,"DANMAKU",id,"",false);}
         public TextGroup(String id,String text,long count,Long playbackMs,boolean truncated){this(id,text,count,playbackMs,truncated,List.of());}
         public TextGroup {
+            source=source==null?"DANMAKU":source;originalId=originalId==null?id:originalId;context=context==null?"":context;
             if (id == null || !id.matches("[1-9][0-9]{0,18}") || text == null || text.length() > 8192 || count < 1
-                    || playbackMs != null && (playbackMs < 0 || playbackMs > 3_600_000)) throw new IllegalArgumentException("Invalid grouped text");
+                    || playbackMs != null && (playbackMs < 0 || playbackMs > 3_600_000)
+                    || !Set.of("DANMAKU","COMMENT").contains(source) || originalId==null || !originalId.matches("[1-9][0-9]{0,18}")
+                    || context.length()>32768 || source.equals("COMMENT") && (playbackMs!=null || count!=1)) throw new IllegalArgumentException("Invalid grouped text");
             trend=trend==null?List.of():List.copyOf(trend);
             if(!trend.isEmpty() && (trend.size()!=12 || trend.stream().anyMatch(n->n==null || n<0) || trend.stream().mapToLong(Long::longValue).reduce(0,Math::addExact)!=count))
                 throw new IllegalArgumentException("Inconsistent grouped trend");

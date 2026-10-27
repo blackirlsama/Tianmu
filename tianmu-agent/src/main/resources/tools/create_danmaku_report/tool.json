@@ -1,6 +1,6 @@
 {
   "name": "create_danmaku_report",
-  "description": "Build a creator-facing report with full danmaku analysis; no model calls occur inside this tool. For classification returned by query_danmaku, submit current offset and topics_json: an array or {\"topics\":[...]} containing {topic_key:T1..T6,title,observation,recommendation,sample_ids,optional video_context,optional video_at_ms}. Assign EVERY current batch G1/G2/... ID exactly once; sample_ids means all members, not examples. Reuse topic_key across batches and update its prose using prior conclusions plus current feedback. Include video_evidence_id when available, and connect at least one first-batch topic to actual video frames using video_context and video_at_ms. If the video cannot confirm a viewer claim, say so rather than inventing facts. Server saves the draft, computes exact counts and returns the next full batch. The LAST batch automatically renders and delivers the HTML report; earlier batches do not finish the run. A report cannot be produced with unread or unclassified text. For zero messages, pass evidence_id only. Legacy data without audience uses sections_json with up to 6 observations and 1-4 legacy sample IDs each.",
+  "description": "Build a creator-facing report with full danmaku analysis; no model calls occur inside this tool. For classification returned by query_danmaku, submit current offset and topics_json: an array or {\"topics\":[...]} containing {topic_key:T1..T100,title,observation,recommendation,sample_ids,optional video_context,optional video_at_ms}. Submit at most 10 topics and no more topics than the current batch contains groups. Assign EVERY current batch G1/G2/... ID exactly once; sample_ids means all members, not examples. Empty sample_ids arrays are ignored; duplicate IDs are kept only in their first submitted topic; omitted IDs go into a visible “other discussion” topic with their original audience quotes retained. Reuse topic_key across batches and update its prose using prior conclusions plus current feedback. Include video_evidence_id when available, and connect at least one first-batch topic to actual video frames using video_context and video_at_ms. video_at_ms MUST be an integer array of 1-4 actual sampled positions (for one anchor use [1320], never 1320). If the video cannot confirm a viewer claim, say so rather than inventing facts. Server saves the draft, computes exact counts and returns the next full batch. The LAST batch automatically renders and delivers the HTML report; earlier batches do not finish the run. A report cannot be produced with unread or unclassified text. For zero messages, pass evidence_id only. Legacy data without audience uses sections_json with up to 6 observations and 1-4 legacy sample IDs each. For query_audience evidence, classify with stable topic_key T1..T100. Finishing all batches returns stage MERGE_TOPICS instead of publishing. Then submit merge_json: an array of title, observation, recommendation, topic_keys, optional anchored video_context/video_at_ms; video_at_ms is an integer array (e.g. [1320]), not a scalar. Cover every prior topic key exactly once. Do not send topics_json and merge_json together. Counts and coverage are computed by the server.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -24,6 +24,10 @@
       "video_evidence_id": {
         "type": "string",
         "maxLength": 80
+      },
+      "merge_json": {
+        "type": "string",
+        "maxLength": 120000
       }
     },
     "required": [

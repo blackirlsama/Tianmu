@@ -20,7 +20,7 @@ public final class ModelContextBuilder {
     public List<Map<String, String>> build(String instruction, Map<String, ?> input) {
         ObjectNode view = json.valueToTree(input);
         int before = bytes(messages(instruction, view));
-        int removed = 0, schemas = deduplicateSchemas(view);
+        int removed = 0, schemas = deduplicateSchemas(view), released = releaseClassifiedBatches(view);
         JsonNode memory = view.path("memory");
         while (bytes(memory) > policy.maxHistoryBytes() && trimHistory(memory)) removed++;
         List<Map<String, String>> result = messages(instruction, view);
@@ -29,11 +29,29 @@ public final class ModelContextBuilder {
             result = messages(instruction, view);
         }
         TraceAttributes.apply(Span.current(), Map.of("context.input_bytes", before,
-                "context.output_bytes", bytes(result), "context.changed", removed > 0 || schemas > 0,
+                "context.output_bytes", bytes(result), "context.changed", removed > 0 || schemas > 0 || released>0,
                 "context.history_removed", removed, "context.schemas_removed", schemas,
+                "context.classified_batches_released",released,
                 "context.byte_limit", policy.maxInputBytes()));
         check(result);
         return result;
+    }
+    private int releaseClassifiedBatches(ObjectNode view) {
+        if(!(view.path("results") instanceof ArrayNode results))return 0;
+        Map<String,ObjectNode> latest=new HashMap<>();
+        for(JsonNode result:results)if(result.path("data") instanceof ObjectNode data && data.path("classification").isObject()) {
+            String evidence=data.path("evidence_id").asText("");
+            if(!evidence.isEmpty())latest.put(evidence,data);
+        }
+        int count=0;
+        for(JsonNode result:results)if(result.path("data") instanceof ObjectNode data && data.path("classification") instanceof ObjectNode classification) {
+            ObjectNode last=latest.get(data.path("evidence_id").asText(""));
+            // Keep unread/current groups. Only a later admitted classification can supersede an earlier batch.
+            if(last!=null && last!=data && last.path("classification").path("offset").asInt(-1)>classification.path("offset").asInt(-1)) {
+                classification.remove("groups");classification.remove("topics");classification.put("superseded",true);count++;
+            }
+        }
+        return count;
     }
 
     /** Final guard also applies to callers that supply their own messages. */

@@ -56,7 +56,10 @@ public class ToolDispatcher {
         public UUID runId() { return run.id; }
         public AccessScope scope() { return run.owner; }
         public LocalDate businessDate() { return run.businessDate; }
+        public String reportCacheVariant(){return run.task()==null?run.query():run.task().query();}
+        public Integer remainingModelCalls(){return Math.max(0,run.modelCallLimit()-run.snapshot().totalModelCalls());}
         public void checkpoint() { run.checkpoint(); }
+        public boolean reportRequiresVideo(){return !run.query().matches("(?s).*(?:不要|不需要|无需|不)(?:读取|分析|看|结合|读)?(?:视频|画面).*");}
         public List<Map<String, String>> listSkills() { return skills.list(); }
         public Skill activateSkill(String name) {
             if (!tool.canActivateSkills()) throw new AgentException("TOOL_CAPABILITY_DENIED", "Tool cannot activate skills");
@@ -99,10 +102,36 @@ public class ToolDispatcher {
             return value;
         }
         public void checkQuery(MetricQuery query) { business.checkQuery(run, query); }
-        public com.tianmu.agent.core.DanmakuClassification reportClassification(String id){evidence(id);return run.execution().classification(id);}
+        public void checkCommentQuery(com.tianmu.agent.core.DanmakuTypes.Query query) { business.checkCommentQuery(run, query); }
+        public Evidence registerCommentEvidence(com.tianmu.agent.core.VideoComments.Dataset data) {
+            if (!tool.name().equals("query_video_comments")) throw new AgentException("TOOL_CAPABILITY_DENIED", "Only the comment query may register comment evidence");
+            business.checkCommentQuery(run, data.query());
+            Evidence evidence = new Evidence("ev_" + UUID.randomUUID(), run.id, run.owner, null, null, null, data);
+            run.execution().evidence().put(evidence); return evidence;
+        }
+        public int commentOffset(String id) { evidence(id); return run.execution().commentOffset(id); }
+        public void advanceComments(String id, int expected, int next) {
+            if (!tool.name().equals("query_video_comments")) throw new AgentException("TOOL_CAPABILITY_DENIED", "Only the comment query may advance its pages");
+            Evidence value = evidence(id);
+            if (value.comments() == null || next > value.comments().totalComments()) throw new AgentException("INVALID_COMMENT_OFFSET", "Invalid comment page");
+            run.execution().advanceComments(id, expected, next);
+        }
+        public com.tianmu.agent.core.DanmakuClassification reportClassification(String id){
+            evidence(id);
+            if(!run.execution().hasClassification(id)) {
+                var restored=run.execution().evidence().snapshot().values().stream().filter(e->e.runId().equals(run.id) && e.owner().equals(run.owner) && e.reportCheckpoint()!=null && e.reportCheckpoint().evidenceId().equals(id))
+                        .map(e->e.reportCheckpoint().classification()).max(Comparator.comparingInt(com.tianmu.agent.core.DanmakuClassification::offset)
+                                .thenComparing(com.tianmu.agent.core.DanmakuClassification::merged)).orElse(com.tianmu.agent.core.DanmakuClassification.empty());
+                run.execution().classification(id,restored);
+            }
+            return run.execution().classification(id);
+        }
         public void saveReportClassification(String id,com.tianmu.agent.core.DanmakuClassification progress){
             if(!tool.name().equals("create_danmaku_report"))throw new AgentException("TOOL_CAPABILITY_DENIED","Only report tool may update its draft");
-            evidence(id);run.execution().classification(id,progress);
+            evidence(id);
+            var checkpoint=new com.tianmu.agent.core.ReportCheckpoint("audience-report-checkpoint-v1",id,progress);
+            run.execution().evidence().put(new Evidence("ev_"+UUID.randomUUID(),run.id,run.owner,null,null,null,null,checkpoint));
+            run.execution().classification(id,progress);
         }
         public Evidence registerEvidence(MetricData data) { return business.registerEvidence(run, data); }
         public <T> T query(Function<CallControl, T> operation) { return harness.toolCall(run, operation); }

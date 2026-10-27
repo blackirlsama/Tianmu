@@ -43,6 +43,24 @@ class ModelBudgetTest {
             assertThrows(AgentException.class, () -> ModelBudget.execute(control().withBudget(budget), "text", false, () -> fail("Must not dispatch")));
         }
     }
+    @Test void inputAwareReservationsRejectBeforeDispatchAndSettleUsingTheirOwnSize() {
+        var budget=new ModelBudget(120,20);var calls=new AtomicInteger();
+        var c=control().withBudget(budget);
+        ModelBudget.execute(c,"text",false,100,()->{calls.incrementAndGet();return usage(50,10);});
+        assertEquals(60L,budget.attributes().get("budget.charged_tokens"));
+        var error=assertThrows(AgentException.class,()->ModelBudget.execute(c,"text",false,70,()->{calls.incrementAndGet();return usage(1,1);}));
+        assertEquals("MODEL_TOKEN_BUDGET_EXCEEDED",error.code());assertEquals(1,calls.get());
+        assertThrows(IllegalStateException.class,()->ModelBudget.execute(c,"text",false,60,()->{throw new IllegalStateException();}));
+        assertEquals(120L,budget.attributes().get("budget.charged_tokens"));
+    }
+    @Test void failedRequestMarksTraceUsageIncompleteInsteadOfReportingFreeUsage() {
+        var trace=new TraceUsage();
+        try(var scope=Context.current().with(TraceUsage.KEY,trace).makeCurrent()){
+            ModelBudget.execute(control(),"text",false,()->usage(10,5));
+            assertThrows(IllegalStateException.class,()->ModelBudget.execute(control(),"text",false,()->{throw new IllegalStateException();}));
+            assertEquals("PARTIAL",trace.totals().get("usage.state"));assertEquals(false,trace.totals().get("usage.complete"));
+        }
+    }
     @Test void reservationsAreAtomicAcrossParallelBranches() throws Exception {
         var budget = new ModelBudget(80, 80);
         Context context = Context.current();

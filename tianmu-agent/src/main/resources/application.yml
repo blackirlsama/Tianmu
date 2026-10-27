@@ -28,6 +28,13 @@ management:
         readiness:
           include: readinessState,agentStorage
 agent:
+  qa:
+    enabled: ${AGENT_QA_ENABLED:true}
+    minimum-sessions: ${AGENT_QA_MINIMUM_SESSIONS:5}
+    minimum-answer-share: ${AGENT_QA_MINIMUM_ANSWER_SHARE:0.9}
+    window-days: 30
+    valid-days: 7
+    maximum-observations: 256
   execution:
     runs: {core: 2, max: 4, queue: 32}
     preparation: {core: 6, max: 6, queue: 48}
@@ -47,8 +54,8 @@ agent:
 harness:
   loop:
     max-turns: 6
-    max-model-calls: 16
-    max-tokens: ${AGENT_MAX_TOKENS:0}
+    max-model-calls: ${AGENT_MAX_MODEL_CALLS:16}
+    max-tokens: ${AGENT_MAX_TOKENS:64000}
     token-reservation: ${AGENT_TOKEN_RESERVATION:8192}
     request-timeout: 30s
     model-timeout: 5s

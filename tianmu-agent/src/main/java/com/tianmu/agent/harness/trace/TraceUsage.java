@@ -15,7 +15,7 @@ public final class TraceUsage {
     private final LongAdder external = new LongAdder();
     public static void externalCall() { TraceUsage usage = Context.current().get(KEY); if (usage != null) usage.external.increment(); }
     public long externalCalls() { return external.sum(); }
-    private final LongAdder cache = new LongAdder(), reasoning = new LongAdder(), cacheCalls = new LongAdder(), reasoningCalls = new LongAdder();
+    private final LongAdder cache = new LongAdder(), miss = new LongAdder(), missCalls = new LongAdder(), reasoning = new LongAdder(), cacheCalls = new LongAdder(), reasoningCalls = new LongAdder();
     public static void record(String model, long inputTokens, long outputTokens) {
         record(model, inputTokens < 0 ? null : inputTokens, outputTokens < 0 ? null : outputTokens, null, null, null);
     }
@@ -34,6 +34,7 @@ public final class TraceUsage {
             if (in != null && out != null) { usage.input.add(in); usage.output.add(out); usage.calls.increment(); }
             else usage.unreported.increment();
             if (cacheHit != null) { usage.cache.add(cacheHit); usage.cacheCalls.increment(); }
+            if (cacheMiss != null) { usage.miss.add(cacheMiss); usage.missCalls.increment(); }
             if (reasoningTokens != null) { usage.reasoning.add(reasoningTokens); usage.reasoningCalls.increment(); }
         }
     }
@@ -45,6 +46,7 @@ public final class TraceUsage {
         totals.put("usage.complete", unreported.sum() == 0 && calls.sum() > 0);
         if (calls.sum() > 0) { totals.put("usage.input_tokens", input.sum()); totals.put("usage.output_tokens", output.sum()); totals.put("usage.total_tokens", input.sum() + output.sum()); }
         if (cacheCalls.sum() > 0) totals.put("usage.cache_hit_tokens", cache.sum());
+        if (missCalls.sum() > 0) totals.put("usage.cache_miss_tokens", miss.sum());
         if (reasoningCalls.sum() > 0) totals.put("usage.reasoning_tokens", reasoning.sum());
         return totals;
     }

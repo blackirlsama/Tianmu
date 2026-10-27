@@ -17,7 +17,7 @@ public final class BusinessDanmakuAnalysis {
                           List<Sample> samples, Instant dataAsOf, String source, boolean demo, Audience audience) {}
     public record Interaction(String userId, long messages, int activeDays, long distinctTexts, Instant lastAt, String nickname) {}
     public record Position(long startMs, long endMs, long count) {}
-    public record TextGroup(String id, String text, long count, Long playbackMs, boolean truncated, List<Long> trend) {}
+    public record TextGroup(String id, String text, long count, Long playbackMs, boolean truncated, List<Long> trend, boolean author) {}
     public record Audience(List<Interaction> interactions, List<Position> playback, long unknownPlayback,
                            List<TextGroup> corpus, long corpusMessages, long totalMessages) {}
     private record Totals(long messages, long senders, Instant asOf) {}
@@ -31,11 +31,16 @@ public final class BusinessDanmakuAnalysis {
         tx.setReadOnly(true); tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ); tx.setTimeout(config.queryTimeoutSeconds());
     }
     public Dataset query(BusinessAuthentication.Principal principal, long videoId, LocalDateTime start, LocalDateTime end) {
+        validateRange(videoId, start, end);
+        return tx.execute(status -> querySnapshot(principal, videoId, start, end));
+    }
+    static void validateRange(long videoId, LocalDateTime start, LocalDateTime end) {
         LocalDateTime now = LocalDateTime.now(ZONE);
         if (videoId <= 0 || start == null || end == null || !start.isBefore(end) || start.getNano() != 0 || end.getNano() != 0
                 || Duration.between(start, end).compareTo(Duration.ofDays(30)) > 0 || end.isAfter(now)
                 || start.toLocalDate().isBefore(now.toLocalDate().minusDays(30))) throw new BridgeException("INVALID_ANALYSIS_RANGE", 400);
-        return tx.execute(status -> {
+    }
+    private Dataset querySnapshot(BusinessAuthentication.Principal principal, long videoId, LocalDateTime start, LocalDateTime end) {
             // This ownership convention is shared with existing metric authorization.
             Integer allowed = db.queryForObject("SELECT COUNT(*) FROM video WHERE video_id=? AND user_id=? AND is_delete=0", Integer.class, videoId, Long.parseLong(principal.userId()));
             if (allowed == null || allowed != 1) throw new BridgeException("FORBIDDEN", 403);
@@ -58,10 +63,9 @@ public final class BusinessDanmakuAnalysis {
             }
             return new Dataset(new Query(videoId, start, end), totals.messages(), totals.senders(),
                     List.copyOf(buckets), List.copyOf(samples), totals.asOf(), "mysql:bullet:danmaku-retained-v1", false,
-                    audience(videoId, from, to, storage, totals.messages(),width));
-        });
+                    audience(videoId, from, to, storage, totals.messages(),width,Long.parseLong(principal.userId())));
     }
-    private Audience audience(long videoId, String from, String to, ZoneId storage, long total,long width) {
+    private Audience audience(long videoId, String from, String to, ZoneId storage, long total,long width,long owner) {
         String scope = " FROM bullet WHERE video_id=? AND create_time>=? AND create_time<?";
         String date = "CONVERT_TZ(create_time,?, '+08:00')";
         String offset = storage.getRules().getOffset(Instant.now()).getId();
@@ -84,28 +88,30 @@ public final class BusinessDanmakuAnalysis {
             for(long left=0;left<end;left+=step)complete.add(new Position(left,Math.min(left+step,end),positions.getOrDefault(left,0L)));
             playback=List.copyOf(complete);
         }
-        List<TextGroup> corpus = db.query("SELECT b.bullet_id,COALESCE(b.content,'') excerpt,0 clipped,g.n,"
+        String positionGroup="CASE WHEN playback_time>=0 AND playback_time<"+supported+" THEN FLOOR(playback_time/"+positionWidth+") ELSE -1 END";
+        List<TextGroup> corpus = db.query("SELECT b.bullet_id,b.user_id,COALESCE(b.content,'') excerpt,0 clipped,g.n,"
                 + "CASE WHEN b.playback_time>=0 AND b.playback_time<? THEN ROUND(b.playback_time*1000) ELSE NULL END playback_ms FROM ("
-                + "SELECT MIN(bullet_id) id,COUNT(*) n" + scope + " GROUP BY BINARY content ORDER BY id LIMIT 5001) g JOIN bullet b ON b.bullet_id=g.id ORDER BY g.id",
+                + "SELECT MIN(bullet_id) id,COUNT(*) n" + scope + " GROUP BY COALESCE(user_id=?,0),BINARY content,"+positionGroup+" ORDER BY id LIMIT 5001) g JOIN bullet b ON b.bullet_id=g.id ORDER BY g.id",
                 (rs,n) -> new TextGroup(Long.toString(rs.getLong("bullet_id")),redact(rs.getString("excerpt")),rs.getLong("n"),
-                        rs.getObject("playback_ms")==null?null:rs.getLong("playback_ms"),rs.getBoolean("clipped"),List.of()),supported,videoId,from,to);
+                        rs.getObject("playback_ms")==null?null:rs.getLong("playback_ms"),rs.getBoolean("clipped"),List.of(),rs.getLong("user_id")==owner),supported,videoId,from,to,owner);
         if(corpus.size()>5000)throw new BridgeException("FULL_ANALYSIS_TOO_LARGE",422);
         if(!corpus.isEmpty()) {
             Map<String,long[]> trends=new HashMap<>();corpus.forEach(g->trends.put(g.id(),new long[12]));
             String parameters=String.join(",",Collections.nCopies(corpus.size(),"?"));
-            List<Object> args=new ArrayList<>();args.add(from);args.add(width);corpus.forEach(g->args.add(Long.parseLong(g.id())));args.add(videoId);args.add(from);args.add(to);
+            List<Object> args=new ArrayList<>();args.add(from);args.add(width);args.add(owner);args.add(owner);corpus.forEach(g->args.add(Long.parseLong(g.id())));args.add(videoId);args.add(from);args.add(to);
             db.query("SELECT e.bullet_id id,FLOOR(TIMESTAMPDIFF(SECOND,?,b.create_time)/?) bin,COUNT(*) n FROM bullet e JOIN bullet b ON b.video_id=e.video_id AND (BINARY b.content <=> BINARY e.content)"
+                    +" AND (COALESCE(b.user_id= ?,0)=COALESCE(e.user_id= ?,0)) AND ("+positionGroup.replace("playback_time","b.playback_time")+")=("+positionGroup.replace("playback_time","e.playback_time")+")"
                     +" WHERE e.bullet_id IN ("+parameters+") AND b.video_id=? AND b.create_time>=? AND b.create_time<? GROUP BY e.bullet_id,bin",rs->{
                         String id=Long.toString(rs.getLong("id"));int bin=rs.getInt("bin");
                         if(bin<0 || bin>=12 || !trends.containsKey(id))throw new BridgeException("INVALID_ANALYSIS_DATA",503);
                         trends.get(id)[bin]=rs.getLong("n");
                     },args.toArray());
-            corpus=corpus.stream().map(g->new TextGroup(g.id(),g.text(),g.count(),g.playbackMs(),g.truncated(),Arrays.stream(trends.get(g.id())).boxed().toList())).toList();
+            corpus=corpus.stream().map(g->new TextGroup(g.id(),g.text(),g.count(),g.playbackMs(),g.truncated(),Arrays.stream(trends.get(g.id())).boxed().toList(),g.author())).toList();
         }
         return new Audience(List.copyOf(fans),List.copyOf(playback),total-located,List.copyOf(corpus),corpus.stream().mapToLong(TextGroup::count).sum(),total);
     }
-    private static String wall(LocalDateTime time, ZoneId storage) { return time.atZone(ZONE).withZoneSameInstant(storage).toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")); }
-    private static String redact(String text) {
+    static String wall(LocalDateTime time, ZoneId storage) { return time.atZone(ZONE).withZoneSameInstant(storage).toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")); }
+    static String redact(String text) {
         return text.replaceAll("(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}", "[email]").replaceAll("(?<!\\d)1[3-9]\\d{9}(?!\\d)", "[phone]");
     }
 }

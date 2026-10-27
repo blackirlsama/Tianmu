@@ -22,6 +22,13 @@ public interface ToolContext {
     }
     List<ToolDefinition> definitionsForSkill(String name);
     Evidence evidence(String id);
+    default boolean reportRequiresVideo(){return true;}
+    default String reportCacheVariant(){return "";}
+    default Integer remainingModelCalls(){return null;}
+    default void checkCommentQuery(com.tianmu.agent.core.DanmakuTypes.Query query) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Comment query unavailable"); }
+    default Evidence registerCommentEvidence(com.tianmu.agent.core.VideoComments.Dataset data) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Comment evidence unavailable"); }
+    default int commentOffset(String id) { return 0; }
+    default void advanceComments(String id, int expected, int next) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Comment progress unavailable"); }
     default com.tianmu.agent.core.DanmakuClassification reportClassification(String evidenceId){return com.tianmu.agent.core.DanmakuClassification.empty();}
     default void saveReportClassification(String evidenceId,com.tianmu.agent.core.DanmakuClassification progress){throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED","Classification storage unavailable");}
     Evidence registerEvidence(MetricData data);

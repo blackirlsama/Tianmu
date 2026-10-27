@@ -20,6 +20,8 @@ public final class DeepSeekClient {
     private final ObjectMapper mapper;
     private final HttpClient http;
     private final com.tianmu.agent.model.ModelContextBuilder contexts;
+    private volatile long quotaBlockedUntil;
+    private static final long QUOTA_COOLDOWN_NANOS=Duration.ofMinutes(5).toNanos();
     public DeepSeekClient(DeepSeekProperties config, ObjectMapper mapper) {
         this(config, mapper, com.tianmu.agent.model.ContextPolicy.defaults());
     }
@@ -36,6 +38,8 @@ public final class DeepSeekClient {
     }
     public JsonNode complete(String model, List<Map<String, String>> messages, int maxTokens, CallControl control, boolean external) {
         control.checkpoint();
+        if(quotaBlockedUntil!=0 && System.nanoTime()-quotaBlockedUntil<0)
+            throw new AgentException("MODEL_QUOTA_EXHAUSTED","Model provider quota is unavailable; calls paused for five minutes");
         contexts.check(messages);
         TraceAttributes.apply(Span.current(), Map.of("model.name", model, "model.provider", "deepseek", "model.max_tokens", maxTokens,
                 "model.temperature", 0, "model.streaming", false, "model.first_token_state", "NOT_APPLICABLE", "model.message_count", messages.size(), "model.reasoning_state", "DISABLED"));
@@ -51,7 +55,8 @@ public final class DeepSeekClient {
             HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/chat/completions"))
                     .timeout(Duration.ofNanos(nanos)).header("Authorization", "Bearer " + config.apiKey())
                     .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofByteArray(payload)).build();
-            JsonNode body = com.tianmu.agent.runtime.control.ModelBudget.execute(control, model, external, () -> exchange(request, control));
+            long reservation=(long)payload.length+maxTokens+1024;
+            JsonNode body = com.tianmu.agent.runtime.control.ModelBudget.execute(control, model, external, reservation, () -> exchange(request, control));
             TraceDetails.capture("provider_output", body, "MODEL_PROVIDER_RESPONSE");
             JsonNode choice = body.path("choices").path(0);
             if (choice.path("finish_reason").isTextual()) TraceAttributes.apply(Span.current(), Map.of("model.finish_reason", choice.path("finish_reason").asText()));
@@ -78,6 +83,10 @@ public final class DeepSeekClient {
                 TraceAttributes.apply(Span.current(), Map.of("model.http_status", response.statusCode(), "model.response_ms", Math.max(0, (System.nanoTime() - requestStarted) / 1_000_000)));
                 if (response.statusCode() == 401 || response.statusCode() == 403)
                     throw new AgentException("MODEL_AUTH_FAILED", "Model provider authentication failed");
+                if(response.statusCode()==402){
+                    quotaBlockedUntil=System.nanoTime()+QUOTA_COOLDOWN_NANOS;
+                    throw new AgentException("MODEL_QUOTA_EXHAUSTED","Model provider rejected the quota; calls paused for five minutes");
+                }
                 if (response.statusCode() == 429 || response.statusCode() >= 500) throw unavailable();
                 if (response.statusCode() != 200) throw new AgentException("MODEL_REQUEST_REJECTED", "Model provider rejected request");
                 return mapper.readTree(response.body());

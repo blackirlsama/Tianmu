@@ -73,6 +73,21 @@ class DeepSeekAdapterTest {
             assertTrue(requests.isEmpty());
         }
     }
+    @Test void inputAwareTokenLimitStopsNetworkDispatch() {
+        var budget=new ModelBudget(500,50);
+        var error=assertThrows(AgentException.class,()->client.complete(properties.harnessModel(),
+                List.of(Map.of("role","user","content","JSON "+"中文".repeat(200))),128,control().withBudget(budget)));
+        assertEquals("MODEL_TOKEN_BUDGET_EXCEEDED",error.code());assertTrue(requests.isEmpty());
+        assertEquals(0L,budget.attributes().get("budget.charged_tokens"));
+    }
+    @Test void quotaRejectionPausesSubsequentCallsBeforeNetworkAndBudgetReservation() {
+        status=402;var budget=new ModelBudget(10000,50);
+        var error=assertThrows(AgentException.class,()->client.complete(properties.harnessModel(),List.of(Map.of("role","user","content","JSON")),128,control().withBudget(budget)));
+        assertEquals("MODEL_QUOTA_EXHAUSTED",error.code());assertEquals(1,requests.size());
+        long charged=(long)budget.attributes().get("budget.charged_tokens");status=200;
+        assertEquals("MODEL_QUOTA_EXHAUSTED",assertThrows(AgentException.class,()->client.complete(properties.harnessModel(),List.of(Map.of("role","user","content","JSON")),128,control().withBudget(budget))).code());
+        assertEquals(1,requests.size());assertEquals(charged,budget.attributes().get("budget.charged_tokens"));
+    }
     @Test void bothPreparationAndHarnessSendCompactedHistoryWithoutMutatingSource() throws Exception {
         var bounded = new DeepSeekClient(properties, mapper, new com.tianmu.agent.model.ContextPolicy(98304, 256));
         var memory = new com.tianmu.agent.core.MemoryTypes.View(1, "old".repeat(2000), List.of(), false, "untrusted");

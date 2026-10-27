@@ -13,10 +13,10 @@ public record LoopPolicy(@DefaultValue("6") int maxTurns,
         @DefaultValue("3") int consecutiveToolFailures,
         @DefaultValue("true") boolean finalizeEnabled,
         @DefaultValue("16") int maxModelCalls,
-        @DefaultValue("0") long maxTokens,
+        @DefaultValue("64000") long maxTokens,
         @DefaultValue("8192") long tokenReservation) {
     public LoopPolicy(int turns, Duration request, Duration model, Duration tool, Duration fin, int failures, boolean finalizeEnabled, int maxModelCalls) {
-        this(turns, request, model, tool, fin, failures, finalizeEnabled, maxModelCalls, 0, 8192);
+        this(turns, request, model, tool, fin, failures, finalizeEnabled, maxModelCalls, 64000, 8192);
     }
     public LoopPolicy(int turns, Duration request, Duration model, Duration tool, Duration finalizeTimeout, int failures, boolean finalizeEnabled) {
         this(turns, request, model, tool, finalizeTimeout, failures, finalizeEnabled, 16);

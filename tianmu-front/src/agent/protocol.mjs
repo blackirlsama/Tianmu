@@ -113,7 +113,7 @@ export function buildReportMessage(
   const message = `请分析视频${videoId}从${start.replace(
     'T',
     ' '
-  )}到${end.replace('T', ' ')}的弹幕，生成一份弹幕分析报告。${
+  )}到${end.replace('T', ' ')}的弹幕和评论，生成一份观众反馈报告。${
     focus.trim() ? `重点关注：${focus.trim()}` : ''
   }`
   if (message.length > 2000) throw new Error('问题不能超过 2000 字')
@@ -154,7 +154,8 @@ export function sseDecoder(consume) {
 export function progressLabel(data = {}) {
   const tools = {
     query_danmaku: '查询并抽取弹幕',
-    create_danmaku_report: '生成分析报告',
+    create_danmaku_report: '归纳话题并生成报告',
+    query_audience: '读取完整弹幕与评论',
     read_skill: '加载分析方法',
     read_result: '读取查询结果',
     query_video_metrics: '查询视频指标',

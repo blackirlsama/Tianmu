@@ -146,4 +146,38 @@ class MysqlStorageIntegrationTest {
         assertNull(repository.load(run.id, owner).snapshot().answer());
         assertEquals(1, repository.load(run.id, owner).events().after(0).events().stream().filter(e -> e.type().equals("DONE")).count());
     }
+    @Test void reportCacheRanksSurviveNewAdaptersAndExpiredRowsCanRestartAtALowerRank(){
+        var store=new MysqlAnalysisCacheStore(source);String key=UUID.randomUUID().toString().replace("-","").repeat(2);
+        try{
+            store.put(key,new com.tianmu.agent.runtime.store.AnalysisCacheStore.Entry(80,"accepted",Instant.now().plusSeconds(60)));
+            store.put(key,new com.tianmu.agent.runtime.store.AnalysisCacheStore.Entry(40,"slower",Instant.now().plusSeconds(60)));
+            assertEquals("accepted",new MysqlAnalysisCacheStore(source).get(key).json());
+            db.update("UPDATE agent_report_cache SET expires_at=? WHERE cache_key=?",java.sql.Timestamp.from(Instant.now().minusSeconds(1)),key);
+            store.put(key,new com.tianmu.agent.runtime.store.AnalysisCacheStore.Entry(20,"fresh",Instant.now().plusSeconds(60)));
+            assertEquals(20,store.get(key).rank());assertEquals("fresh",store.get(key).json());
+        }finally{db.update("DELETE FROM agent_report_cache WHERE cache_key=?",key);}
+    }
+    @Test void qaAdmissionIsDurableAndSessionReplayDoesNotInflateCounts()throws Exception{
+        var policy=new com.tianmu.agent.faq.QaPolicy(true,2,1,30,7,256);
+        var qa=new com.tianmu.agent.faq.QaCatalog(new MysqlQaStore(source,mapper),policy);
+        String question="如何设计选题主题",answer="先确定面向的观众，再整理可以持续观察和讨论的选题方向。";UUID session=UUID.randomUUID();
+        String ownerText=owner.tenantId().length()+":"+owner.tenantId()+owner.userId().length()+":"+owner.userId();
+        String ownerKey=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(ownerText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        try{
+            qa.observe(owner,session,UUID.randomUUID(),question,answer,Instant.now());qa.observe(owner,session,UUID.randomUUID(),question,answer,Instant.now());
+            assertEquals(1,qa.list(owner).get(0).sessions());
+            qa.observe(owner,UUID.randomUUID(),UUID.randomUUID(),question,answer,Instant.now());
+            var restarted=new com.tianmu.agent.faq.QaCatalog(new MysqlQaStore(source,mapper),policy);
+            assertEquals(answer,restarted.find(new Input(question,LocalDate.now(),owner)).orElseThrow().text());
+        }finally{db.update("DELETE FROM agent_qa_catalog WHERE owner_key=?",ownerKey);}
+    }
+    @Test void reportLeasesCoordinateSeparateAdaptersAndCanRecoverAfterExpiry(){
+        var first=new MysqlAnalysisCacheStore(source);var second=new MysqlAnalysisCacheStore(source);
+        String key=UUID.randomUUID().toString().replace("-","").repeat(2);UUID a=UUID.randomUUID(),b=UUID.randomUUID();
+        try{
+            assertTrue(first.acquire(key,a));assertFalse(second.acquire(key,b));second.release(b);assertFalse(second.acquire(key,b));
+            db.update("UPDATE agent_report_leases SET valid_until=? WHERE cache_key=?",java.sql.Timestamp.from(Instant.now().minusSeconds(1)),key);
+            assertTrue(second.acquire(key,b));first.release(a);assertFalse(first.acquire(key,a));
+        }finally{db.update("DELETE FROM agent_report_leases WHERE cache_key=?",key);}
+    }
 }

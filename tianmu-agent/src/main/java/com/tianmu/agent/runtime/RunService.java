@@ -19,6 +19,9 @@ public class RunService {
     private final RuntimeHarness harness;
     private final com.tianmu.agent.runtime.store.RunRepository repository;
     private final com.tianmu.agent.runtime.store.ConversationStore conversations;
+    private List<RunCompletionListener> completionListeners=List.of();
+    @org.springframework.beans.factory.annotation.Autowired
+    void completionListeners(List<RunCompletionListener> listeners){completionListeners=List.copyOf(listeners);}
     public RunService(RequestOrchestrator orchestrator, RuntimeHarness harness, com.tianmu.agent.runtime.store.RunRepository repository) {
         this(orchestrator, harness, repository, com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-runs", 2, 4, 32), true);
     }
@@ -67,6 +70,10 @@ public class RunService {
     }
     private void submit(RunState run) {
         harness.start(run);
+        run.onTerminal(snapshot->completionListeners.forEach(listener->{
+            try{listener.completed(run,snapshot);}
+            catch(RuntimeException e){org.slf4j.LoggerFactory.getLogger(RunService.class).warn("completion_listener_failed run_id={} type={}",run.id,e.getClass().getSimpleName());}
+        }));
         Runnable work = () -> orchestrator.execute(run);
         run.onTerminal(snapshot -> executor.getThreadPoolExecutor().remove(work));
         executor.execute(work);

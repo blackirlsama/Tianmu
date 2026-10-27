@@ -11,10 +11,13 @@ import java.security.MessageDigest;
 public final class AudienceTopics {
     private AudienceTopics() {}
     public static List<Topic> parse(ObjectMapper json, String source, Overview overview, VideoContent.Facts video) {
+        return parse(json,source,overview,video,6,120);
+    }
+    public static List<Topic> parse(ObjectMapper json,String source,Overview overview,VideoContent.Facts video,int maxTopics,int maxReferences) {
         try {
             JsonNode nodes=json.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                     .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(source);
-            if (!nodes.isArray() || nodes.size()>6) throw new IllegalArgumentException();
+            if (!nodes.isArray() || nodes.size()>maxTopics) throw new IllegalArgumentException();
             Map<String,TextGroup> groups=new HashMap<>(); overview.corpus().forEach(g->groups.put(g.id(),g));
             List<Topic> result=new ArrayList<>(); Set<String> assigned=new HashSet<>();
             for (JsonNode node:nodes) {
@@ -22,7 +25,10 @@ public final class AudienceTopics {
                 if (!fields.containsAll(Set.of("title","observation","recommendation","sample_ids"))
                         || !Set.of("title","observation","recommendation","sample_ids","video_context","video_at_ms").containsAll(fields)) throw new IllegalArgumentException();
                 String title=text(node,"title",80,false), observation=text(node,"observation",600,false), recommendation=text(node,"recommendation",600,true);
-                JsonNode refs=node.path("sample_ids"); if(!refs.isArray() || refs.isEmpty() || refs.size()>120)throw new IllegalArgumentException();
+                JsonNode refs=node.path("sample_ids");
+                if(!refs.isArray())throw new IllegalArgumentException();
+                if(refs.isEmpty())throw new AgentException("INVALID_REPORT","Omit any topic with no members in this batch. Every submitted topic must contain at least one sample_id; assign every current batch ID exactly once.");
+                if(refs.size()>maxReferences)throw new IllegalArgumentException();
                 List<String> ids=new ArrayList<>();long count=0;
                 for (JsonNode ref:refs) {
                     if(!ref.isTextual() || !groups.containsKey(ref.textValue()) || !assigned.add(ref.textValue()))throw new IllegalArgumentException();
@@ -43,8 +49,9 @@ public final class AudienceTopics {
                 result.add(new Topic(id,title,observation,recommendation,ids,count,context,anchors));
             }
             return List.copyOf(result);
-        } catch(Exception e) {
-            throw new AgentException("INVALID_REPORT","Use at most 6 topics with title, observation, recommendation and sample_ids from audience.corpus. Each corpus ID belongs to at most one topic. Do not supply counts. Optional video_context requires video evidence and actual sampled video_at_ms anchors. Recommendation may be empty when unsupported.");
+        } catch(AgentException e) { throw e; }
+        catch(Exception e) {
+            throw new AgentException("INVALID_REPORT","Use at most "+maxTopics+" topics with title, observation, recommendation and sample_ids from audience.corpus. Each corpus ID belongs to at most one topic. Do not supply counts. Optional video_context requires video evidence; video_at_ms must be an array of 1-4 integer anchors from the actual sampled positions, even when there is only one anchor (example: [1320]). Recommendation may be empty when unsupported.");
         }
     }
     private static String text(JsonNode node,String key,int max,boolean empty) {

@@ -33,7 +33,8 @@ public final class ImmutablePayload {
         }
         // These framework records have immutable members and defensive constructors.
         if (value instanceof AgentTypes.Skill || value instanceof AgentTypes.ToolDefinition
-                || value instanceof AgentTypes.MetricData || value instanceof DanmakuTypes.Dataset) return value;
+                || value instanceof AgentTypes.MetricData || value instanceof DanmakuTypes.Dataset
+                || value instanceof DanmakuTypes.Query || value instanceof VideoComments.Dataset || value instanceof VideoComments.Comment || value instanceof ReportCheckpoint) return value;
         throw new IllegalArgumentException("Unsupported mutable payload value");
     }
 }

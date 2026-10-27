@@ -44,6 +44,7 @@
       <div ref="conversationElement" class="conversation-scroll">
         <div class="workspace-content">
           <RoomAudience v-if="form.videoId" :video-id="form.videoId" :busy="busy" @report="text => { focus = text; submit(); }" />
+          <QaKnowledge />
           <section v-if="!turns.length" class="workspace-intro">
             <div class="welcome-symbol" aria-hidden="true">✦<i>✧</i></div>
             <div class="intro-tag">你的内容运营搭档</div>
@@ -163,7 +164,7 @@
                 >
                   <div class="report-toolbar">
                     <div>
-                      <strong>弹幕分析报告</strong><span>HTML 报告 · 数据概览与内容观察</span>
+                      <strong>观众反馈报告</strong><span>HTML 报告 · 数据概览与内容观察</span>
                     </div>
                     <button
                       v-if="turn.reportHtml"
@@ -183,7 +184,7 @@
                     :srcdoc="reportDocument(turn)"
                     sandbox="allow-popups allow-popups-to-escape-sandbox"
                     referrerpolicy="no-referrer"
-                    title="弹幕分析报告预览"
+                    title="观众反馈报告预览"
                     class="report-preview"
                   />
                 </div>
@@ -240,6 +241,7 @@
 /* global defineProps, defineEmits */
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import RoomAudience from '@/components/agent/RoomAudience.vue';
+import QaKnowledge from '@/components/agent/QaKnowledge.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/store/user';
 import { useAgentRunMonitor } from '@/composables/useAgentRunMonitor';
@@ -275,10 +277,11 @@ const generalSuggestions = [
   { icon: '▷', title: '怎样分析视频', description: '了解全片概览和片段分析', text: '怎么用你分析视频画面内容和观众反馈？' },
 ];
 const videoSuggestions = [
-  { icon: '▷', title: '观众在讨论什么', description: '默认过去七天，结合视频做复盘', text: '请分析这个视频的弹幕，结合视频内容归纳主要话题、真实弹幕例子和改进建议，生成分析报告。' },
+  { icon: '✎', title: '评论在聊什么', description: '读取全部评论，保留回复上下文', text: '请分析这个视频过去七天的评论，归纳观众问题、讨论话题和改进建议。' },
+  { icon: '▷', title: '观众在讨论什么', description: '默认过去七天，结合视频做复盘', text: '请分析这个视频的弹幕和评论，结合视频内容归纳主要话题、观众原话和改进建议，生成观众反馈报告。' },
   { icon: '◴', title: '细看一个片段', description: '选中示例时间，修改后再发送', text: '请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。', selection: '第1秒到第4秒' },
   { icon: '◷', title: '查昨天的弹幕数', description: '快速查数量，直接告诉你结果', text: '这个视频昨天有多少条弹幕？' },
-  { icon: '▤', title: '结合画面做复盘', description: '把视频内容与观众反馈整理成报告', text: '请分析这个视频昨天的弹幕，结合实际视频画面生成一份分析报告。' },
+  { icon: '▤', title: '结合画面做复盘', description: '把视频内容与观众反馈整理成报告', text: '请分析这个视频昨天的弹幕和评论，结合实际视频画面生成一份观众反馈报告。' },
   generalSuggestions[1],
   generalSuggestions[2],
 ];
@@ -338,6 +341,11 @@ function failureLabel(code) {
       FORBIDDEN: '你没有权限分析这项内容，请确认视频或直播间 ID。',
       DEADLINE_EXCEEDED: '这次回复耗时较长，请稍后重试。',
       MODEL_UNAVAILABLE: '模型服务暂时不可用，请稍后重试。',
+      MODEL_QUOTA_EXHAUSTED: '模型服务额度不可用，本次分析已停止。请联系管理员检查模型账户。',
+      MODEL_TOKEN_BUDGET_EXCEEDED: '本次分析已达到用量上限，已停止后续模型请求。',
+      MODEL_CALL_BUDGET_EXCEEDED: '本次分析已达到调用次数上限，已停止后续模型请求。',
+      REPORT_BUDGET_INSUFFICIENT: '当前互动量超出本次报告的用量预算，分析已提前停止。请缩小时间范围。',
+      REPORT_IN_PROGRESS: '相同内容的报告正在生成，请查看最近对话里的任务，避免重复分析。',
       INVALID_ANSWER: '这次没能整理出合适的回复，请重新发送一下。',
       INTERNAL_ERROR: '助手暂时遇到了一点问题，请稍后重试。',
     }[code] || '暂时没能完成回复，请稍后重试。'
@@ -565,7 +573,7 @@ function downloadReport(turn) {
   const url = URL.createObjectURL(new Blob([turn.reportHtml], { type: 'text/html;charset=utf-8' }));
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `弹幕分析-${turn.runId}.html`;
+  anchor.download = `观众反馈-${turn.runId}.html`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

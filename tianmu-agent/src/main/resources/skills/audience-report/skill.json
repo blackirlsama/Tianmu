@@ -1,0 +1,13 @@
+{
+  "name": "audience-report",
+  "version": "1.0.0",
+  "description": "面向作者的视频观众反馈报告，完整分析弹幕、评论及回复，结合视频归纳话题与建议；先分类全部原文，再统一合并话题，最后生成可读 HTML。",
+  "tools": [
+    "query_audience",
+    "analyze_video_content",
+    "create_danmaku_report"
+  ],
+  "resources": {
+    "topic-merging": "references/topic-merging.md"
+  }
+}

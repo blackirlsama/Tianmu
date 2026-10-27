@@ -27,6 +27,7 @@ class ReportSkillFlowTest {
     }
     ToolContext context(Dataset data,AtomicReference<DanmakuClassification> progress){
         var c=mock(ToolContext.class);var owner=new AccessScope("t","u",Set.of(1001L));
+        when(c.remainingModelCalls()).thenReturn(16);
         when(c.evidence("ev_full")).thenReturn(new Evidence("ev_full",UUID.randomUUID(),owner,null,data));
         when(c.reportClassification("ev_full")).thenAnswer(i->progress.get());
         doAnswer(i->{progress.set(i.getArgument(1));return null;}).when(c).saveReportClassification(eq("ev_full"),any());
@@ -45,13 +46,13 @@ class ReportSkillFlowTest {
             result=tool.execute(batch(data,progress.get()),c);batches++;
             if(progress.get().offset()<200){assertNull(result.terminalAnswer());verify(c,never()).saveReport(anyString(),any());}
         }
-        assertEquals(3,batches);assertNotNull(result.terminalAnswer());assertEquals(200,progress.get().topics().get(0).messages());
+        assertEquals(5,batches);assertNotNull(result.terminalAnswer());assertEquals(200,progress.get().topics().get(0).messages());
         assertEquals(200,new HashSet<>(progress.get().topics().get(0).sampleIds()).size());
         var saved=org.mockito.ArgumentCaptor.forClass(byte[].class);verify(c,times(1)).saveReport(eq("ev_full"),saved.capture());
         String html=new String(saved.getValue(),StandardCharsets.UTF_8);
         assertTrue(html.contains("先看结论"));assertTrue(html.contains("已分析本时段全部 200 条弹幕"));assertTrue(html.contains("模拟·布丁"));assertTrue(html.contains("200 条相关弹幕"));
         assertFalse(html.contains("7000000000000000000"));assertFalse(html.contains("canonical"));assertFalse(html.contains("[0, 0"));assertFalse(html.contains("videoId "));
-        assertFalse(html.contains("本报告包含模拟测试数据"));assertTrue(html.contains("class=\"trend-line\""));assertTrue(html.contains("class=\"word-cloud\""));
+        assertFalse(html.contains("本报告包含模拟测试数据"));assertTrue(html.contains("class=\"trend-line\""));assertFalse(html.contains("word-cloud"));
         verify(c,never()).query(any());verify(c,never()).videoQuery(any());
         Path out=Path.of("target/report-preview");Files.createDirectories(out);Files.write(out.resolve("full-audience-report.html"),saved.getValue());
         Files.writeString(out.resolve("full-audience-report.json"),json.writerWithDefaultPrettyPrinter().writeValueAsString(result.data().get("report_document")),StandardCharsets.UTF_8);
@@ -59,11 +60,11 @@ class ReportSkillFlowTest {
         assertEquals(200,document.metrics().analyzedMessages());
         assertTrue(document.topics().get(0).quotes().size()<3,"Near-identical quotes should not be used to fill slots");
     }
-    @Test void missingMemberWrongOffsetAndPrematureRenderingDoNotPublishPartialReports() throws Exception {
+    @Test void unknownMemberWrongOffsetAndPrematureRenderingDoNotPublishPartialReports() throws Exception {
         var data=data(200);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
         assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full")),c));
         var incomplete=new LinkedHashMap<>(batch(data,progress.get()).arguments());
-        var nodes=json.readTree((String)incomplete.get("topics_json"));((com.fasterxml.jackson.databind.node.ArrayNode)nodes.get(0).get("sample_ids")).remove(0);incomplete.put("topics_json",nodes.toString());
+        var nodes=json.readTree((String)incomplete.get("topics_json"));((com.fasterxml.jackson.databind.node.ArrayNode)nodes.get(0).get("sample_ids")).add("G999");incomplete.put("topics_json",nodes.toString());
         assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",incomplete),c));assertEquals(0,progress.get().offset());
         var skipped=new LinkedHashMap<>(batch(data,progress.get()).arguments());skipped.put("offset",80);
         assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",skipped),c));
@@ -104,11 +105,14 @@ class ReportSkillFlowTest {
         var result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",wrapped)),c);
         assertNotNull(result.terminalAnswer());assertEquals(data.audience().corpus().stream().map(TextGroup::id).toList(),progress.get().topics().get(0).sampleIds());
     }
-    @Test void missingAliasesAreNamedInRepairFeedbackAndNoPartialDraftIsSaved() throws Exception {
+    @Test void missingAndRepeatedAliasesStillPreserveCompleteCoverageWithoutRetry() throws Exception {
         var data=data(2);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
-        String topics=json.writeValueAsString(Map.of("topics",List.of(Map.of("topic_key","T1","title","小鸭外观","observation","观众喜欢绒毛","recommendation","保留近景","sample_ids",List.of("G1")))));
-        var error=assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",topics)),c));
-        assertTrue(error.getMessage().contains("G2"));assertEquals(0,progress.get().offset());verify(c,never()).saveReport(anyString(),any());
+        String topics=json.writeValueAsString(Map.of("topics",List.of(Map.of("topic_key","T1","title","小鸭外观","observation","观众喜欢绒毛","recommendation","保留近景","sample_ids",List.of("G1","G1")))));
+        var result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",topics)),c);
+        assertNotNull(result.terminalAnswer());assertEquals(2,progress.get().offset());
+        assertEquals(2,progress.get().topics().stream().mapToLong(Topic::messages).sum());
+        assertEquals(1,progress.get().topics().stream().filter(t->t.title().equals("其他讨论")).count());
+        assertEquals(2,progress.get().topics().stream().flatMap(t->t.sampleIds().stream()).distinct().count());
     }
     @Test void videoEvidenceMustActuallyBeConnectedToAReportTopicBeforeDraftCommit() throws Exception {
         var data=data(1);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
@@ -120,10 +124,7 @@ class ReportSkillFlowTest {
         topic.put("video_context","画面能看清小鸭绒毛，与观众的外观反馈相关。");topic.put("video_at_ms",List.of(2500));args.put("topics_json",json.writeValueAsString(Map.of("topics",List.of(topic))));
         assertNotNull(tool.execute(new ToolCall("create_danmaku_report",args),c).terminalAnswer());
     }
-    @Test void wordCloudCountsAllRepeatedOriginalsAndChartsAreScriptFree(){
-        var words=ReportWordCloud.terms(List.of(new TextGroup("1","绒毛 镜头 绒毛 只 做 挺 没有",3,1000L,false),new TextGroup("2","绒毛 原声",2,2000L,false)));
-        assertEquals(8,words.stream().filter(w->w.text().equals("绒毛")).findFirst().orElseThrow().count());
-        assertTrue(words.stream().noneMatch(w->Set.of("只","做","挺","没有").contains(w.text())));
+    @Test void chartsAreScriptFreeAfterWordCloudRemoval(){
         var base=data(2);var topic=new Topic("T1","小鸭外观","观众喜欢绒毛","保留近景",base.audience().corpus().stream().map(TextGroup::id).toList(),2,"",List.of());
         String html=CreatorAudienceReport.render(base,List.of(topic),null);
         assertEquals(2,html.split("<polyline class=\"trend-line\"",-1).length-1);assertFalse(html.contains("<script"));assertFalse(html.contains("NaN"));assertFalse(html.contains("Infinity"));

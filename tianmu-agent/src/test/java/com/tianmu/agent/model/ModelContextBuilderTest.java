@@ -9,6 +9,16 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ModelContextBuilderTest {
+    @Test void releasesOnlyClassifiedOlderBatchesWithoutChangingStoredEvidence() throws Exception {
+        var first=new ToolResult("query_audience",Map.of("evidence_id","ev_a","classification",Map.of("offset",0,"groups",List.of(Map.of("id","G1","text","原文".repeat(15000))),"topics",List.of())),"ev_a");
+        var last=new ToolResult("create_danmaku_report",Map.of("evidence_id","ev_a","classification",Map.of("offset",80,"groups",List.of(Map.of("id","G81","text","尚未处理的完整原文")),"topics",List.of(Map.of("title","已归纳主题")))),"ev_a");
+        String stored=json.writeValueAsString(first);
+        var view=payload(new ModelContextBuilder(json,new ContextPolicy(2048,0)).build("rules",Map.of("results",List.of(first,last))));
+        assertTrue(view.path("results").get(0).path("data").path("classification").path("superseded").asBoolean());
+        assertEquals("尚未处理的完整原文",view.path("results").get(1).path("data").path("classification").path("groups").get(0).path("text").asText());
+        assertEquals(stored,json.writeValueAsString(first));
+        assertThrows(AgentException.class,()->new ModelContextBuilder(json,new ContextPolicy(2048,0)).build("rules",Map.of("results",List.of(first))));
+    }
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     private MemoryTypes.Message message(UUID run, long sequence, String role, String text) {
         return new MemoryTypes.Message(UUID.randomUUID(), run, sequence, role, text, Instant.parse("2026-10-26T00:00:00Z"));

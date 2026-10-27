@@ -13,7 +13,7 @@ public final class VideoContentTask {
     private static final Pattern SECONDS = Pattern.compile("(?<![\\d.])第?([+-]?\\d+(?:\\.\\d+)?)\\s*秒?" + JOIN + "第?([+-]?\\d+(?:\\.\\d+)?)\\s*秒");
     private static final Pattern CLOCK = Pattern.compile("(?<![\\d:])(\\d{1,3}:[0-5]\\d(?:\\.\\d{1,3})?)" + JOIN + "(\\d{1,3}:[0-5]\\d(?:\\.\\d{1,3})?)(?![\\d:])");
     public static boolean requested(String text) {
-        return !DanmakuReportTask.requested(text) && !text.contains("弹幕") && !ConversationTopics.general(text)
+        return !AudienceReportTask.requested(text) && !DanmakuReportTask.requested(text) && !CommentAnalysisTask.requested(text) && !text.contains("弹幕") && !ConversationTopics.general(text)
                 && text.matches("(?s).*(内容|画面|剧情|镜头|对白|讲了什么|发生了什么).*");
     }
     public static Specification parse(String text) {

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 @org.springframework.core.annotation.Order(0)
 public class MetricQueryReadiness implements QueryReadinessPolicy {
     public Optional<Clarification> validate(Input input) {
-        if (DanmakuReportTask.requested(input.query()) || com.tianmu.agent.core.ConversationTopics.general(input.query())) return Optional.empty();
+        if (AudienceReportTask.requested(input.query()) || DanmakuReportTask.requested(input.query()) || com.tianmu.agent.core.ConversationTopics.general(input.query())) return Optional.empty();
         if (!input.query().contains("弹幕")) return Optional.empty();
         if(!Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(input.query()).find() && !input.query().contains("昨天")
                 || input.query().matches("(?s).*\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}.*")) {

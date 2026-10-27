@@ -43,7 +43,10 @@ public final class DanmakuTypes {
         public int occurrenceCount() { return occurrences.size(); }
     }
     public record Dataset(Query query, long totalMessages, long uniqueSenders, List<Bucket> buckets,
-                          List<Sample> samples, Instant dataAsOf, String source, boolean demo, AudienceData.Overview audience) {
+                          List<Sample> samples, Instant dataAsOf, String source, boolean demo, AudienceData.Overview audience, AudienceReportData.Sources sources) {
+        public Dataset(Query query,long totalMessages,long uniqueSenders,List<Bucket> buckets,List<Sample> samples,Instant dataAsOf,String source,boolean demo,AudienceData.Overview audience){
+            this(query,totalMessages,uniqueSenders,buckets,samples,dataAsOf,source,demo,audience,null);
+        }
         public Dataset(Query query, long totalMessages, long uniqueSenders, List<Bucket> buckets,
                        List<Sample> samples, Instant dataAsOf, String source, boolean demo) {
             this(query, totalMessages, uniqueSenders, buckets, samples, dataAsOf, source, demo, null);
@@ -70,6 +73,7 @@ public final class DanmakuTypes {
             }
             if (occurrenceCount > 48) throw new IllegalArgumentException("Too many sampled occurrences");
             if (audience != null && audience.totalMessages() != totalMessages) throw new IllegalArgumentException("Audience scope mismatch");
+            if(sources!=null){AudienceReportData.validate(sources,audience,totalMessages);if(uniqueSenders!=sources.uniqueViewers())throw new IllegalArgumentException("Audience identity count mismatch");}
         }
         public int sampleOccurrenceCount() { return samples.stream().mapToInt(Sample::occurrenceCount).sum(); }
         public String samplingMethod() { return "Up to 12 fixed-width time bins (rounded up to seconds); first up to 4 messages per bin, ordered by create_time and bullet_id; snippets at most 160 code points; exact text duplicates grouped after redaction with all sampled IDs retained; non-random and not population-representative"; }

@@ -27,4 +27,8 @@ public class AgentBridgeConfiguration {
         return new BusinessVideoContent(new JdbcTemplate(reader.source()), minio.getIfAvailable(), bucket);
     }
     @Bean BusinessDanmakuAnalysis businessDanmakuAnalysis(BusinessReadDatabase reader, BridgeProperties properties) { return new BusinessDanmakuAnalysis(new JdbcTemplate(reader.source()), properties); }
+    @Bean BusinessCommentAnalysis businessCommentAnalysis(BusinessReadDatabase reader, BridgeProperties properties) { return new BusinessCommentAnalysis(new JdbcTemplate(reader.source()), properties); }
+    @Bean BusinessAudienceAnalysis businessAudienceAnalysis(BusinessReadDatabase reader,BridgeProperties properties,BusinessDanmakuAnalysis danmaku,BusinessCommentAnalysis comments) {
+        return new BusinessAudienceAnalysis(new JdbcTemplate(reader.source()),properties,danmaku,comments);
+    }
 }

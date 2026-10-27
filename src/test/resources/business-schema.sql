@@ -16,3 +16,8 @@ CREATE TABLE IF NOT EXISTS video_stats (
   comment_count INT NOT NULL DEFAULT 0, create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, is_delete INT NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS comment (
+  comment_id BIGINT PRIMARY KEY, video_id BIGINT NOT NULL, user_id BIGINT,
+  parent_comment_id BIGINT, content VARCHAR(4096) NOT NULL, create_time TIMESTAMP(3) NOT NULL,
+  INDEX idx_comment_video_created(video_id,create_time)
+);

@@ -21,7 +21,7 @@ public final class RequestMessages {
     }
     public static String execution(String message, RequestContext context) {
         // Only data questions need a page target. Explicit user targets always take precedence.
-        if (context == null || !(message.contains("弹幕") || ConversationTopics.videoContent(message))
+        if (context == null || !(message.contains("弹幕") || com.tianmu.agent.preparation.AudienceReportTask.requested(message) || com.tianmu.agent.preparation.CommentAnalysisTask.requested(message) || ConversationTopics.videoContent(message))
                 || ConversationTopics.general(message) || DanmakuTarget.matcher(message).find()) return message;
         return message + "\n当前视频：视频" + context.videoId();
     }

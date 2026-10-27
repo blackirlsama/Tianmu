@@ -27,6 +27,6 @@ public class ReadResultTool implements AgentTool {
             return new ToolResult(name(), Map.of("evidence_id", evidence.id(), "format", "json",
                     "page", TextPage.read(body, offset, limit)), evidence.id());
         }
-        return new ToolResult(name(), Map.of(evidence.analysis() == null ? "metric" : "analysis", evidence.facts()), evidence.id());
+        return new ToolResult(name(), Map.of(evidence.comments() != null ? "comments" : evidence.analysis() == null ? "metric" : "analysis", evidence.facts()), evidence.id());
     }
 }

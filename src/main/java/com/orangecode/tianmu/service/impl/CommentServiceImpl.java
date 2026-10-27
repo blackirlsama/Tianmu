@@ -135,7 +135,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         // 第一遍遍历：初始化所有评论对象
         for (Comment comment : comments) {
             Long parentId = comment.getParentCommentId();
-            if (parentId == null) {
+            if (isRootParent(parentId)) {
                 // 顶级评论 -> TMCommentVideoResponse
                 CommentVideoResponse response = new CommentVideoResponse();
                 BeanUtil.copyProperties(comment, response);
@@ -157,7 +157,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         // 第二遍遍历：构建评论树（平铺所有子评论到顶级评论的 children 中）
         for (Comment comment : comments) {
             Long parentId = comment.getParentCommentId();
-            if (parentId != null) {
+            if (!isRootParent(parentId)) {
                 // 子评论需要挂到对应的顶级评论下
                 Long rootParentId = findRootParentId(comments, parentId);
                 if (rootParentId != null && videoResponseMap.containsKey(rootParentId)) {
@@ -192,12 +192,19 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     }
 
     /**
-     * 递归查找评论的顶级父评论ID（parentCommentId == null 的评论）
+     * 兼容数据库默认值 0 和历史数据中的 null。
+     */
+    private boolean isRootParent(Long parentId) {
+        return parentId == null || parentId == 0L;
+    }
+
+    /**
+     * 递归查找评论的顶级父评论ID。
      */
     private Long findRootParentId(List<Comment> comments, Long commentId) {
         for (Comment comment : comments) {
             if (comment.getCommentId().equals(commentId)) {
-                if (comment.getParentCommentId() == null) {
+                if (isRootParent(comment.getParentCommentId())) {
                     return commentId; // 找到顶级评论
                 } else {
                     return findRootParentId(comments, comment.getParentCommentId()); // 递归向上查找

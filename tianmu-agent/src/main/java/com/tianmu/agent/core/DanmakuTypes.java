@@ -7,14 +7,17 @@ import java.util.*;
 public final class DanmakuTypes {
     private DanmakuTypes() {}
     public static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    /** Explicit all-retained sentinel; arbitrary long bounded intervals remain rejected. */
+    public static final LocalDateTime ALL_TIME_START = LocalDateTime.of(1970,1,1,0,0);
     public record Query(long videoId, LocalDateTime start, LocalDateTime end) {
         public Query {
             Objects.requireNonNull(start); Objects.requireNonNull(end);
-            if (videoId <= 0 || !start.isBefore(end) || start.getNano() != 0 || end.getNano() != 0 || Duration.between(start, end).compareTo(Duration.ofDays(30)) > 0)
-                throw new IllegalArgumentException("Analysis range must be positive and at most 30 days");
+            if (videoId <= 0 || !start.isBefore(end) || start.getNano() != 0 || end.getNano() != 0 || !start.equals(ALL_TIME_START) && Duration.between(start, end).compareTo(Duration.ofDays(30)) > 0)
+                throw new IllegalArgumentException("Use a positive range up to 30 days, or the explicit all-retained start");
         }
+        public boolean allTime(){return start.equals(ALL_TIME_START);}
         public void checkTime(Instant now) {
-            if (end.atZone(ZONE).toInstant().isAfter(now) || start.toLocalDate().isBefore(now.atZone(ZONE).toLocalDate().minusDays(30)))
+            if (end.atZone(ZONE).toInstant().isAfter(now) || !allTime() && start.toLocalDate().isBefore(now.atZone(ZONE).toLocalDate().minusDays(30)))
                 throw new AgentException("DATE_OUT_OF_RANGE", "Use a completed range within the previous 30 days");
         }
     }
@@ -56,7 +59,9 @@ public final class DanmakuTypes {
             buckets = List.copyOf(buckets); samples = List.copyOf(samples);
             if (totalMessages < 0 || uniqueSenders < 0 || uniqueSenders > totalMessages || buckets.size() != 12 || samples.size() > 48
                     || source == null || !source.matches("[a-zA-Z0-9:._-]{1,100}")) throw new IllegalArgumentException("Invalid analysis dataset");
-            long sum = 0, seconds = Duration.between(query.start(), query.end()).getSeconds(), width = Math.max(1, (seconds + 11) / 12);
+            if(audience!=null && audience.activityStart()!=null && (!query.allTime() || audience.activityStart().isBefore(query.start()) || !audience.activityStart().isBefore(query.end())))
+                throw new IllegalArgumentException("Invalid activity timeline bounds");
+            long sum = 0, seconds = Duration.between(audience!=null && audience.activityStart()!=null?audience.activityStart():query.start(), query.end()).getSeconds(), width = Math.max(1, (seconds + 11) / 12);
             Set<String> ids = new HashSet<>();
             for (int i = 0; i < 12; i++) {
                 if (buckets.get(i).index() != i || width * i >= seconds && buckets.get(i).count() != 0) throw new IllegalArgumentException("Invalid bucket range");

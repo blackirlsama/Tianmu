@@ -14,44 +14,18 @@ final class ReportDraftEditor {
     private final ObjectMapper json;
     private final com.tianmu.agent.application.ReportAnalysisCache cache;
     ReportDraftEditor(ObjectMapper json,com.tianmu.agent.application.ReportAnalysisCache cache){this.cache=cache;this.json=json.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);}
-    void merge(ToolCall call,ToolContext context) {
-        String id=ToolArguments.text(call,"evidence_id");var data=context.evidence(id).analysis();var progress=context.reportClassification(id);
-        if(data==null || data.sources()==null || progress.offset()!=data.audience().corpus().size() || progress.merged())
-            throw new AgentException("INVALID_REPORT","Complete every source batch before merging its topics");
-        context.checkDanmakuQuery(data.query());
+    void complete(ToolContext context,String id) {
+        var data=context.evidence(id).analysis();var progress=context.reportClassification(id);
+        if(data.sources()==null || progress.merged() || progress.offset()!=data.audience().corpus().size())return;
+        Set<String> members=new HashSet<>();
+        for(Topic topic:progress.topics())for(String member:topic.sampleIds())
+            if(!members.add(member))throw new AgentException("INVALID_REPORT","Duplicate topic membership");
+        if(!members.equals(data.audience().corpus().stream().map(TextGroup::id).collect(java.util.stream.Collectors.toSet())))
+            throw new AgentException("INVALID_REPORT","Incomplete topic membership");
+        var completed=new DanmakuClassification(progress.offset(),progress.topics(),progress.videoEvidenceId(),true);
+        context.saveReportClassification(id,completed);
         VideoContent.Facts video=progress.videoEvidenceId()==null?null:context.evidence(progress.videoEvidenceId()).videoContent();
-        cache.claim(context.scope(),data,video,context.reportCacheVariant(),context.runId());
-        try {
-            JsonNode nodes=json.readTree(ToolArguments.text(call,"merge_json"));
-            if(nodes.isObject() && nodes.size()==1 && nodes.has("topics"))nodes=nodes.get("topics");
-            if(!nodes.isArray() || nodes.isEmpty() || nodes.size()>100)throw new IllegalArgumentException();
-            Map<String,Topic> topics=new HashMap<>();Map<String,String> aliases=new HashMap<>();List<TextGroup> groups=new ArrayList<>();
-            for(Topic topic:progress.topics()) {
-                String alias=Integer.toString(groups.size()+1);topics.put(alias,topic);aliases.put(topic.id(),alias);
-                groups.add(new TextGroup(alias,topic.title(),topic.messages(),null,false));
-            }
-            Set<String> assigned=new HashSet<>();
-            for(JsonNode node:nodes) {
-                if(!(node instanceof ObjectNode object) || !node.path("topic_keys").isArray() || node.has("sample_ids"))throw new IllegalArgumentException();
-                var members=json.createArrayNode();
-                for(JsonNode key:node.get("topic_keys")) {
-                    String alias=key.isTextual()?aliases.get(key.asText()):null;
-                    if(alias==null || !assigned.add(alias))throw new IllegalArgumentException();members.add(alias);
-                }
-                object.remove("topic_keys");object.set("sample_ids",members);
-            }
-            if(!assigned.equals(topics.keySet()))throw new IllegalArgumentException();
-            Overview overview=new Overview(List.of(),List.of(),data.totalMessages(),groups,data.totalMessages(),data.totalMessages());
-            List<Topic> merged=new ArrayList<>();
-            for(Topic topic:AudienceTopics.parse(json,nodes.toString(),overview,video,100,100)) {
-                List<String> members=topic.sampleIds().stream().flatMap(alias->topics.get(alias).sampleIds().stream()).toList();
-                merged.add(new Topic(topic.id(),topic.title(),topic.observation(),topic.recommendation(),members,topic.messages(),topic.videoContext(),topic.videoAtMs()));
-            }
-            if(video!=null && merged.stream().noneMatch(t->!t.videoContext().isBlank()))throw new IllegalArgumentException();
-            var completed=new DanmakuClassification(progress.offset(),merged,progress.videoEvidenceId(),true);
-            context.saveReportClassification(id,completed);cache.put(context.scope(),data,video,completed,context.reportCacheVariant());
-        }catch(AgentException e){throw e;}
-        catch(Exception e){throw new AgentException("INVALID_REPORT","merge_json must be an array or {\"topics\":[...]}, covering every existing topic_key exactly once. Each item has title, observation, recommendation, topic_keys and optional anchored video_context/video_at_ms. Preserve distinct opinions; never drop long-tail topics.");}
+        cache.put(context.scope(),data,video,completed,context.reportCacheVariant());
     }
     ToolResult append(ToolCall call,ToolContext context){
         String id=ToolArguments.text(call,"evidence_id");var evidence=context.evidence(id);var data=evidence.analysis();
@@ -73,11 +47,11 @@ final class ReportDraftEditor {
         if(cached!=null && (cached.offset()>progress.offset() || cached.offset()==progress.offset() && cached.merged() && !progress.merged())){
             var restored=new DanmakuClassification(cached.offset(),cached.topics(),videoId,cached.merged());
             context.saveReportClassification(id,restored);
-            checkBudget(context,DanmakuClassification.remainingBatches(data.audience(),restored.offset())+(data.sources()!=null && !restored.merged()?1:0));
+            checkBudget(context,DanmakuClassification.remainingBatches(data.audience(),restored.offset()));
             com.tianmu.agent.harness.trace.TraceAttributes.apply(io.opentelemetry.api.trace.Span.current(),Map.of("report.cache_hit",true,"report.reused_groups",restored.offset()));
             return new ToolResult("create_danmaku_report",Map.of("evidence_id",id,"classification",restored.view(data.audience()),"reused_groups",restored.offset()),id);
         }
-        checkBudget(context,Math.max(0,DanmakuClassification.remainingBatches(data.audience(),progress.offset())-1)+(data.sources()!=null?1:0));
+        checkBudget(context,Math.max(0,DanmakuClassification.remainingBatches(data.audience(),progress.offset())-1));
         List<String> keys=new ArrayList<>();JsonNode nodes;
         try{
             nodes=json.readTree(ToolArguments.text(call,"topics_json"));
@@ -85,19 +59,26 @@ final class ReportDraftEditor {
             if(!nodes.isArray())throw new IllegalArgumentException();
             Map<String,String> aliases=new LinkedHashMap<>();Set<String> canonical=new HashSet<>(),assigned=new HashSet<>();
             for(int i=0;i<batch.size();i++){aliases.put("G"+(progress.offset()+i+1),batch.get(i).id());canonical.add(batch.get(i).id());}
+            Map<String,List<String>> compressed=new HashMap<>();
+            for(var input:DanmakuClassification.inputs(data.audience(),progress.offset()))
+                compressed.put(input.id(),input.members().stream().map(TextGroup::id).toList());
             for(int n=0;n<nodes.size();n++){
                 JsonNode node=nodes.get(n);
                 JsonNode refs=node.path("sample_ids");
                 if(!refs.isArray())throw new IllegalArgumentException();
                 if(refs.isEmpty()){((com.fasterxml.jackson.databind.node.ArrayNode)nodes).remove(n--);continue;}
                 String key=node.path("topic_key").asText();if(!key.matches(data.sources()==null?"T[1-6]":"T(?:[1-9]|[1-9][0-9]|100)") || keys.contains(key))throw new IllegalArgumentException();
-                for(int i=0;i<refs.size();i++){
-                    if(!refs.get(i).isTextual())throw new IllegalArgumentException();String supplied=refs.get(i).textValue();
-                    String member=aliases.get(supplied);if(member==null && canonical.contains(supplied))member=supplied;
-                    if(member==null)throw new AgentException("INVALID_REPORT","Unknown batch ID: "+supplied+". Use only IDs in the current classification.groups.");
-                    if(!assigned.add(member)){((com.fasterxml.jackson.databind.node.ArrayNode)refs).remove(i--);continue;}
-                    ((com.fasterxml.jackson.databind.node.ArrayNode)refs).set(i,com.fasterxml.jackson.databind.node.TextNode.valueOf(member));
+                var expanded=json.createArrayNode();
+                for(JsonNode ref:refs){
+                    if(!ref.isTextual())throw new IllegalArgumentException();String supplied=ref.textValue();
+                    List<String> members=compressed.get(supplied);
+                    if(members==null){String member=aliases.get(supplied);if(member==null && canonical.contains(supplied))member=supplied;
+                        if(member==null)throw new AgentException("INVALID_REPORT","Unknown batch ID: "+supplied+". Use only IDs in classification.groups.");
+                        members=List.of(member);
+                    }
+                    for(String member:members)if(assigned.add(member))expanded.add(member);
                 }
+                ((ObjectNode)node).set("sample_ids",expanded);refs=expanded;
                 if(refs.isEmpty()){((com.fasterxml.jackson.databind.node.ArrayNode)nodes).remove(n--);continue;}
                 keys.add(key);((ObjectNode)node).remove("topic_key");
             }
@@ -127,11 +108,16 @@ final class ReportDraftEditor {
         for(int i=0;i<parsed.size();i++){
             Topic t=parsed.get(i),old=merged.get(keys.get(i));List<String> members=new ArrayList<>();if(old!=null)members.addAll(old.sampleIds());members.addAll(t.sampleIds());
             merged.put(keys.get(i),new Topic(keys.get(i),t.title(),t.observation(),t.recommendation(),members,Math.addExact(t.messages(),old==null?0:old.messages()),
-                    t.videoContext().isBlank() && old!=null?old.videoContext():t.videoContext(),t.videoAtMs().isEmpty() && old!=null?old.videoAtMs():t.videoAtMs()));
+                    join(old==null?"":old.videoContext(),t.videoContext()),
+                    java.util.stream.Stream.concat(old==null?java.util.stream.Stream.<Long>empty():old.videoAtMs().stream(),t.videoAtMs().stream()).distinct().sorted().toList()));
         }
         var saved=new DanmakuClassification(progress.offset()+batch.size(),List.copyOf(merged.values()),videoId);context.saveReportClassification(id,saved);
         cache.put(context.scope(),data,video,saved,context.reportCacheVariant());
         return new ToolResult("create_danmaku_report",Map.of("evidence_id",id,"classification",saved.view(data.audience())),id);
+    }
+    private static String join(String previous,String next){
+        if(previous.isBlank())return next;if(next.isBlank() || previous.equals(next))return previous;
+        return previous+"\n"+next;
     }
     private void checkBudget(ToolContext context,int needed){
         Integer available=context.remainingModelCalls();

@@ -28,10 +28,11 @@ public final class AudienceReportData {
         List<TextGroup> groups=new ArrayList<>();
         for(TextGroup g:d.audience().corpus())groups.add(new TextGroup(Integer.toString(groups.size()+1),g.text(),g.count(),g.playbackMs(),g.truncated(),g.trend(),"DANMAKU",g.originalId(),"",g.author()));
         Map<String,VideoComments.Comment> byId=new HashMap<>();c.comments().forEach(row->byId.put(row.id(),row));
-        long seconds=Duration.between(d.query().start(),d.query().end()).getSeconds(),width=Math.max(1,(seconds+11)/12);
+        LocalDateTime activityStart=d.audience().activityStart()==null?d.query().start():d.audience().activityStart();
+        long seconds=Duration.between(activityStart,d.query().end()).getSeconds(),width=Math.max(1,(seconds+11)/12);
         long[] bins=new long[12];for(Bucket b:d.buckets())bins[b.index()]=b.count();
         for(var row:c.comments())if(row.inPeriod()) {
-            int bin=Math.toIntExact(Duration.between(d.query().start(),row.createdAt().atZone(DanmakuTypes.ZONE).toLocalDateTime()).getSeconds()/width);
+            int bin=Math.toIntExact(Duration.between(activityStart,row.createdAt().atZone(DanmakuTypes.ZONE).toLocalDateTime()).getSeconds()/width);
             if(bin<0 || bin>=12)throw new AgentException("INVALID_EVIDENCE","Comment outside report range");
             bins[bin]=Math.addExact(bins[bin],1);List<Long> trend=new ArrayList<>(Collections.nCopies(12,0L));trend.set(bin,1L);
             groups.add(new TextGroup(Integer.toString(groups.size()+1),row.text(),1,null,false,trend,"COMMENT",row.id(),context(row,byId),row.author()));
@@ -43,7 +44,7 @@ public final class AudienceReportData {
                 c.uniqueAudience(),c.comments().size()-c.totalComments(),snapshot.uniqueAudience(),d.dataAsOf().isBefore(c.dataAsOf())?d.dataAsOf():c.dataAsOf());
         List<Bucket> buckets=new ArrayList<>();for(int i=0;i<12;i++)buckets.add(new Bucket(i,bins[i]));
         var audience=new Overview(d.audience().interactions().stream().filter(f->!f.userId().equals(owner)).toList(),d.audience().playback(),
-                Math.addExact(d.audience().unknownPlayback(),c.totalComments()),groups,total,total);
+                Math.addExact(d.audience().unknownPlayback(),c.totalComments()),groups,total,total,d.audience().activityStart());
         return new Dataset(d.query(),total,sources.uniqueViewers(),buckets,List.of(),sources.snapshotAt(),"mysql:audience:retained-v1",d.demo(),audience,sources);
     }
     private static String context(VideoComments.Comment row,Map<String,VideoComments.Comment> byId) {

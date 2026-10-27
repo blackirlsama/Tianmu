@@ -12,6 +12,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class BusinessAudienceAnalysisTest {
+    @Test void fullHistoryIsExplicitAndDoesNotRelaxOrdinaryRangeValidation(){
+        var end=LocalDateTime.now(ZoneId.of("Asia/Shanghai")).minusSeconds(1).withNano(0);
+        assertDoesNotThrow(()->BusinessDanmakuAnalysis.validateRange(1001,LocalDateTime.of(1970,1,1,0,0),end));
+        assertThrows(BridgeException.class,()->BusinessDanmakuAnalysis.validateRange(1001,end.minusDays(90),end));
+        assertThrows(BridgeException.class,()->BusinessDanmakuAnalysis.validateRange(1001,LocalDateTime.of(1970,1,1,0,0),end.plusDays(1)));
+    }
     @Test void bothReadersRunInsideOneReadOnlyRepeatableReadTransaction() throws Exception {
         var source=mock(DataSource.class);var connection=mock(Connection.class);
         when(source.getConnection()).thenReturn(connection);when(connection.getAutoCommit()).thenReturn(true);

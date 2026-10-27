@@ -106,7 +106,7 @@ class EvaluationBaselineTest {
                     var c=run.path("task").path("specification").path("conditions");
                     var end=Instant.parse(run.path("createdAt").asText()).atZone(ZoneId.of("Asia/Shanghai")).toLocalDateTime().withNano(0);
                     assertEquals(end,LocalDateTime.parse(c.path("end").asText()));
-                    assertEquals(end.minusDays(7),LocalDateTime.parse(c.path("start").asText()));
+                    assertEquals(com.tianmu.agent.core.DanmakuTypes.ALL_TIME_START,LocalDateTime.parse(c.path("start").asText()));
                     assertEquals(0,run.path("preparationCalls").asInt());
                 }
                 case "clarification" -> {

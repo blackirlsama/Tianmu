@@ -12,7 +12,7 @@ import java.util.*;
 public record CreatorReportDocument(String schemaVersion,String title,String period,boolean synthetic,Metrics metrics,
         List<String> conclusions,VideoSummary video,List<TopicCard> topics,List<Viewer> activeViewers,
         List<Bar> playback,List<Bar> activity,String activitySummary,long unknownPlayback,String dataAsOf,String videoUrl,
-        AudienceReportData.Sources sources,Coverage coverage) {
+        AudienceReportData.Sources sources,Coverage coverage,boolean allTime) {
     public record Coverage(long expectedMessages,long analyzedMessages,int expectedGroups,int classifiedGroups,boolean complete) {
         public Coverage {
             if(expectedMessages<0 || analyzedMessages<0 || analyzedMessages>expectedMessages || expectedGroups<0 || classifiedGroups<0
@@ -20,7 +20,7 @@ public record CreatorReportDocument(String schemaVersion,String title,String per
         }
     }
     public record Metrics(long messages,long viewers,int topics,long analyzedMessages) {}
-    public record VideoSummary(String text,int sampledPositions,String sourceVersion) {}
+    public record VideoSummary(String text,int sampledPositions,String sourceVersion,boolean hasTranscript) {}
     public record Link(String label,String url) {}
     public record Quote(String text,long occurrences,Link playback,String source,String originalId,String replyContext) {
         public Quote(String text,long occurrences,Link playback){this(text,occurrences,playback,"DANMAKU",null,"");}
@@ -59,28 +59,56 @@ public record CreatorReportDocument(String schemaVersion,String title,String per
             cards.add(new TopicCard(topic.title(),topic.observation(),topic.recommendation(),data.sources()==null?topic.messages():d+c,topic.videoContext(),
                     topic.videoAtMs().stream().map(at->link(data.query().videoId(),at,"看 "+position(at)+" 的画面")).toList(),quotes,d,c));
         }
+        cards=deduplicateContexts(cards);
         List<String> conclusions=new ArrayList<>();
         if(sorted.isEmpty())conclusions.add("这段时间没有可归纳的观众反馈，暂时无法判断观众需求。");
         else{
             String themes=String.join("、",sorted.stream().limit(3).map(Topic::title).toList());
             conclusions.add("讨论主要围绕“"+themes+"”展开。");
+            if(data.totalMessages()<20)conclusions.add("本时段反馈较少，以下仅反映已发言观众的表达，不能代表整体偏好或留存表现。");
             TopicCard first=cards.get(0);conclusions.add("其中，“"+first.title()+"”涉及的反馈最多，共 "+first.messages()+" 条。具体反馈与可以采取的行动见下方话题。");
         }
         List<Viewer> viewers=new ArrayList<>();int rank=0;
         for(Interaction fan:audience.interactions().stream().limit(10).toList()){rank++;viewers.add(new Viewer(fan.nickname().isBlank()?"观众 "+rank:fan.nickname(),fan.messages(),fan.activeDays()));}
         List<Bar> playback=audience.playback().stream().map(p->new Bar(position(p.startMs())+" — "+position(p.endMs()),p.count(),"/video/"+data.query().videoId()+"?t="+p.startMs()/1000.0)).toList();
-        long duration=Duration.between(data.query().start(),data.query().end()).getSeconds(),width=Math.max(1,(duration+11)/12);
+        LocalDateTime activityStart=audience.activityStart()==null?data.query().start():audience.activityStart();
+        long duration=Duration.between(activityStart,data.query().end()).getSeconds(),width=Math.max(1,(duration+11)/12);
         var peak=data.buckets().stream().max(Comparator.comparingLong(com.tianmu.agent.core.DanmakuTypes.Bucket::count)).orElseThrow();
-        String peakText=peak.count()==0?"当前时段没有讨论记录。":"最活跃的时段是 "+SHORT.format(data.query().start().plusSeconds(peak.index()*width))+" — "+SHORT.format(data.query().start().plusSeconds(Math.min(duration,(peak.index()+1)*width)))+"，收到 "+peak.count()+(data.sources()==null?" 条弹幕。":" 条弹幕、评论及回复。");
-        List<Bar> activity=data.buckets().stream().filter(b->b.index()*width<duration).map(b->new Bar(SHORT.format(data.query().start().plusSeconds(b.index()*width)),b.count(),null)).toList();
+        String peakText=peak.count()==0?"当前时段没有讨论记录。":"最活跃的时段是 "+SHORT.format(activityStart.plusSeconds(peak.index()*width))+" — "+SHORT.format(activityStart.plusSeconds(Math.min(duration,(peak.index()+1)*width)))+"，收到 "+peak.count()+(data.sources()==null?" 条弹幕。":" 条弹幕、评论及回复。");
+        List<Bar> activity=data.buckets().stream().filter(b->b.index()*width<duration).map(b->new Bar(SHORT.format(activityStart.plusSeconds(b.index()*width)),b.count(),null)).toList();
         Set<String> classified=new HashSet<>();topics.forEach(t->classified.addAll(t.sampleIds()));
         long analyzed=audience.corpus().stream().filter(g->classified.contains(g.id())).mapToLong(TextGroup::count).sum();
         long memberships=topics.stream().mapToLong(t->t.sampleIds().size()).sum();
         var coverage=new Coverage(data.totalMessages(),analyzed,audience.corpus().size(),classified.size(),analyzed==data.totalMessages() && classified.size()==memberships && classified.equals(groups.keySet()));
-        return new CreatorReportDocument("2.0","观众都在聊什么",DATE.format(data.query().start())+" — "+DATE.format(data.query().end())+" · 北京时间",
+        return new CreatorReportDocument("2.2","观众都在聊什么",(data.query().allTime()?"全量弹幕与评论 · 截至 "+DATE.format(data.query().end()):DATE.format(data.query().start())+" — "+DATE.format(data.query().end()))+" · 北京时间",
                 data.demo() || audience.interactions().stream().anyMatch(f->f.nickname().startsWith("模拟")),new Metrics(data.totalMessages(),data.uniqueSenders(),cards.size(),analyzed),
-                conclusions,video==null?null:new VideoSummary(video.summary(),video.sampledAtMs().size(),video.sourceVersion()),cards,viewers,playback,activity,peakText,audience.unknownPlayback()-(data.sources()==null?0:data.sources().comments()),
-                DATE.format(LocalDateTime.ofInstant(data.dataAsOf(),DanmakuTypes.ZONE)),"/video/"+data.query().videoId(),data.sources(),coverage);
+                conclusions,video==null?null:new VideoSummary(video.summary(),video.sampledAtMs().size(),video.sourceVersion(),!video.transcript().isBlank()),cards,viewers,playback,activity,peakText,audience.unknownPlayback()-(data.sources()==null?0:data.sources().comments()),
+                DATE.format(LocalDateTime.ofInstant(data.dataAsOf(),DanmakuTypes.ZONE)),"/video/"+data.query().videoId(),data.sources(),coverage,data.query().allTime());
+    }
+    /** Display deduplication includes quoted parents, while the full analysis corpus stays untouched. */
+    private static List<TopicCard> deduplicateContexts(List<TopicCard> cards){
+        Map<String,String> displayed=new LinkedHashMap<>();
+        for(TopicCard card:cards)for(Quote quote:card.quotes())displayed.put(normalized(quote.text()),"话题「"+card.title()+"」的观众原话");
+        var parent=java.util.regex.Pattern.compile("(?m)^评论 ([1-9][0-9]{0,18}) · ([^\\n：]*)：");
+        List<TopicCard> result=new ArrayList<>();
+        for(TopicCard card:cards){
+            List<Quote> quotes=new ArrayList<>();
+            for(Quote quote:card.quotes()){
+                String context=Objects.requireNonNullElse(quote.replyContext(),"");
+                var matches=parent.matcher(context).results().toList();StringBuilder clean=new StringBuilder();
+                if(matches.isEmpty())clean.append(context);
+                for(int i=0;i<matches.size();i++){
+                    var match=matches.get(i);String body=context.substring(match.end(),i+1<matches.size()?matches.get(i+1).start():context.length()).strip();
+                    String key=normalized(body),reference=displayed.entrySet().stream().filter(e->similar(e.getKey(),key)).map(Map.Entry::getValue).findFirst().orElse(null);
+                    if(clean.length()>0)clean.append('\n');clean.append("上文（").append(match.group(2)).append("）：");
+                    if(reference!=null)clean.append("原话见").append(reference).append("。");
+                    else{clean.append(body);displayed.put(key,"话题「"+card.title()+"」的回复上下文");}
+                }
+                quotes.add(new Quote(quote.text(),quote.occurrences(),quote.playback(),quote.source(),quote.originalId(),clean.toString()));
+            }
+            result.add(new TopicCard(card.title(),card.observation(),card.recommendation(),card.messages(),card.videoContext(),card.videoMoments(),quotes,card.danmaku(),card.comments()));
+        }
+        return result;
     }
     private static long audienceCount(Topic topic,Map<String,TextGroup> groups){return topic.sampleIds().stream().map(groups::get).filter(g->g!=null && !g.author()).mapToLong(TextGroup::count).sum();}
     private static Link link(long video,long at,String label){return new Link(label,"/video/"+video+"?t="+at/1000.0);}

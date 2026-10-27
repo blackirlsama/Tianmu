@@ -37,8 +37,8 @@ public final class ReportAnalysisCache implements com.tianmu.agent.runtime.RunCo
     public ReportAnalysisCache(ObjectMapper json,String model,AnalysisCacheStore store,Clock clock) {
         this.json=json;this.store=store;this.clock=clock;
         entries=Caffeine.newBuilder().maximumSize(64).expireAfterWrite(store==null?Duration.ofHours(1):Duration.ofSeconds(30)).build();
-        StringBuilder resources=new StringBuilder("report-analysis-cache-v1\n").append(model);
-        for(String path:List.of("skills/audience-report/SKILL.md","skills/audience-report/references/topic-merging.md",
+        StringBuilder resources=new StringBuilder("report-analysis-cache-v2\n").append(model);
+        for(String path:List.of("skills/audience-report/SKILL.md",
                 "tools/create_danmaku_report/tool.json","prompts/harness/system.md"))
             resources.append('\n').append(ResourceFiles.text(new ClassPathResource(path),65536));
         revision=digest(resources.toString().getBytes(StandardCharsets.UTF_8));
@@ -99,10 +99,12 @@ public final class ReportAnalysisCache implements com.tianmu.agent.runtime.RunCo
             input.put("actor",owner.userId());input.put("videoId",data.query().videoId());
             input.put("source",data.source());input.put("demo",data.demo());
             input.put("request",Objects.toString(variant,""));
-            input.set("range",json.valueToTree(data.query()));
-            input.set("corpus",json.valueToTree(data.audience().corpus()));
+            input.set("range",data.query().allTime()?json.valueToTree(Map.of("mode","ALL_RETAINED")):json.valueToTree(data.query()));
+            com.fasterxml.jackson.databind.node.ArrayNode corpus=json.valueToTree(data.audience().corpus());
+            if(data.query().allTime())for(var group:corpus)((ObjectNode)group).remove("trend");
+            input.set("corpus",corpus);
             if(video!=null){ObjectNode facts=json.valueToTree(video);facts.remove("analyzedAt");input.set("video",facts);}
-            // Time-dependent observations are reusable only within the same resolved query range.
+            // Bounded ranges remain exact. Full-history cutoffs may advance only when every retained original is unchanged.
             // Statistics still come from freshly authorized current evidence.
             return digest(json.writeValueAsBytes(input));
         } catch(Exception e) { throw new IllegalStateException("Cannot fingerprint report snapshot",e); }

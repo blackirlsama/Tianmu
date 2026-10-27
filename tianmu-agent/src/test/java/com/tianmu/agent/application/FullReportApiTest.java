@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(FullReportApiTest.Fixtures.class)
 class FullReportApiTest {
     @Autowired MockMvc http;@Autowired ObjectMapper json;
-    @Test void jointReportUsesPageContextThenClassifiesMergesAndPublishesPrivateHtml() throws Exception {
+    @Test void jointReportUsesThreeDecisionsWithoutAnExtraMergeAndPublishesPrivateHtml() throws Exception {
         byte[] body=http.perform(post("/api/agent/runs").header("Authorization","Bearer demo-alice").contentType("application/json")
                 .content("{\"message\":\"请生成观众反馈报告，只分析互动文字，不要读取视频\",\"context\":{\"videoId\":\"1001\"}}"))
                 .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsByteArray();
@@ -31,7 +31,7 @@ class FullReportApiTest {
             snapshot=json.readTree(http.perform(get("/api/agent/runs/"+id).header("Authorization","Bearer demo-alice")).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
             if(!Set.of("QUEUED","RUNNING").contains(snapshot.path("status").asText()))break;Thread.sleep(20);
         }while(System.nanoTime()<until);
-        assertEquals("SUCCEEDED",snapshot.path("status").asText(),snapshot.toString());assertEquals(5,snapshot.path("steps").asInt());
+        assertEquals("SUCCEEDED",snapshot.path("status").asText(),snapshot.toString());assertEquals(3,snapshot.path("steps").asInt());assertEquals(3,snapshot.path("modelCalls").asInt());
         assertEquals("audience.report",snapshot.path("task").path("specification").path("type").asText());
         String answer=snapshot.path("answer").path("text").asText();assertTrue(answer.contains("3 条弹幕和 3 条评论"));
         var match=java.util.regex.Pattern.compile("/api/agent/runs/[a-z0-9-]+/reports/rp_[a-z0-9-]+").matcher(answer);assertTrue(match.find());
@@ -74,11 +74,6 @@ class FullReportApiTest {
             @SuppressWarnings("unchecked") Map<String,Object> progress=(Map<String,Object>)latest.data().get("classification");
             @SuppressWarnings("unchecked") List<Map<String,Object>> groups=(List<Map<String,Object>>)progress.get("groups");
             try{
-                if(joint && "MERGE_TOPICS".equals(latest.data().get("stage"))) {
-                    if(context.observations().stream().noneMatch(r->"topic-merging".equals(r.data().get("resource"))))return Decision.tool("read_skill",Map.of("name",skill,"resource","topic-merging"));
-                    String merge=json.writeValueAsString(List.of(Map.of("title","观众关注视频内容","observation","观众提出相关问题，作者补充与引导另行标记。","recommendation","补充设备与照料说明。","topic_keys",List.of("T1"))));
-                    return Decision.tool("create_danmaku_report",Map.of("evidence_id",latest.evidenceId(),"merge_json",merge));
-                }
                 String topics=json.writeValueAsString(List.of(Map.of("topic_key","T1","title","观众喜欢小鸭的绒毛","observation","观众喜欢小鸭，希望继续看到日常观察片段。","recommendation","保持自然近景并更新成长日常。","sample_ids",groups.stream().map(g->g.get("id")).toList())));
                 return Decision.tool("create_danmaku_report",Map.of("evidence_id",latest.evidenceId(),"offset",progress.get("offset"),"topics_json",topics));
             }catch(Exception e){throw new IllegalStateException(e);}

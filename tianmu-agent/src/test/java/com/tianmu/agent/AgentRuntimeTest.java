@@ -53,12 +53,12 @@ class AgentRuntimeTest {
         assertEquals("demo-capabilities", snapshot.faqId()); assertEquals("2", snapshot.faqVersion());
         assertEquals(Status.SUCCEEDED, snapshot.status()); assertEquals(0, snapshot.modelCalls());
     }
-    @Test void serviceEntryDefaultsMissingRangeToSevenDays() throws Exception {
+    @Test void serviceEntryDefaultsMissingRangeToAllRetainedHistory() throws Exception {
         Snapshot snapshot = await(runs.create("查询视频1001的弹幕数", alice()));
         assertEquals(Status.SUCCEEDED, snapshot.status());
         assertEquals("danmaku.overview",snapshot.task().specification().type());
         var q=((com.tianmu.agent.core.TaskConditions.Report)snapshot.task().specification().typed()).query();
-        assertEquals(java.time.Duration.ofDays(7),java.time.Duration.between(q.start(),q.end()));
+        assertTrue(q.allTime());assertEquals(com.tianmu.agent.core.DanmakuTypes.ALL_TIME_START,q.start());
         assertEquals(0,snapshot.preparationCalls());assertFalse(snapshot.answer().evidenceIds().isEmpty());
     }
     @Test void serviceEntryPassesPreparedQueryToHarnessWithOwnedEvidence() throws Exception {

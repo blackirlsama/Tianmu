@@ -19,6 +19,6 @@ public final class DanmakuReportSpecificationResolver implements TaskSpecificati
     public Optional<Clarification> validate(Input input) {
         if (!DanmakuReportTask.requested(input.query())) return Optional.empty();
         try { DanmakuReportTask.parse(input.query(), input.businessDate(), input.requestedAt().atZone(ZoneId.of("Asia/Shanghai"))).checkTime(Instant.now()); return Optional.empty(); }
-        catch (RuntimeException e) { return Optional.of(new Clarification(true, "请明确一个视频ID和有效起止时间（最近30天）；不填时间时默认过去七天。")); }
+        catch (RuntimeException e) { return Optional.of(new Clarification(true, "请明确一个视频ID和有效起止时间（最近30天）；不填时间时默认全量弹幕和评论。")); }
     }
 }

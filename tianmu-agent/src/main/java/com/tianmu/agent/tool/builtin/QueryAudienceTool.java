@@ -27,6 +27,6 @@ public final class QueryAudienceTool implements AgentTool {
         counts.put("danmaku_viewers",data.sources().danmakuViewers());counts.put("comment_viewers",data.sources().commentViewers());
         counts.put("unique_viewers",data.sources().uniqueViewers());
         counts.put("context_comments",data.sources().contextComments());
-        return new ToolResult(name(),Map.of("evidence_id",evidence.id(),"counts",counts,"classification",context.reportClassification(evidence.id()).view(data.audience())),evidence.id());
+        return new ToolResult(name(),Map.of("evidence_id",evidence.id(),"counts",counts,"classification",context.reportClassification(evidence.id()).view(data.audience()),"period",Map.of("start",query.start().toString(),"end",query.end().toString(),"timezone","Asia/Shanghai","all_time",query.allTime()),"scope_note","Counts apply only to this period, not the video lifetime. Do not expand the period automatically."),evidence.id());
     }
 }

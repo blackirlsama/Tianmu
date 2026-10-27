@@ -19,8 +19,9 @@ public final class BusinessDanmakuAnalysis {
     public record Position(long startMs, long endMs, long count) {}
     public record TextGroup(String id, String text, long count, Long playbackMs, boolean truncated, List<Long> trend, boolean author) {}
     public record Audience(List<Interaction> interactions, List<Position> playback, long unknownPlayback,
-                           List<TextGroup> corpus, long corpusMessages, long totalMessages) {}
+                           List<TextGroup> corpus, long corpusMessages, long totalMessages, LocalDateTime activityStart) {}
     private record Totals(long messages, long senders, Instant asOf) {}
+    private static final LocalDateTime ALL_TIME_START=LocalDateTime.of(1970,1,1,0,0);
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private final JdbcTemplate db;
     private final TransactionTemplate tx;
@@ -37,8 +38,8 @@ public final class BusinessDanmakuAnalysis {
     static void validateRange(long videoId, LocalDateTime start, LocalDateTime end) {
         LocalDateTime now = LocalDateTime.now(ZONE);
         if (videoId <= 0 || start == null || end == null || !start.isBefore(end) || start.getNano() != 0 || end.getNano() != 0
-                || Duration.between(start, end).compareTo(Duration.ofDays(30)) > 0 || end.isAfter(now)
-                || start.toLocalDate().isBefore(now.toLocalDate().minusDays(30))) throw new BridgeException("INVALID_ANALYSIS_RANGE", 400);
+                || !ALL_TIME_START.equals(start) && Duration.between(start, end).compareTo(Duration.ofDays(30)) > 0 || end.isAfter(now)
+                || !ALL_TIME_START.equals(start) && start.toLocalDate().isBefore(now.toLocalDate().minusDays(30))) throw new BridgeException("INVALID_ANALYSIS_RANGE", 400);
     }
     private Dataset querySnapshot(BusinessAuthentication.Principal principal, long videoId, LocalDateTime start, LocalDateTime end) {
             // This ownership convention is shared with existing metric authorization.
@@ -47,8 +48,9 @@ public final class BusinessDanmakuAnalysis {
             String type = db.queryForObject("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bullet' AND COLUMN_NAME='create_time'", String.class);
             if (!"timestamp".equals(type) && !"datetime".equals(type)) throw new BridgeException("UNSUPPORTED_TIME_COLUMN", 503);
             ZoneId storage = "timestamp".equals(type) ? ZoneOffset.UTC : ZoneId.of(config.datetimeStorageZone());
-            String from = wall(start, storage), to = wall(end, storage);
-            long seconds = Duration.between(start, end).getSeconds(), width = Math.max(1, (seconds + 11) / 12);
+            LocalDateTime activityStart=ALL_TIME_START.equals(start)?activityStart(videoId,end):start;
+            String from = wall(activityStart, storage), to = wall(end, storage);
+            long seconds = Duration.between(activityStart, end).getSeconds(), width = Math.max(1, (seconds + 11) / 12);
             String scope = " FROM bullet WHERE video_id=? AND create_time>=? AND create_time<?";
             var totals = db.queryForObject("SELECT COUNT(*) AS total,COUNT(DISTINCT CASE WHEN user_id>0 THEN user_id ELSE NULL END) AS senders,UTC_TIMESTAMP(6) AS as_of" + scope,
                     (rs, n) -> new Totals(rs.getLong("total"), rs.getLong("senders"), rs.getTimestamp("as_of", Calendar.getInstance(TimeZone.getTimeZone("UTC"))).toInstant()), videoId, from, to);
@@ -63,9 +65,23 @@ public final class BusinessDanmakuAnalysis {
             }
             return new Dataset(new Query(videoId, start, end), totals.messages(), totals.senders(),
                     List.copyOf(buckets), List.copyOf(samples), totals.asOf(), "mysql:bullet:danmaku-retained-v1", false,
-                    audience(videoId, from, to, storage, totals.messages(),width,Long.parseLong(principal.userId())));
+                    audience(videoId, from, to, storage, totals.messages(),width,Long.parseLong(principal.userId()),ALL_TIME_START.equals(start)?activityStart:null));
     }
-    private Audience audience(long videoId, String from, String to, ZoneId storage, long total,long width,long owner) {
+    private LocalDateTime activityStart(long videoId,LocalDateTime end){
+        LocalDateTime earliest=end.minusSeconds(1);
+        for(String table:List.of("bullet","comment")){
+            String type=db.queryForObject("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME='create_time'",String.class,table);
+            if(!Set.of("timestamp","datetime").contains(Objects.toString(type,"")))throw new BridgeException("UNSUPPORTED_TIME_COLUMN",503);
+            ZoneId storage="timestamp".equals(type)?ZoneOffset.UTC:ZoneId.of(config.datetimeStorageZone());
+            LocalDateTime found=db.queryForObject("SELECT MIN(create_time) first_at FROM "+table+" WHERE video_id=? AND create_time>=? AND create_time<?",(rs,n)->{
+                var stamp=rs.getTimestamp("first_at",Calendar.getInstance(TimeZone.getTimeZone(storage)));
+                return stamp==null?null:stamp.toInstant().atZone(ZONE).toLocalDateTime();
+            },videoId,wall(ALL_TIME_START,storage),wall(end,storage));
+            if(found!=null && found.isBefore(earliest))earliest=found;
+        }
+        return earliest.toLocalDate().atStartOfDay();
+    }
+    private Audience audience(long videoId, String from, String to, ZoneId storage, long total,long width,long owner,LocalDateTime activityStart) {
         String scope = " FROM bullet WHERE video_id=? AND create_time>=? AND create_time<?";
         String date = "CONVERT_TZ(create_time,?, '+08:00')";
         String offset = storage.getRules().getOffset(Instant.now()).getId();
@@ -108,7 +124,7 @@ public final class BusinessDanmakuAnalysis {
                     },args.toArray());
             corpus=corpus.stream().map(g->new TextGroup(g.id(),g.text(),g.count(),g.playbackMs(),g.truncated(),Arrays.stream(trends.get(g.id())).boxed().toList(),g.author())).toList();
         }
-        return new Audience(List.copyOf(fans),List.copyOf(playback),total-located,List.copyOf(corpus),corpus.stream().mapToLong(TextGroup::count).sum(),total);
+        return new Audience(List.copyOf(fans),List.copyOf(playback),total-located,List.copyOf(corpus),corpus.stream().mapToLong(TextGroup::count).sum(),total,activityStart);
     }
     static String wall(LocalDateTime time, ZoneId storage) { return time.atZone(ZONE).withZoneSameInstant(storage).toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")); }
     static String redact(String text) {

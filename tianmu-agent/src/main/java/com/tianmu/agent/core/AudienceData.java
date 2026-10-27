@@ -10,7 +10,7 @@ public final class AudienceData {
         public Interaction(String userId,long messages,int activeDays,long distinctTexts,Instant lastAt){this(userId,messages,activeDays,distinctTexts,lastAt,"");}
         public Interaction {
             nickname=nickname==null?"":nickname;
-            if (userId == null || !userId.matches("[1-9][0-9]{0,18}") || messages < 1 || activeDays < 1 || activeDays > 31
+            if (userId == null || !userId.matches("[1-9][0-9]{0,18}") || messages < 1 || activeDays < 1
                     || distinctTexts < 0 || distinctTexts > messages || lastAt == null) throw new IllegalArgumentException("Invalid interaction aggregate");
         }
     }
@@ -36,7 +36,10 @@ public final class AudienceData {
         }
     }
     public record Overview(List<Interaction> interactions, List<Position> playback, long unknownPlayback,
-                           List<TextGroup> corpus, long corpusMessages, long totalMessages) {
+                           List<TextGroup> corpus, long corpusMessages, long totalMessages, java.time.LocalDateTime activityStart) {
+        public Overview(List<Interaction> interactions,List<Position> playback,long unknownPlayback,List<TextGroup> corpus,long corpusMessages,long totalMessages){
+            this(interactions,playback,unknownPlayback,corpus,corpusMessages,totalMessages,null);
+        }
         public Overview {
             interactions = List.copyOf(interactions); playback = List.copyOf(playback); corpus = List.copyOf(corpus);
             if (interactions.size() > 20 || playback.size() > 120 || corpus.size() > 5000 || unknownPlayback < 0

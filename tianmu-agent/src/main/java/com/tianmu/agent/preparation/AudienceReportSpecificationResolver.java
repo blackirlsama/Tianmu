@@ -16,6 +16,6 @@ public final class AudienceReportSpecificationResolver implements TaskSpecificat
     public Optional<Clarification> validate(Input input){
         if(!AudienceReportTask.requested(input.query()))return Optional.empty();
         try{DanmakuReportTask.parse(input.query(),input.businessDate(),input.requestedAt().atZone(ZoneId.of("Asia/Shanghai"))).checkTime(Instant.now());return Optional.empty();}
-        catch(RuntimeException e){return Optional.of(new Clarification(true,"请明确一个本人视频及有效时间区间；未指定时默认过去七天。"));}
+        catch(RuntimeException e){return Optional.of(new Clarification(true,"请明确一个本人视频及有效时间区间；未指定时默认全量弹幕和评论。"));}
     }
 }

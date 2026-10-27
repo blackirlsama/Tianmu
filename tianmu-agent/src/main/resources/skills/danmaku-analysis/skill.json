@@ -1,7 +1,7 @@
 {
   "name": "danmaku-analysis",
-  "version": "3.1.0",
-  "description": "视频房间的区间弹幕统计与话题报告；默认过去七天，结合视频、原文例子、改进建议和互动用户榜。",
+  "version": "3.2.0",
+  "description": "视频房间的区间弹幕统计与话题报告；默认全量、明确指定时间时按区间，结合视频、原文例子、改进建议和互动用户榜。",
   "tools": [
     "query_danmaku",
     "create_danmaku_report",

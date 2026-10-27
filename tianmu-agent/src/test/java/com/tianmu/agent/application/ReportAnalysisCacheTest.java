@@ -18,6 +18,19 @@ class ReportAnalysisCacheTest {
     final AccessScope owner=new AccessScope("tenant","creator",Set.of(1001L));
     VideoContent.Facts video(String version){return new VideoContent.Facts("video-content-v1",1001,version,0,3000,
             "草地上的小鸭",List.of(new VideoContent.Moment(1000,"小鸭看向镜头")),"","SAMPLED_FRAMES",List.of(1000L),"vision",Instant.now());}
+    @Test void unchangedFullHistoryReusesClassificationAcrossCutoffsButNeverAcrossNewOriginals(){
+        var base=new ReportSkillFlowTest().data(1);var all=new Query(1001,DanmakuTypes.ALL_TIME_START,base.query().end());
+        var data=new Dataset(all,1,1,base.buckets(),List.of(),base.dataAsOf(),base.source(),false,base.audience());
+        var cache=new ReportAnalysisCache(json,"flash");var original=base.audience().corpus().get(0);
+        var topic=new Topic("T1","小鸭日常","观众期待后续","",List.of(original.id()),1,"",List.of());
+        cache.put(owner,data,null,new DanmakuClassification(1,List.of(topic),null,true));
+        var later=new Dataset(new Query(1001,DanmakuTypes.ALL_TIME_START,all.end().plusSeconds(1)),1,1,base.buckets(),List.of(),Instant.now(),base.source(),false,base.audience());
+        assertNotNull(cache.get(owner,later,null));
+        var changed=new TextGroup("9001",original.text(),1,original.playbackMs(),false);
+        var overview=new Overview(List.of(),base.audience().playback(),0,List.of(changed),1,1);
+        var changedData=new Dataset(later.query(),1,1,base.buckets(),List.of(),Instant.now(),base.source(),false,overview);
+        assertNull(cache.get(owner,changedData,null),"A new original ID invalidates reuse even with identical wording");
+    }
     @Test void insufficientRemainingCallsStopBeforeClassifyingADoomedReport() throws Exception {
         var fixtures=new ReportSkillFlowTest();var data=fixtures.data(360);var state=new AtomicReference<>(DanmakuClassification.empty());
         var context=fixtures.context(data,state);when(context.remainingModelCalls()).thenReturn(2);

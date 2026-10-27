@@ -1,6 +1,6 @@
 # 视频评论分析
 
-使用 taskSpecification 的 video_id、start、end，时间区间由服务端固定，默认过去七天，不重复追问。
+使用 taskSpecification 的 video_id、start、end，时间区间由服务端固定，默认全量，不重复追问。
 
 先调用 query_video_comments。第一次不传 evidence_id，从 offset=0 开始。之后固定原有参数，使用返回的 evidence_id 和 page.next_offset 继续读取，直到 page.complete=true。逐页理解全部评论，不能跳页或抽样，也不能只读第一批就交付完整分析。预算不足时说明未完成，不能声称已经读完。
 

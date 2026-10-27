@@ -34,17 +34,12 @@ public final class CreateDanmakuReportTool implements AgentTool {
         boolean hasAudience=data.sources()!=null && data.totalMessages()>data.sources().danmakuAuthors()+data.sources().commentAuthors();
         if(hasAudience && context.reportRequiresVideo() && !call.arguments().containsKey("video_evidence_id") && prepared.videoEvidenceId()==null)
             throw new AgentException("INVALID_REPORT","请先读取同一视频并提供 video_evidence_id，再提交联合反馈分类。只有用户明确不读取视频时可省略。");
-        if(call.arguments().containsKey("merge_json") && call.arguments().containsKey("topics_json"))throw new AgentException("INVALID_REPORT","Submit classification and global merging as separate stages");
+
         if(data.audience()!=null && call.arguments().containsKey("topics_json")){
             ToolResult progress=drafts.append(call,context);
             if(context.reportClassification(evidence.id()).offset()<data.audience().corpus().size())return progress;
         }
-        if(call.arguments().containsKey("merge_json"))drafts.merge(call,context);
-        var current=context.reportClassification(evidence.id());
-        if(data.sources()!=null && data.totalMessages()>0 && current.offset()==data.audience().corpus().size() && !current.merged()) {
-            return new ToolResult(name(),Map.of("evidence_id",evidence.id(),"classification",current.view(data.audience()),"stage","MERGE_TOPICS",
-                    "instruction","All records are classified. Now submit merge_json covering all topic_keys exactly once; preserve minority views and video anchors. No report is published until merging and coverage checks pass."),evidence.id());
-        }
+        drafts.complete(context,evidence.id());
         String sectionSource=call.arguments().containsKey("sections_json")?ToolArguments.text(call,"sections_json"):"[]";
         List<Map<String, Object>> sections = data.audience()==null?sections(sectionSource,data):List.of();
         com.tianmu.agent.core.VideoContent.Facts video = null;
@@ -79,7 +74,7 @@ public final class CreateDanmakuReportTool implements AgentTool {
         }
         byte[] html = document.getBytes(StandardCharsets.UTF_8);
         var report = context.saveReport(evidence.id(), html);
-        String text = data.sources()!=null?"视频"+data.query().videoId()+"的观众反馈报告已生成。\n已完整分析 "+data.sources().danmaku()+" 条弹幕和 "+data.sources().comments()+" 条评论及回复，作者发言单独标记。\n[查看 HTML 报告]("+report.url()+")（需登录鉴权）":
+        String text = data.sources()!=null?"视频"+data.query().videoId()+"的观众反馈报告已生成。\n统计区间："+(data.query().allTime()?"全量，截至 "+data.query().end():data.query().start()+" 至 "+data.query().end())+"（北京时间，结束时刻不计入）。\n已完整分析 "+data.sources().danmaku()+" 条弹幕和 "+data.sources().comments()+" 条评论及回复，作者发言单独标记。\n"+(data.sources().danmaku()==0?(data.query().allTime()?"截至统计时点，当前视频没有已保留的弹幕记录。\n":"本统计时段内没有弹幕，不代表视频没有弹幕；其他日期的弹幕未计入。\n"):"")+"[查看 HTML 报告]("+report.url()+")（需登录鉴权）":
                 (data.demo() ? "【模拟数据】" : "") + "videoId " + data.query().videoId() + " 的弹幕分析报告已生成。\n"
                 + "范围：" + data.query().start() + " 至 " + data.query().end() + "（Asia/Shanghai，结束时刻不包含）。\n"
                 + "已入库且仍保留的弹幕 " + data.totalMessages() + " 条，非空用户ID去重 " + data.uniqueSenders() + " 人。\n"

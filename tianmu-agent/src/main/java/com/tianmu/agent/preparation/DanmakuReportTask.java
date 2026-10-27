@@ -19,7 +19,7 @@ public final class DanmakuReportTask {
         var ids = DanmakuTarget.matcher(text).results().toList();
         if (ids.size() != 1) throw new IllegalArgumentException("请明确一个videoId，例如视频1001或直播间1001。");
         if(Pattern.compile("今天|前天|明天|后天|上周|本周|这周|上月|本月").matcher(text).find())
-            throw new IllegalArgumentException("请提供完整起止时间，未指定时间时默认过去七天。");
+            throw new IllegalArgumentException("请提供完整起止时间，未指定时间时默认全量弹幕和评论。");
         var times = Pattern.compile("\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?").matcher(text).results().map(m -> m.group().replace(' ', 'T')).toList();
         LocalDateTime start, end;
         if (times.size() == 2) { start = LocalDateTime.parse(times.get(0)); end = LocalDateTime.parse(times.get(1)); }
@@ -29,9 +29,9 @@ public final class DanmakuReportTask {
             if (dates.isEmpty() && !text.contains("昨天")) {
                 if (Pattern.compile("\\d{1,2}:\\d{2}|\\d{1,2}点|今天|前天|上周|本周|上月|本月|近\\s*\\d+\\s*天|过去\\s*\\d+\\s*天").matcher(text).find()
                         && !text.matches("(?s).*(过去|最近|近)\\s*(7|七)\\s*天.*"))
-                    throw new IllegalArgumentException("请明确起止时间；未指定时默认过去七天。");
+                    throw new IllegalArgumentException("请明确起止时间；未指定时默认全量弹幕和评论。");
                 end = requestedAt.withZoneSameInstant(ZONE).toLocalDateTime().withNano(0);
-                return new Query(Long.parseLong(ids.get(0).group(1)), end.minusDays(7), end);
+                return new Query(Long.parseLong(ids.get(0).group(1)), text.matches("(?s).*(过去|最近|近)\\s*(7|七)\\s*天.*")?end.minusDays(7):com.tianmu.agent.core.DanmakuTypes.ALL_TIME_START, end);
             }
             if (dates.size() == 1 && !text.contains("昨天")) start = LocalDate.parse(dates.get(0)).atStartOfDay();
             else if (dates.isEmpty() && text.contains("昨天")) start = date.minusDays(1).atStartOfDay();

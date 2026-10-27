@@ -6,7 +6,7 @@ services:
       BUSINESS_BASE_URL: ${BUSINESS_BASE_URL:?Configure an authenticated HTTPS business bridge}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       PREPARATION_MODEL: ${PREPARATION_MODEL:-deepseek-flash}
-      HARNESS_MODEL: ${HARNESS_MODEL:-deepseek-v4-pro}
+      HARNESS_MODEL: ${HARNESS_MODEL:-deepseek-flash}
       DEEPSEEK_API_KEY_FILE: /run/secrets/model-api-key
       AGENT_OBJECT_STORE: minio
       AGENT_MINIO_URL: ${AGENT_MINIO_URL:?Configure the existing MinIO endpoint reachable from the Agent container}

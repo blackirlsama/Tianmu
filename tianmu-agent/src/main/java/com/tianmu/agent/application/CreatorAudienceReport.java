@@ -17,6 +17,8 @@ public final class CreatorAudienceReport {
         Metrics metrics=report.metrics();
         if(report.sources()!=null) {
             var s=report.sources();
+            if(s.danmaku()==0)h.append("<p class=\"context\">").append(report.allTime()?"截至统计时点，当前视频没有已保留的弹幕记录。":"本统计时段内没有弹幕，不代表视频没有弹幕；其他日期的弹幕未计入本报告。可选择全量或自定义区间查看。").append("</p>");
+            if(s.comments()==0)h.append("<p class=\"context\">").append(report.allTime()?"截至统计时点，当前视频没有已保留的评论及回复。":"本统计时段内没有评论及回复，其他日期的评论未计入本报告。").append("</p>");
             h.append("<div class=\"metrics\"><div><b>").append(s.danmaku()).append("</b><span>条弹幕</span></div><div><b>").append(s.comments())
                     .append("</b><span>条评论及回复</span></div><div><b>").append(metrics.topics()).append("</b><span>个观众话题</span></div></div>")
                     .append("<p class=\"muted\">弹幕参与观众 ").append(s.danmakuViewers()).append(" 位，评论参与观众 ").append(s.commentViewers())
@@ -27,8 +29,11 @@ public final class CreatorAudienceReport {
                 .append(metrics.analyzedMessages()).append(" 条弹幕。正文引用为阅读示例，分析未抽样。</p>");
         h.append("</header><section class=\"takeaway\"><h2>先看结论</h2>");
         for(String conclusion:report.conclusions())h.append("<p>").append(esc(conclusion)).append("</p>");h.append("</section>");
-        if(report.video()!=null)h.append("<section><h2>这段视频的内容</h2><p>").append(esc(report.video().text())).append("</p><p class=\"muted\">画面理解依据 ")
-                .append(report.video().sampledPositions()).append(" 个采样位置；不能据此判断完整连续动作或未提供的声音。</p></section>");
+        if(report.video()!=null){h.append("<section><h2>这段视频的内容</h2><p>").append(esc(report.video().text())).append("</p><p class=\"muted\">画面理解依据 ")
+                .append(report.video().sampledPositions()).append(" 个采样位置；不能据此判断完整连续动作或未提供的声音。</p>");
+            if(!report.video().hasTranscript())h.append("<p class=\"muted\">未提供音频转写，配乐与收音相关评价仅来自观众表达，尚未核实。</p>");
+            h.append("</section>");
+        }
         h.append("<section><h2>观众在讨论什么</h2>");int index=0;
         for(TopicCard topic:report.topics()){
             if(index==6)h.append("<details class=\"more-topics\"><summary>查看其他讨论（").append(report.topics().size()-6).append(" 个话题）</summary>");
@@ -52,18 +57,25 @@ public final class CreatorAudienceReport {
             if(!topic.recommendation().isBlank())h.append("<div class=\"action\"><strong>可以怎么做</strong><p>").append(esc(topic.recommendation())).append("</p></div>");h.append("</article>");
         }
         if(report.topics().size()>6)h.append("</details>");
-        h.append("</section><section><h2>").append(report.sources()==null?"互动最活跃的观众":"弹幕互动最活跃的观众").append("</h2><p class=\"muted\">按本时段的弹幕活跃天数与发言情况排列。</p>");int rank=0;
+        h.append("</section>");
+        if(!report.activeViewers().isEmpty()){
+        h.append("<section><h2>").append(report.sources()==null?"互动最活跃的观众":"弹幕互动最活跃的观众").append("</h2><p class=\"muted\">按本时段的弹幕活跃天数与发言情况排列。</p>");int rank=0;
         for(Viewer viewer:report.activeViewers())h.append("<div class=\"fan\"><span class=\"number\">").append(++rank).append("</span><strong>").append(esc(viewer.name()))
                 .append("</strong><span>").append(viewer.messages()).append(" 条发言 · 活跃 ").append(viewer.activeDays()).append(" 天</span></div>");
-        h.append("</section><section><h2>视频里哪些片段讨论更多</h2>");lineChart(h,report.playback(),"playback","按视频播放位置统计弹幕","视频播放位置");
+        h.append("</section>");
+        }
+        if(report.playback().stream().anyMatch(b->b.count()>0) || report.unknownPlayback()>0){
+        h.append("<section><h2>视频里哪些片段讨论更多</h2>");lineChart(h,report.playback(),"playback","按视频播放位置统计弹幕","视频播放位置");
         if(report.unknownPlayback()>0)h.append("<p class=\"muted\">另有 ").append(report.unknownPlayback()).append(" 条缺少有效播放位置，已分析其文字，但不关联具体片段。</p>");
-        h.append("</section><section><h2>观众什么时候讨论得最多</h2><p>").append(esc(report.activitySummary())).append("</p>");lineChart(h,report.activity(),"activity","按互动发送时间统计讨论趋势","互动发送时间 · 北京时间");
-        h.append("<p class=\"muted\">这里表示收到互动的日期和时段，与视频内的播放位置不同；评论没有播放位置，不纳入前一张图。</p></section><details class=\"method\"><summary>统计与处理说明</summary><p>分析范围为页面所示区间，结束时刻不计入；只包含当前仍保留的已入库记录。弹幕重复原文合并处理并保留全部次数，评论保留独立身份及回复关系。完整文本分批分析后汇总，区间外父评论仅作上下文，不额外计数。正文原话在整份报告中统一去重，仅展示有区别的表达。建议来自观众表达与可见画面，不表示问题已经被证实。</p><p>数据读取时间：")
+        h.append("</section>");
+        }
+        h.append("<section><h2>观众什么时候讨论得最多</h2><p>").append(esc(report.activitySummary())).append("</p>");lineChart(h,report.activity(),"activity","按互动发送时间统计讨论趋势","互动发送时间 · 北京时间");
+        h.append("<p class=\"muted\">这里表示收到互动的日期和时段，与视频内的播放位置不同；评论没有播放位置，不纳入视频片段的讨论量统计。</p></section><details class=\"method\"><summary>统计与处理说明</summary><p>分析范围为页面所示区间，结束时刻不计入；只包含当前仍保留的已入库记录。弹幕重复原文合并处理并保留全部次数，评论保留独立身份及回复关系。完整文本分批分析后汇总，区间外父评论仅作上下文，不额外计数。正文原话在整份报告中统一去重，仅展示有区别的表达。建议来自观众表达与可见画面，不表示问题已经被证实。</p><p>数据读取时间：")
                 .append(esc(report.dataAsOf())).append("；分析完成 ").append(metrics.analyzedMessages()).append(" / ").append(metrics.messages()).append(" 条。</p></details><footer>视频观众反馈报告 · ");
         link(h,new Link("返回视频",report.videoUrl()));return h.append("</footer></main></body></html>").toString();
     }
     private static void lineChart(StringBuilder h,List<Bar> values,String id,String title,String axis){
-        if(values.isEmpty()){h.append("<p class=\"muted\">暂无有效位置数据。</p>");return;}
+        if(values.stream().noneMatch(b->b.count()>0)){h.append("<p class=\"muted\">本时段暂无可绘制的记录。</p>");return;}
         double raw=Math.max(1,values.stream().mapToLong(Bar::count).max().orElse(1))/4.0,power=Math.pow(10,Math.floor(Math.log10(raw))),ratio=raw/power;
         double step=Math.max(1,(ratio<=1?1:ratio<=2?2:ratio<=5?5:10)*power);
         double max=values.stream().mapToLong(Bar::count).max().orElse(1),ceiling=Math.max(step,Math.ceil(max/step)*step);

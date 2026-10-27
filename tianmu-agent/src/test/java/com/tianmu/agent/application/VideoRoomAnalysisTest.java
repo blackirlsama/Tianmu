@@ -27,7 +27,7 @@ class VideoRoomAnalysisTest {
     @Test void defaultsUseFrozenSubmissionInstantAndExplicitRangesRemainUnchanged(){
         Instant at=Instant.parse("2026-10-26T13:20:33.999Z");LocalDate date=LocalDate.of(2026,10,26);
         var spec=TaskMeaning.defaults().resolve("分析视频1001弹幕并生成报告",date,at);
-        assertEquals("2026-10-19T21:20:33",spec.conditions().get("start"));
+        assertEquals("1970-01-01T00:00",spec.conditions().get("start"));
         assertEquals("2026-10-26T21:20:33",spec.conditions().get("end"));
         assertEquals("danmaku.overview",TaskMeaning.defaults().resolve("视频1001有多少弹幕",date,at).type());
         var explicit=DanmakuReportTask.parse("分析视频1001从2026-10-20 10:00到2026-10-26 10:00弹幕报告",date);

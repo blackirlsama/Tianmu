@@ -42,18 +42,12 @@ class JointAudienceReportTest {
         assertEquals(3,d.audience().playback().stream().mapToLong(Position::count).sum());
         assertEquals(d,json.readValue(json.writeValueAsBytes(d),Dataset.class));
     }
-    @Test void globalMergeMustCoverEveryTopicBeforeOneReadableReportIsPublished() throws Exception {
+    @Test void lastBatchPublishesWithoutAnotherModelMergeAndPreservesCoverage() throws Exception {
         var data=data();var state=new AtomicReference<>(DanmakuClassification.empty());var context=new ReportSkillFlowTest().context(data,state);
         var tool=new CreateDanmakuReportTool(json);List<Map<String,Object>> topics=new ArrayList<>();
         topics.add(topic("T1","清晰近景",List.of("G2")));topics.add(topic("T7","作者补充",List.of("G1","G4")));
         topics.add(topic("T8","设备问题",List.of("G3")));topics.add(topic("T9","照料问题",List.of("G5")));
-        var progress=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",json.writeValueAsString(topics))),context);
-        assertNull(progress.terminalAnswer());assertEquals("MERGE_TOPICS",progress.data().get("stage"));verify(context,never()).saveReport(anyString(),any());
-        var bad=List.of(merge("设备问题",List.of("T8")));
-        assertThrows(AgentException.class,()->tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","merge_json",json.writeValueAsString(bad))),context));
-        assertFalse(state.get().merged());verify(context,never()).saveReport(anyString(),any());
-        var merged=List.of(merge("清晰近景",List.of("T1")),merge("作者补充",List.of("T7")),merge("设备问题",List.of("T8")),merge("照料问题",List.of("T9")));
-        var result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","merge_json",json.writeValueAsString(Map.of("topics",merged)))),context);
+        var result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",json.writeValueAsString(topics))),context);
         assertNotNull(result.terminalAnswer());assertTrue(state.get().merged());
         var document=json.convertValue(result.data().get("report_document"),CreatorReportDocument.class);
         assertTrue(document.coverage().complete());assertEquals(6,document.coverage().analyzedMessages());assertEquals(3,document.topics().size());
@@ -71,13 +65,12 @@ class JointAudienceReportTest {
         var overview=new Overview(List.of(),base.audience().playback(),0,groups,8,8);
         var d=new Dataset(base.query(),8,1,base.buckets(),List.of(),base.dataAsOf(),"fixture",false,overview,new AudienceReportData.Sources(8,0,1,0,0,0,0,1,Instant.now()));
         var state=new AtomicReference<>(DanmakuClassification.empty());var context=new ReportSkillFlowTest().context(d,state);var tool=new CreateDanmakuReportTool(json);
+        ToolResult result=null;
         while(state.get().offset()<8){
             int offset=state.get().offset();var batch=DanmakuClassification.batch(overview,offset);List<Map<String,Object>> topics=new ArrayList<>();
             for(int i=0;i<batch.size();i++)topics.add(topic("T"+(offset+i+1),"讨论主题"+(offset+i+1),List.of("G"+(offset+i+1))));
-            tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",offset,"topics_json",json.writeValueAsString(topics))),context);
+            result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",offset,"topics_json",json.writeValueAsString(topics))),context);
         }
-        List<Map<String,Object>> merge=new ArrayList<>();for(int i=1;i<=8;i++)merge.add(merge("讨论主题"+i,List.of("T"+i)));
-        var result=tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","merge_json",json.writeValueAsString(merge))),context);
         var doc=json.convertValue(result.data().get("report_document"),CreatorReportDocument.class);assertEquals(8,doc.topics().size());
         assertTrue(CreatorAudienceReport.render(doc).contains("查看其他讨论（2 个话题）"));
     }
@@ -104,6 +97,96 @@ class JointAudienceReportTest {
         assertTrue(doc.coverage().complete());assertEquals(0,doc.metrics().analyzedMessages());assertTrue(doc.topics().isEmpty());
         verify(context,never()).query(any());verify(context,never()).videoQuery(any());
     }
+    @Test void allTwoHundredDanmakuAndFortyCommentsFinishInSixBatchesWithoutMergeCalls() throws Exception {
+        var fixture=new ReportSkillFlowTest();var d=fixture.data(200);
+        var at=d.query().start().plusHours(1).atZone(DanmakuTypes.ZONE).toInstant();
+        List<VideoComments.Comment> rows=new ArrayList<>();
+        for(int i=0;i<40;i++)rows.add(new VideoComments.Comment(Integer.toString(100+i),null,"882","观众","想看小鸭的后续日常 "+i,at,true,false,false));
+        var comments=new VideoComments.Dataset("video-comments-v1",d.query(),40,40,1,rows,Instant.now(),"fixture");
+        var combined=AudienceReportData.combine(new AudienceReportData.Snapshot(d,comments,2),"881");
+        var state=new AtomicReference<>(DanmakuClassification.empty());var context=fixture.context(combined,state);
+        var tool=new CreateDanmakuReportTool(json);ToolResult result=null;int calls=0;
+        while(state.get().offset()<combined.audience().corpus().size()){
+            result=tool.execute(fixture.batch(combined,state.get()),context);calls++;
+        }
+        assertEquals(6,calls);assertTrue(state.get().merged());assertNotNull(result.terminalAnswer());
+        var doc=json.convertValue(result.data().get("report_document"),CreatorReportDocument.class);
+        assertEquals(200,doc.sources().danmaku());assertEquals(40,doc.sources().comments());
+        assertEquals(240,doc.metrics().analyzedMessages());assertTrue(doc.coverage().complete());
+        assertEquals(200,doc.topics().get(0).danmaku());assertEquals(40,doc.topics().get(0).comments());
+        verify(context,times(1)).saveReport(anyString(),any());
+        verify(context,never()).query(any());verify(context,never()).videoQuery(any());
+    }
+    @Test void parentQuoteIsNotRepeatedInReplyContextAndEmptyChartsAreHidden(){
+        var base=new ReportSkillFlowTest().data(0);var q=base.query();
+        var at=q.start().plusHours(1).atZone(DanmakuTypes.ZONE).toInstant();
+        String parent="有点好奇它当时在看什么，镜头外是不是有人拿着吃的。";
+        var rows=List.of(new VideoComments.Comment("10",null,"882","甲",parent,at,true,false,false),
+                new VideoComments.Comment("11","10","883","乙","我也觉得像是在看镜头外的人，不一定是吃的。",at,true,false,false));
+        var comments=new VideoComments.Dataset("video-comments-v1",q,2,2,2,rows,Instant.now(),"fixture");
+        var combined=AudienceReportData.combine(new AudienceReportData.Snapshot(base,comments,2),"881");
+        var topic=new Topic("T1","镜头外猜测","观众猜测镜头外有什么","",List.of("1","2"),2,"",List.of());
+        var doc=CreatorReportDocument.from(combined,List.of(topic),null);String html=CreatorAudienceReport.render(doc);
+        assertEquals(1,html.split(java.util.regex.Pattern.quote(parent),-1).length-1);
+        assertTrue(html.contains("原话见话题"));assertTrue(html.contains("本统计时段内没有弹幕，不代表视频没有弹幕"));
+        assertFalse(html.contains("弹幕互动最活跃的观众"));assertFalse(html.contains("playback-title"));
+        assertTrue(html.contains("activity-title"));assertEquals(2,doc.metrics().analyzedMessages());
+        var out=Path.of("target/report-preview");try{Files.createDirectories(out);Files.writeString(out.resolve("comments-only-report.html"),html);}catch(java.io.IOException e){throw new RuntimeException(e);}
+    }
+    @Test void laterBatchKeepsEarlierVideoAnchorsAndNeedsNoModelBudgetForPublication() throws Exception {
+        var fixture=new ReportSkillFlowTest();var base=fixture.data(41);
+        var data=new Dataset(base.query(),41,1,base.buckets(),List.of(),base.dataAsOf(),"fixture",false,base.audience(),
+                new AudienceReportData.Sources(41,0,1,0,0,0,0,1,base.dataAsOf()));
+        var state=new AtomicReference<>(DanmakuClassification.empty());var context=fixture.context(data,state);
+        var video=new VideoContent.Facts("video-content-v1",1001,"v",0,31000,"小鸭在草地上活动",
+                List.of(new VideoContent.Moment(1000,"小鸭坐着"),new VideoContent.Moment(2500,"小鸭抬头")),"","SAMPLED_FRAMES",List.of(1000L,2500L),"fixture",Instant.now());
+        var evidence=context.evidence("ev_full");when(context.evidence("ev_video")).thenReturn(new Evidence("ev_video",evidence.runId(),evidence.owner(),null,null,video));
+        var tool=new CreateDanmakuReportTool(json);ToolResult result=null;
+        for(int step=0;step<2;step++){
+            var args=new LinkedHashMap<>(fixture.batch(data,state.get()).arguments());args.put("video_evidence_id","ev_video");
+            var nodes=json.readTree((String)args.get("topics_json"));var topic=(com.fasterxml.jackson.databind.node.ObjectNode)nodes.get(0);
+            topic.put("video_context",step==0?"画面中小鸭坐着。":"后续画面中小鸭抬头。");topic.putArray("video_at_ms").add(step==0?1000:2500);
+            args.put("topics_json",nodes.toString());if(step==1)when(context.remainingModelCalls()).thenReturn(0);
+            result=tool.execute(new ToolCall("create_danmaku_report",args),context);
+        }
+        assertNotNull(result.terminalAnswer());assertEquals(List.of(1000L,2500L),state.get().topics().get(0).videoAtMs());
+        assertTrue(state.get().topics().get(0).videoContext().contains("小鸭坐着"));assertTrue(state.get().topics().get(0).videoContext().contains("小鸭抬头"));
+        var doc=json.convertValue(result.data().get("report_document"),CreatorReportDocument.class);
+        assertEquals(2,doc.topics().get(0).videoMoments().size());assertTrue(CreatorAudienceReport.render(doc).contains("配乐与收音相关评价仅来自观众表达"));
+        verify(context,times(1)).saveReport(anyString(),any());
+    }
+    @Test void codeCompressesFifteenHundredIdenticalCommentsBeforeOneClassification() throws Exception {
+        var end=LocalDateTime.now(DanmakuTypes.ZONE).minusSeconds(1).withNano(0);var first=end.minusDays(120);
+        var query=new Query(1001,DanmakuTypes.ALL_TIME_START,end);query.checkTime(Instant.now());
+        List<TextGroup> groups=new ArrayList<>();for(int i=1;i<=1500;i++)groups.add(new TextGroup(Integer.toString(i),"想看小鸭的后续日常",1,null,false,List.of(),"COMMENT",Integer.toString(10000+i),"",false));
+        var overview=new Overview(List.of(),List.of(),1500,groups,1500,1500,first);
+        var data=new Dataset(query,1500,1,java.util.stream.IntStream.range(0,12).mapToObj(i->new Bucket(i,i==0?1500:0)).toList(),List.of(),Instant.now(),"fixture",false,overview,
+                new AudienceReportData.Sources(0,0,0,1500,0,1,0,1,Instant.now()));
+        var empty=DanmakuClassification.empty();assertEquals(1,DanmakuClassification.remainingBatches(overview,0));
+        var visible=json.valueToTree(empty.view(overview)).path("groups");assertEquals(1,visible.size());
+        assertEquals(1500,visible.get(0).path("count").asInt());assertEquals(1500,visible.get(0).path("original_records").asInt());assertFalse(visible.get(0).has("original_ids"));
+        assertEquals(1500,DanmakuClassification.inputs(overview,0).get(0).members().size());
+        var state=new AtomicReference<>(empty);var context=new ReportSkillFlowTest().context(data,state);
+        var result=new CreateDanmakuReportTool(json).execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",0,"topics_json",json.writeValueAsString(List.of(topic("T1","后续日常",List.of("G1")))))),context);
+        assertNotNull(result.terminalAnswer());assertEquals(1500,state.get().offset());assertEquals(1500,state.get().topics().get(0).sampleIds().size());
+        var doc=json.convertValue(result.data().get("report_document"),CreatorReportDocument.class);
+        assertTrue(doc.coverage().complete());assertTrue(doc.allTime());assertTrue(doc.period().startsWith("全量"));assertFalse(doc.activity().get(0).label().contains("1970"));
+        assertEquals(1500,doc.topics().get(0).comments());verify(context,times(1)).saveReport(anyString(),any());
+    }
+    @Test void duplicateCompressionNeverMergesDifferentReplyContextsOrAuthorRoles(){
+        var groups=List.of(new TextGroup("1","同意",1,null,false,List.of(),"COMMENT","101","回复设备问题",false),
+                new TextGroup("2","同意",1,null,false,List.of(),"COMMENT","102","回复剪辑问题",false),
+                new TextGroup("3","同意",1,null,false,List.of(),"COMMENT","103","回复设备问题",true));
+        var overview=new Overview(List.of(),List.of(),3,groups,3,3);
+        assertEquals(3,DanmakuClassification.inputs(overview,0).size());
+    }
+    @Test void emptyFullHistoryDoesNotClaimThatOtherDatesWereExcluded(){
+        var base=new ReportSkillFlowTest().data(0);var query=new Query(1001,DanmakuTypes.ALL_TIME_START,base.query().end());
+        var overview=new Overview(List.of(),List.of(),0,List.of(),0,0,query.end().minusDays(1));
+        var data=new Dataset(query,0,0,base.buckets(),List.of(),Instant.now(),"fixture",false,overview,
+                new AudienceReportData.Sources(0,0,0,0,0,0,0,0,Instant.now()));
+        String html=CreatorAudienceReport.render(CreatorReportDocument.from(data,List.of(),null));
+        assertTrue(html.contains("当前视频没有已保留的弹幕记录"));assertFalse(html.contains("其他日期的弹幕未计入"));
+    }
     private Map<String,Object> topic(String key,String title,List<String> ids){return Map.of("topic_key",key,"title",title,"observation","观众表达了这一主题的关注，作者发言另行说明。","recommendation","补充对应说明。","sample_ids",ids);}
-    private Map<String,Object> merge(String title,List<String> keys){return Map.of("title",title,"observation","观众表达了这一主题的关注，作者发言另行说明。","recommendation","补充对应说明。","topic_keys",keys);}
 }

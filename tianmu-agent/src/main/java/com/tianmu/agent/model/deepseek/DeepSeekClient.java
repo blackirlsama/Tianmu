@@ -66,11 +66,30 @@ public final class DeepSeekClient {
             if (!"stop".equals(choice.path("finish_reason").asText())) throw unavailable();
             JsonNode content = choice.path("message").path("content");
             if (!content.isTextual() || content.textValue().isBlank()) throw unavailable();
-            JsonNode result = mapper.readTree(content.textValue());
+            JsonNode result = responseObject(content.textValue());
             if (result == null || !result.isObject()) throw unavailable();
             return result;
         } catch (AgentException e) { throw e; }
         catch (Exception e) { control.checkpoint(); throw unavailable(); }
+    }
+    private JsonNode responseObject(String content) throws com.fasterxml.jackson.core.JsonProcessingException {
+        try { return mapper.readTree(content); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException original) {
+            // Only redundant closing root braces can be removed. All values and duplicate-key checks remain intact.
+            String candidate=content.stripTrailing();
+            for(int i=0;i<2 && candidate.endsWith("}");i++) {
+                candidate=candidate.substring(0,candidate.length()-1).stripTrailing();
+                try {
+                    JsonNode parsed=mapper.readTree(candidate);
+                    if(parsed!=null && parsed.isObject()) {
+                        TraceAttributes.apply(Span.current(),Map.of("model.response_repaired",true));
+                        return parsed;
+                    }
+                } catch(com.fasterxml.jackson.core.JsonProcessingException ignored) {}
+            }
+            TraceAttributes.apply(Span.current(),Map.of("model.validation_error",original.getClass().getSimpleName()));
+            throw original;
+        }
     }
     private JsonNode exchange(HttpRequest request, CallControl control) {
         try {

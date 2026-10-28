@@ -103,7 +103,14 @@ public final class TraceDetails {
             // JSON message strings often contain nested structured inputs (including scope credentials).
             String trimmed = original.strip();
             if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && original.length() < 1048576) {
-                try { JsonNode parsed = mapper.readTree(original); return TextNode.valueOf(mapper.writeValueAsString(clean(parsed, redacted))); }
+                try {
+                    var strict=mapper.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+                    JsonNode parsed = strict.readTree(original);boolean[] nestedRedacted={false};
+                    JsonNode safe=clean(parsed,nestedRedacted);
+                    if(nestedRedacted[0]) { redacted[0]=true;return TextNode.valueOf(mapper.writeValueAsString(safe)); }
+                    return TextNode.valueOf(original);
+                }
                 catch (Exception ignored) { /* Ordinary prose is redacted by the rules above. */ }
             }
             if (!text.equals(original)) redacted[0] = true;

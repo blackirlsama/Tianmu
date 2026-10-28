@@ -17,6 +17,20 @@ import static org.junit.jupiter.api.Assertions.*;
 class TraceDetailsTest {
     @TempDir Path directory;
     final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+    @Test void providerJsonTextRetainsWhitespaceAndMalformedTrailingBracesForDiagnosis() throws Exception {
+        var recording=new HarnessLifecycleTest.Recording();
+        var details=new TraceDetails(new FileObjectStore(directory),json,4096,true);UUID run=UUID.randomUUID();
+        String valid="  { \"kind\" : \"TOOL\" }  ";String malformed="{\"kind\":\"TOOL\"}}";
+        try(var provider=SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(recording)).build()) {
+            var span=provider.get("test").spanBuilder("agent.model").startSpan();
+            try(var scope=details.bind(Context.root().with(span),run).makeCurrent()) {
+                TraceDetails.capture("provider_output",Map.of("valid",valid,"malformed",malformed),"MODEL_PROVIDER_RESPONSE");
+            } finally {span.end();}
+            String[] ref=recording.spans.get(0).getAttributes().get(AttributeKey.stringKey("detail.provider_output_ref")).split("/");
+            var value=json.readTree(details.read(run,ref[0],ref[1],Long.parseLong(ref[2]),ref[3])).path("value");
+            assertEquals(valid,value.path("valid").asText());assertEquals(malformed,value.path("malformed").asText());
+        }
+    }
     @Test void privateSnapshotsRedactNestedCredentialsAndMarkTruncationWithoutExportingBodies() throws Exception {
         var recording = new HarnessLifecycleTest.Recording();
         var details = new TraceDetails(new FileObjectStore(directory), json, 4096, true);

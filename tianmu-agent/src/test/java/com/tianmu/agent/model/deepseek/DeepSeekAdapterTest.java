@@ -50,6 +50,24 @@ class DeepSeekAdapterTest {
     CallControl control() { return new CallControl(Instant.now().plusSeconds(2), new CancellationToken()); }
     Input input() { return new Input("视频1001昨天的弹幕数", LocalDate.of(2026, 10, 21), new AccessScope("private-tenant", "private-user", Set.of(1001L))); }
     ModelContext context() { return new ModelContext(input().query(), input().businessDate(), input().scope(), Set.of(), List.of(), List.of(), 6); }
+    @Test void toolDecisionAcceptsLargeVideoIdAndEitherJsonFieldOrder() {
+        answer=request->"{\"call\":{\"name\":\"analyze_video_content\",\"arguments\":{\"video_id\":2114367144786530304,\"focus\":\"观众反馈中提到的画面、光线、背景、小鸭特写、环境安静程度等\"}},\"kind\":\"TOOL\"}";
+        var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());
+        var decision=model.decide(context(),control());
+        assertEquals(2114367144786530304L,((Number)decision.call().arguments().get("video_id")).longValue());
+    }
+    @Test void redundantRootClosingBracesAreRepairedWithoutAnotherProviderCall() {
+        answer=request->"{\"kind\":\"CLARIFY\",\"clarification\":\"Date?\"}}}";
+        assertEquals("Date?",new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog()).decide(context(),control()).clarification());
+        assertEquals(1,requests.size());
+    }
+    @Test void repairNeverAcceptsDuplicateKeysOrTrailingData() {
+        var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());
+        for(String invalid:List.of("{\"kind\":\"CLARIFY\",\"kind\":\"ANSWER\",\"clarification\":\"Date?\"}}", "{\"kind\":\"CLARIFY\",\"clarification\":\"Date?\"} {}")) {
+            answer=request->invalid;
+            assertThrows(RuntimeException.class,()->model.decide(context(),control()));
+        }
+    }
     @Test void springBindsContextLimitsIntoSharedClient() {
         new org.springframework.boot.test.context.runner.ApplicationContextRunner()
                 .withInitializer(context -> context.getEnvironment().setActiveProfiles("deepseek"))

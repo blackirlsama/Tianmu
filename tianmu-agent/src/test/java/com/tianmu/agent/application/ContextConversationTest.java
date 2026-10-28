@@ -64,6 +64,28 @@ class ContextConversationTest {
         assertEquals("1002",changed.referenceVideoId());assertEquals("就是现在的视频",changed.request());
         assertEquals("换个话题，帮我写介绍",ConversationFocus.update(next,"换个话题，帮我写介绍",new RequestContext("1001"),old).request());
     }
+    @Test void historyPagingDoesNotSkipMessagesOutsideTheReturnedLimit() throws Exception {
+        when(pages.page(eq(1001L),any())).thenReturn(new VideoPagePort.Page("1001","动物 · 鸭子",32000));
+        var sequences=new ArrayList<Long>();
+        when(model.decide(any(),any())).thenAnswer(call->{
+            ModelContext c=call.getArgument(0);
+            if(c.message().equals("分页查看之前的对话")) {
+                var results=c.observations().stream().filter(r->r.tool().equals("read_history")).toList();
+                if(!results.isEmpty()) {
+                    var last=results.get(results.size()-1);
+                    for(var raw:(List<?>)last.data().get("messages"))sequences.add(((Number)((Map<?,?>)raw).get("sequence")).longValue());
+                    if(!Boolean.TRUE.equals(last.data().get("more_available")))return Decision.answer("已找回历史。",List.of());
+                    return Decision.tool("read_history",Map.of("limit",3,"before",last.data().get("next_before")));
+                }
+                return Decision.tool("read_history",Map.of("limit",3));
+            }
+            return Decision.answer("收到。",List.of());
+        });
+        var first=send("先聊构图",null);
+        send("再聊光线",first.sessionId());send("再聊角度",first.sessionId());send("再聊文案",first.sessionId());
+        send("分页查看之前的对话",first.sessionId());
+        assertEquals(java.util.stream.LongStream.rangeClosed(1,8).boxed().toList(),sequences.stream().sorted().toList());
+    }
     @Test void olderHistoryCanBeReadOnDemandThroughTheGeneralTool() throws Exception {
         when(pages.page(eq(1001L),any())).thenReturn(new VideoPagePort.Page("1001","动物 · 鸭子",32000));
         when(model.decide(any(),any())).thenAnswer(call->{

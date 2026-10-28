@@ -76,7 +76,9 @@ public class ToolDispatcher {
                 if(truncated)text=text.substring(0,Character.isHighSurrogate(text.charAt(1599)) ? 1599:1600);
                 records.add(Map.of("role",m.role().toLowerCase(Locale.ROOT),"text",text,"run_id",m.runId().toString(),"sequence",m.sequence(),"truncated",truncated));
             }
-            return Map.of("messages",records,"next_before",loaded.isEmpty()?0:loaded.get(0).sequence(),"more_available",loaded.size()==50);
+            boolean remainingMatches=matched.size()>limit;
+            long next=remainingMatches ? matched.get(matched.size()-limit).sequence() : loaded.isEmpty()?0:loaded.get(0).sequence();
+            return Map.of("messages",records,"next_before",next,"more_available",remainingMatches || loaded.size()==50);
         }
         public boolean reportRequiresVideo(){return !run.query().matches("(?s).*(?:不要|不需要|无需|不)(?:读取|分析|看|结合|读)?(?:视频|画面).*");}
         public List<Map<String, String>> listSkills() { return skills.list(); }

@@ -14,6 +14,7 @@ public interface ToolContext {
     AccessScope scope();
     LocalDate businessDate();
     void checkpoint();
+    default void checkCreatorDraft(long videoId, String kind) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Creator draft unavailable"); }
     List<Map<String, String>> listSkills();
     Skill activateSkill(String name);
     default List<Map<String, Object>> skillResources(String name) { return List.of(); }

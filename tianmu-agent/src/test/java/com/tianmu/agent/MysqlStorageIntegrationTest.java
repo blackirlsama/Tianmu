@@ -46,6 +46,19 @@ class MysqlStorageIntegrationTest {
         run.start(); run.prepared(new Result(Route.FAQ, new PreparedRequest(run.message, run.query(), Emotion.UNKNOWN, Set.of()), new FaqAnswer("fixture", "1", "approved"), null));
         assertTrue(run.succeed(run.reserveFinalResponse(), new Answer("approved", List.of()), StopReason.FAQ_ANSWER));
     }
+    @Test void creatorDraftCasSurvivesReloadAndSessionDeletionRemovesIt() {
+        var run = create("creator draft");
+        var store = new MysqlCreatorDraftStore(source,mapper);
+        var draft = new com.tianmu.agent.interaction.CreatorDraft(run.id,owner.tenantId(),owner.userId(),"1001","COMMENT","DRAFT",
+                List.of(new com.tianmu.agent.interaction.CreatorDraft.Item("123","作者留言",null)));
+        store.create(draft);
+        assertEquals(draft,new MysqlCreatorDraftStore(source,mapper).get(run.id));
+        var frozen = draft.with("PUBLISHING",draft.items());
+        assertTrue(store.replace(draft,frozen)); assertFalse(store.replace(draft,frozen));
+        assertEquals(frozen,store.get(run.id));
+        faq(run); repository.deleteSession(run.sessionId,owner); repository.garbageCollect();
+        assertNull(store.get(run.id));
+    }
     @Test void retryIsIdempotentAndOwnershipIsCheckedOnRead() {
         String key = UUID.randomUUID().toString(); var first = repository.create("question", owner, null, key, null); sessions.add(first.run().sessionId);
         assertTrue(first.fresh()); assertEquals(first.run().id, repository.create("question", owner, null, key, null).run().id);

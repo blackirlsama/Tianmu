@@ -481,6 +481,7 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
                 for (var old : oldRuns) { Meta m = meta(old); cache.evict(conversations.cacheKey(m.owner(), m.session())); }
                 write(() -> {
                     db.queryForList("SELECT session_id FROM agent_session WHERE tenant_id=? AND session_id=? FOR UPDATE", tenant, sid);
+                    db.update("DELETE FROM agent_creator_draft WHERE run_id IN (SELECT run_id FROM agent_run WHERE tenant_id=? AND session_id=?)", tenant, sid);
                     for (String table : List.of("agent_clarification", "agent_evidence", "agent_artifact", "agent_message", "agent_run_event", "agent_run"))
                         db.update("DELETE FROM " + table + " WHERE tenant_id=? AND session_id=?", tenant, sid);
                     db.update("DELETE FROM agent_session WHERE tenant_id=? AND session_id=? AND status='DELETING'", tenant, sid); return null;
@@ -500,6 +501,7 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
                 write(() -> {
                     db.queryForList("SELECT session_id FROM agent_session WHERE tenant_id=? AND session_id=? FOR UPDATE", m.owner().tenantId(), m.session().toString());
                     db.update("DELETE FROM agent_clarification WHERE tenant_id=? AND (run_id=? OR resumed_by_run_id=?)", m.owner().tenantId(), m.id().toString(), m.id().toString());
+                    db.update("DELETE FROM agent_creator_draft WHERE run_id=?", m.id().toString());
                     for (String table : List.of("agent_evidence", "agent_artifact", "agent_message", "agent_run_event", "agent_run"))
                         db.update("DELETE FROM " + table + " WHERE tenant_id=? AND run_id=?", m.owner().tenantId(), m.id().toString());
                     db.update("UPDATE agent_session SET history_version=history_version+1 WHERE tenant_id=? AND session_id=?", m.owner().tenantId(), m.session().toString()); return null;

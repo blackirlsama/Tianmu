@@ -8,7 +8,7 @@ import java.time.Duration;
 @ConfigurationProperties("agent.models")
 public record DeepSeekProperties(@DefaultValue("https://api.deepseek.com") URI baseUrl,
         String apiKey, @DefaultValue("deepseek-flash") String preparationModel,
-        @DefaultValue("deepseek-flash") String harnessModel,
+        @DefaultValue("deepseek-v4-pro") String harnessModel,
         @DefaultValue("3s") Duration connectTimeout,
         @DefaultValue("384") int preparationMaxTokens, @DefaultValue("3072") int harnessMaxTokens) {
     public DeepSeekProperties {

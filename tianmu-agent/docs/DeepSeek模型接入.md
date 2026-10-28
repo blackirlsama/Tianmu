@@ -7,10 +7,10 @@
 | 阶段 | 默认模型 ID | 调用方式 |
 |---|---|---|
 | 意图、问题理解（澄清、条件提取、改写）与情绪 | deepseek-flash | 三个请求并行，共用一个 Key；情绪不额外阻塞，每路分别计入调用预算 |
-| Harness 决策与无工具收尾 | deepseek-flash | 按循环顺序调用，使用同一 Key |
+| Harness 决策与无工具收尾 | deepseek-v4-pro | 按循环顺序调用，使用同一 Key |
 | FAQ 命中 | 无 | 静态已批准条目直接交付 |
 
-官方地址为 `https://api.deepseek.com`，调用 `/chat/completions`。本项目默认配置为 `deepseek-flash` 和 `deepseek-flash`，可通过环境变量覆盖；实际可用模型 ID 以账户配置为准。[官方模型说明](https://api-docs.deepseek.com/quick_start/pricing/)
+官方地址为 `https://api.deepseek.com`，调用 `/chat/completions`。本项目默认配置为 `deepseek-flash` 和 `deepseek-v4-pro`，可通过环境变量覆盖；实际可用模型 ID 以账户配置为准。[官方模型说明](https://api-docs.deepseek.com/quick_start/pricing/)
 
 配置项 preparation-model / harness-model 分开，后续切换其中一个不需要改编排代码。两者使用同一个 agent.models.api-key，来自 DEEPSEEK_API_KEY 环境变量。
 
@@ -33,7 +33,7 @@ java -jar target/operations-agent-0.7.0-SNAPSHOT.jar --spring.profiles.active=de
 | DEEPSEEK_API_KEY | 必填，共用凭证；缺少时启动失败 |
 | DEEPSEEK_BASE_URL | https://api.deepseek.com |
 | PREPARATION_MODEL | deepseek-flash |
-| HARNESS_MODEL | deepseek-flash |
+| HARNESS_MODEL | deepseek-v4-pro |
 
 只启用 deepseek 而不启用 demo 时，仍需自行提供正式身份、FAQ 和业务查询适配器。不会自动把正式业务请求降级为演示数据。
 

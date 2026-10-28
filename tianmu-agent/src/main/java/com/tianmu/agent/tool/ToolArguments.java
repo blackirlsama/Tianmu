@@ -26,6 +26,18 @@ public final class ToolArguments {
         properties.forEach((key, spec) -> {
             String name = key.toString(); Map<?, ?> field = (Map<?, ?>) spec;
             if (!call.arguments().containsKey(name)) return;
+            if ("array".equals(field.get("type"))) {
+                Object raw = call.arguments().get(name);
+                if (!(raw instanceof List<?> items) || items.size() < ((Number)field.get("minItems")).intValue()
+                        || items.size() > ((Number)field.get("maxItems")).intValue()) throw invalid();
+                @SuppressWarnings("unchecked") var schema = (Map<String, Object>)field.get("items");
+                for (Object item : items) {
+                    if (!(item instanceof Map<?, ?> values) || values.keySet().stream().anyMatch(k -> !(k instanceof String))) throw invalid();
+                    @SuppressWarnings("unchecked") var arguments = (Map<String, Object>)values;
+                    validate(new ToolCall(call.name(), arguments), new ToolDefinition(call.name(), definition.description(), schema));
+                }
+                return;
+            }
             if ("integer".equals(field.get("type"))) {
                 long value = integer(call, name);
                 if (field.containsKey("minimum") && BigDecimal.valueOf(value).compareTo(new BigDecimal(field.get("minimum").toString())) < 0) throw invalid();

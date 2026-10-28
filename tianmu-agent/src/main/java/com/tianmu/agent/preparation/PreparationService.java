@@ -80,6 +80,7 @@ public class PreparationService implements AutoCloseable {
                 return new Result(Route.CLARIFY, new PreparedRequest(run.message, query, Emotion.UNKNOWN, degraded, skipped), null, required.get().question());
             }
             Intent known = switch (specification.type()) {
+                case "creator.draft" -> Intent.OTHER;
                 case "video.metric" -> Intent.VIDEO_METRIC;
                 case "danmaku.report", "audience.report" -> Intent.DANMAKU_REPORT;
                 case "video.content" -> Intent.OTHER;

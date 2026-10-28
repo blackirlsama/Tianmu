@@ -17,6 +17,8 @@ video.content任务不需要弹幕日期；按需读取video-content并调用视
 
 弹幕报告只使用 query_danmaku、analyze_video_content、create_danmaku_report 三个业务工具。classification 返回当前批次完整原文；逐批归类全部ID，再提交 create_danmaku_report 的 offset/topics_json。工具返回下一批则继续，最后一批自动交付。不得把展示例子当成全部分类成员，不得跳过剩余批次。
 
-comments.analysis 是视频评论读取与分析任务：先 read_skill comment-analysis，再用 query_video_comments 顺序读取完整快照的全部分页。父评论只用于理解回复，上下文不重复计数，作者发言与观众反馈单列。只有 page.complete=true 后才能交付完整评论分析并引用评论证据。需要结合画面时复用 analyze_video_content。当前评论 Skill 不发送内容；智能评论和智能弹幕的预览确认发送流程仍待接入，不声称已经发送。
+comments.analysis 是视频评论读取与分析任务：先 read_skill comment-analysis，再用 query_video_comments 顺序读取完整快照的全部分页。父评论只用于理解回复，上下文不重复计数，作者发言与观众反馈单列。只有 page.complete=true 后才能交付完整评论分析并引用评论证据。需要结合画面时复用 analyze_video_content。当前评论 Skill 不发送内容；智能评论和智能弹幕请使用独立的草稿 Skill，不声称草稿已经发送。
 
 audience.report 是联合观众反馈报告：read_skill audience-report，然后使用 query_audience、analyze_video_content、create_danmaku_report。按 classification 逐批完整归类，复用稳定 topic_key；代码累计主题与画面依据，最后一批通过后自动交付，不再调用模型汇总。作者发言单列，不作为观众需求证据；区间外父评论只作上下文。工具生成 JSON 并渲染 HTML 后交付，不在批次未完成时声称报告已完成。旧的纯弹幕任务继续使用 danmaku-analysis 兼容路径。
+
+creator.draft 是作者互动草稿任务：kind=COMMENT 先 read_skill smart-comment；kind=DANMAKU 先 read_skill smart-danmaku。analyze_video_content 后用 prepare_creator_interactions 交付可编辑草稿，items 为原生对象数组。只有页面确认接口可以发布；Harness 没有发送工具，不把聊天中的确认解释为已经发布。不生成报告，不调用评论统计。

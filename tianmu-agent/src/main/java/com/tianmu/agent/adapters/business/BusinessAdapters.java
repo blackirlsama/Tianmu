@@ -33,7 +33,7 @@ public class BusinessAdapters {
     }
 }
 
-final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.query.CommentQueryPort, com.tianmu.agent.query.AudienceQueryPort, com.tianmu.agent.video.VideoContentPort {
+final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.query.CommentQueryPort, com.tianmu.agent.query.AudienceQueryPort, com.tianmu.agent.video.VideoContentPort, com.tianmu.agent.interaction.CreatorPublicationPort {
     private record RawSample(String id, int bucket, String text, boolean truncated, Long playbackMs) {}
     private record AnalysisResponse(DanmakuTypes.Query query, long totalMessages, long uniqueSenders,
             List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo, com.tianmu.agent.core.AudienceData.Overview audience,com.tianmu.agent.core.AudienceReportData.Sources sources) {}
@@ -42,6 +42,13 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
     private final ObjectProvider<ResourceScopeStore> repositories;
     private final HttpClient http;
     private final BusinessCredentials credentials = new BusinessCredentials();
+    @Override public void publish(com.tianmu.agent.interaction.CreatorDraft draft, AccessScope scope) {
+        if (!scope.videoIds().contains(Long.parseLong(draft.videoId())) || !scope.userId().equals(draft.userId())
+                || !scope.tenantId().equals(draft.tenantId())) throw new AgentException("FORBIDDEN", "Draft owner mismatch");
+        JsonNode response = request("POST", "/internal/agent/creator-publications", credentials.token(scope.authorizationRef()),
+                Map.of("videoId",draft.videoId(),"kind",draft.kind(),"items",draft.items()),null);
+        if (!response.path("published").asBoolean(false)) throw new AgentException("PUBLICATION_UNAVAILABLE", "发送结果尚未确认，请重试确认状态。");
+    }
     RemoteBusinessAdapter(BusinessProperties config, ObjectMapper json, ObjectProvider<ResourceScopeStore> repositories) {
         this.config = config; this.json = json.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
         this.repositories = repositories;
@@ -66,6 +73,10 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
                 if (control != null) control.checkpoint();
                 if (response.statusCode() == 401) throw new AgentException("UNAUTHORIZED", "Business login is no longer valid");
                 if (response.statusCode() == 403) throw new AgentException("FORBIDDEN", "Video is outside your current scope");
+                if (path.equals("/internal/agent/creator-publications") && Set.of(400,409,422).contains(response.statusCode())) {
+                    String code = json.readTree(response.body()).path("code").asText();
+                    if (Set.of("INVALID_DRAFT","DRAFT_CONFLICT").contains(code)) throw new AgentException(code,"请检查草稿内容与时间。");
+                }
                 if (response.statusCode() == 422) {
                     String code = json.readTree(response.body()).path("code").asText();
                     if (Set.of("FULL_ANALYSIS_TOO_LARGE", "COMMENT_CONTEXT_TOO_DEEP", "INVALID_COMMENT_CONTEXT").contains(code))

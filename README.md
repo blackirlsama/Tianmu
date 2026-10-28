@@ -14,11 +14,12 @@
 | 全量统计 | 默认读取当前视频全部已入库且仍保留的互动；明确指定日期或区间时按要求筛选 |
 | 视频理解 | 读取采样画面，关联实际播放位置；缺少音频证据时不将观众的声音评价当成已核实事实 |
 | 互动分析 | 展示来源数量、去重参与人数、弹幕活跃观众、发送时间趋势与视频内的弹幕分布 |
+| 智能评论与弹幕 | 生成作者草稿，支持修改、勾选与确认发送；以作者账号发送，重试不重复发布 |
 | 房间实时汇总 | 复用视频作为房间，由作者主动开启定时刷新；当前没有独立的直播接入系统 |
 | 作者私有 Q&A | 稳定回答达到阈值后自动加入，后续可直接命中；支持停用与重新学习 |
 | 执行与追踪 | 支持任务进度、取消、澄清续接、私有报告访问，以及模型和工具的 Trace |
 
-运营助手仅向当前视频的登录作者展示，服务端还会独立校验身份与视频归属。智能评论、智能弹幕的草稿审核与确认发送尚未接通。
+运营助手仅向当前视频的登录作者展示，服务端还会独立校验身份与视频归属。智能评论、智能弹幕先生成草稿，用户在页面确认后才会以作者本人账号发送。
 
 ## 系统结构
 
@@ -31,7 +32,7 @@ Tianmu/
 └── scripts/              冒烟、发布与部署契约检查
 ```
 
-视频后端使用 MyBatis-Plus、MySQL、Redis、Netty、RocketMQ、Elasticsearch、Canal 和 MinIO，提供用户、投稿、互动、弹幕、关注、上传与检索能力。Agent 通过鉴权后的只读业务桥接获取数据，不直接修改业务库。
+视频后端使用 MyBatis-Plus、MySQL、Redis、Netty、RocketMQ、Elasticsearch、Canal 和 MinIO，提供用户、投稿、互动、弹幕、关注、上传与检索能力。Agent 通过鉴权后的业务桥接获取数据；发送由页面确认触发，业务后端复用已有评论和弹幕入库服务，Agent 不直接修改业务库。
 
 ```mermaid
 flowchart LR
@@ -114,7 +115,7 @@ SPRING_PROFILES_ACTIVE=business,deepseek,persistent \
 | `TIANMU_REDIS_*`、`JWT_SECRET_BASE64` | 业务登录与会话；桥接必须与登录服务保持一致 |
 | `BUSINESS_BASE_URL` | Agent 访问业务桥接的地址；允许回环 HTTP 或外部 HTTPS |
 | `DEEPSEEK_API_KEY` | 真实文本模型凭据，由私有环境注入 |
-| `HARNESS_MODEL` | Agent loop 模型，默认 `deepseek-flash`，对应 DeepSeek V4.1 Flash |
+| `HARNESS_MODEL` | Agent loop 模型，默认 `deepseek-v4-pro` |
 | `AGENT_JDBC_URL`、`AGENT_DB_*`、`AGENT_REDIS_*` | Agent 正式记录与缓存 |
 | `TIANMU_MINIO_*`、`AGENT_MINIO_BUCKET` | 业务文件与 Agent 私有报告存储 |
 | `AGENT_MAX_MODEL_CALLS`、`AGENT_MAX_TOKENS` | 模型调用次数与 Token 预算 |
@@ -149,7 +150,7 @@ npm run build
 - 默认全量指当前已入库且仍保留的数据，不包含已删除记录或尚未持久化的消息。
 - 视频理解基于采样画面，不等于连续动作分析；没有音频证据时不能核实配乐、对白或收音。
 - 热门视频的海量互动扩容、后台作业自动续跑、多实例调度和按金额结算的费用预算仍待完善。
-- 智能评论、智能弹幕的作者确认发送流程尚未接通，当前 Agent 的业务工具以只读分析为主。
+- 智能评论第一版支持作者独立留言；尚不支持自动回复、置顶或定时发布。弹幕保存到视频播放时间轴，不自动开启实时轮询。
 
 日常使用与本地体验所需信息已放在本文。需要扩展代码时再阅读 [Agent 开发说明](tianmu-agent/README.md)；配置服务器时阅读 [部署操作说明](deploy/README.md)。其他专题资料保留在 `docs/` 与 `tianmu-agent/docs/`，无需逐篇阅读后才能启动项目。
 

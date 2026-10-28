@@ -40,6 +40,11 @@ async function request(path, options = {}) {
       CAPACITY_EXCEEDED: '当前分析任务较多，请稍后重试',
       EVENTS_EXPIRED: '进度记录已过期，正在同步任务状态',
       QA_NOT_FOUND: '这条常见问答不存在',
+      INVALID_DRAFT: '请检查草稿：内容不能空白或重复，弹幕时间须在视频范围内',
+      DRAFT_CONFLICT: '草稿状态已变化，请刷新；已开始发送的内容不能修改',
+      DRAFT_NOT_READY: '草稿尚未生成完成',
+      DRAFT_NOT_FOUND: '草稿不存在或已过期',
+      PUBLICATION_UNAVAILABLE: '发送服务暂不可用，请稍后重试确认发送结果',
       QA_CONFLICT: '这条问答已经更新，请刷新后再操作',
       QA_UNAVAILABLE: '常见问答暂时不可用，请稍后重试',
     }
@@ -97,6 +102,16 @@ export async function createAgentRun(body, key, signal) {
 }
 export async function getAgentRun(id, signal) {
   return (await request(runPath(id), { signal })).json()
+}
+export async function getCreatorDraft(id, signal) {
+  const response = await request(`${runPath(id)}/creator-draft`, { signal })
+  const body = await response.text()
+  return body ? JSON.parse(body) : null
+}
+export async function confirmCreatorDraft(id, items, signal) {
+  return (await request(`${runPath(id)}/creator-draft/confirm`, {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }),
+  })).json()
 }
 export async function cancelAgentRun(id, signal) {
   return (

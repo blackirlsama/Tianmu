@@ -31,6 +31,16 @@ public class ToolCatalog {
                 || required.size() != new HashSet<>(required).size() || !properties.keySet().containsAll(required))
             throw new IllegalStateException("Tool schemas must declare required fields and reject additional properties");
         for (Object spec : properties.values()) {
+            if (spec instanceof Map<?, ?> array && "array".equals(array.get("type"))) {
+                if (!array.keySet().equals(Set.of("type", "items", "minItems", "maxItems"))
+                        || !(array.get("minItems") instanceof Integer min) || min < 1
+                        || !(array.get("maxItems") instanceof Integer max) || max < min || max > 10
+                        || !(array.get("items") instanceof Map<?, ?> item))
+                    throw new IllegalStateException("Invalid bounded object array");
+                @SuppressWarnings("unchecked") var nested = (Map<String, Object>) item;
+                validate(new ToolDefinition(d.name(), d.description(), nested));
+                continue;
+            }
             if (!(spec instanceof Map<?, ?> field) || !Set.of("string", "integer").contains(field.get("type"))
                     || !Set.of("type", "minimum", "maximum", "minLength", "maxLength", "format", "enum").containsAll(field.keySet())
                     || field.containsKey("format") && !"date".equals(field.get("format")))

@@ -9,6 +9,7 @@ public final class EvidencePresentation {
     private EvidencePresentation() {}
     public static void requireKind(TaskTypes.Specification specification, List<Evidence> evidence) {
         boolean supported = switch (specification.type()) {
+            case "creator.draft" -> evidence.stream().anyMatch(e -> e.videoContent() != null);
             case "video.metric" -> evidence.stream().anyMatch(e -> e.data() != null);
             case "video.content" -> evidence.stream().anyMatch(e -> e.videoContent() != null);
             case "comments.analysis" -> evidence.stream().anyMatch(e -> e.comments() != null);

@@ -55,7 +55,7 @@
           </div>
           <div class="root-reply">
             <span class="reply-content-container root-reply">
-              <span class="reply-content" v-html="item.content"></span>
+              <span class="reply-content">{{ item.content }}</span>
             </span>
             <div class="reply-info">
               <span class="reply-time">{{

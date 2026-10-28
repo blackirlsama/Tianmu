@@ -45,6 +45,7 @@ public final class BusinessEvidencePolicy {
             if (!run.scope().videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside scope");
             if (run.task() == null) return;
             var expected = run.task().specification().typed();
+            if (expected instanceof TaskConditions.Interaction interaction) interaction.video().check(videoId, startMs, endMs);
             if (expected instanceof TaskConditions.Video video) video.check(videoId, startMs, endMs);
             if (expected instanceof TaskConditions.Report report) {
                 if (report.query().videoId() != videoId)

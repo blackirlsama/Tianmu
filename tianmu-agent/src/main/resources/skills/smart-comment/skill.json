@@ -1,0 +1,1 @@
+{"name":"smart-comment","version":"1.0.0","description":"智能评论：结合本人视频内容生成作者留言草稿，预览修改并确认后以作者本人账号发送。","tools":["analyze_video_content","prepare_creator_interactions"]}

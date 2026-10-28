@@ -70,7 +70,7 @@
               >
               :
             </span>
-            <span v-html="item.content"></span>
+            <span>{{ item.content }}</span>
           </span>
         </span>
         <div class="sub-reply-info">

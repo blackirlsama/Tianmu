@@ -22,9 +22,18 @@ public sealed interface TaskConditions {
         }
     }
     record Other(String type) implements TaskConditions {}
+    record Interaction(Video video, String kind) implements TaskConditions {}
 
     static TaskConditions read(String type, Map<String, Object> values) {
         return switch (type) {
+            case "creator.draft" -> {
+                boolean bounded = values.containsKey("start_ms") || values.containsKey("end_ms");
+                keys(values, bounded ? Set.of("video_id", "kind", "start_ms", "end_ms") : Set.of("video_id", "kind"));
+                String kind = (String)values.get("kind");
+                if (!Set.of("COMMENT", "DANMAKU").contains(kind)) throw new IllegalArgumentException("Invalid draft kind");
+                yield new Interaction(new Video(integer(values,"video_id"), bounded ? integer(values,"start_ms") : null,
+                        bounded ? integer(values,"end_ms") : null), kind);
+            }
             case "video.metric" -> {
                 keys(values, Set.of("video_id", "date", "metric"));
                 long id = integer(values, "video_id");

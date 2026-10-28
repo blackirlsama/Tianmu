@@ -163,6 +163,7 @@
                     </li>
                   </ol>
                 </details>
+                <CreatorDraft v-if="turn.snapshot?.status === 'SUCCEEDED' && turn.snapshot?.task?.specification?.type === 'creator.draft'" :run-id="turn.runId" />
                 <div
                   v-if="turn.reportPath && turn.snapshot?.status === 'SUCCEEDED'"
                   class="report-panel"
@@ -247,6 +248,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import RoomAudience from '@/components/agent/RoomAudience.vue';
 import QaKnowledge from '@/components/agent/QaKnowledge.vue';
+import CreatorDraft from '@/components/agent/CreatorDraft.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/store/user';
 import { useAgentRunMonitor } from '@/composables/useAgentRunMonitor';
@@ -283,9 +285,9 @@ const generalSuggestions = [
 ];
 const videoSuggestions = [
   { icon: '▤', title: '观众反馈报告', description: '结合视频画面，分析全部弹幕与评论', text: '请分析这个视频全部的弹幕和评论，结合实际视频画面生成观众反馈报告，包含主要话题、观众原话和改进建议。' },
-  { icon: '✎', title: '评论分析', description: '梳理讨论话题、观众问题与回复上下文', text: '请分析这个视频全部的评论，保留回复上下文，归纳讨论话题、观众问题和改进建议。' },
+  { icon: '✎', title: '智能评论', description: '生成作者评论草稿，预览确认后发送', text: '请为这个视频生成3条智能评论草稿，以作者身份补充说明或引导讨论，先给我预览。' },
+  { icon: '▷', title: '智能弹幕', description: '结合画面生成弹幕，核对内容与时间点', text: '请为这个视频生成5条智能弹幕草稿，以作者身份自然引导互动，标明播放时间点，先给我预览。' },
   { icon: '◷', title: '互动统计', description: '查看弹幕、评论数量与活跃观众', text: '请统计这个视频全部的弹幕数量和评论数量，并列出互动最活跃的观众。' },
-  { icon: '▷', title: '视频片段分析', description: '指定时间，查看这一段发生了什么', text: '请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。', selection: '第1秒到第4秒' },
 ];
 const toolsOpen = ref(false);
 

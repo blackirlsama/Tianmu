@@ -45,6 +45,8 @@ public class DeliveryService {
         });
     }
     public void answer(RunState run, Answer raw, TurnControl.Reservation reservation, StopReason reason) {
+        if (run.task() != null && "creator.draft".equals(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
+            throw new AgentException("DRAFT_REQUIRED", "请先生成可确认的互动草稿。");
         if (run.task() != null && Set.of("danmaku.report","audience.report").contains(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
             throw new AgentException("REPORT_REQUIRED", "Create the requested report before delivering an answer");
         harness.stage(run, "agent.deliver", HookPoint.PRE_DELIVER, HookPoint.POST_DELIVER,

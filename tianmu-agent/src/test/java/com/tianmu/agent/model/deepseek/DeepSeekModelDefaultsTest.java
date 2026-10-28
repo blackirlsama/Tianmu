@@ -8,10 +8,10 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DeepSeekModelDefaultsTest {
-    @Test void loopDefaultsToTheOfficialV41FlashApiId() {
+    @Test void loopDefaultsToV4Pro() {
         var source=new MapConfigurationPropertySource(Map.of("agent.models.api-key","fixture"));
         var properties=new Binder(source).bind("agent.models",Bindable.of(DeepSeekProperties.class)).get();
-        assertEquals("deepseek-flash",properties.harnessModel());
+        assertEquals("deepseek-v4-pro",properties.harnessModel());
     }
     @Test void explicitDeploymentOverridesRemainSupported() {
         var source=new MapConfigurationPropertySource(Map.of("agent.models.api-key","fixture",

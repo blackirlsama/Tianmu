@@ -19,6 +19,7 @@ import com.orangecode.tianmu.model.vo.video.CommentVideoResponse;
 public interface CommentService extends IService<Comment> {
 
     CommentResponse createCommentVideo(CreateCommentRequest createCommentRequest);
+    CommentResponse createAuthorComment(CreateCommentRequest request, long stableId);
 
     Boolean deleteCommentVideo(CancelVideoActionRequest cancelVideoActionRequest);
 

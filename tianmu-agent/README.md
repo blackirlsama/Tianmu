@@ -85,7 +85,7 @@ Skill 通过 `read_skill` 按需激活工具，避免把所有能力同时放入
 
 | 配置 / 机制 | 默认行为 |
 | --- | --- |
-| `HARNESS_MODEL` | `deepseek-flash`，对应 DeepSeek V4.1 Flash，用于 Agent loop |
+| `HARNESS_MODEL` | `deepseek-v4-pro`，用于 Agent loop |
 | `PREPARATION_MODEL` | `deepseek-flash`，处理确实需要模型判断的问题准备 |
 | `AGENT_MAX_MODEL_CALLS` | 每个任务最多 16 次模型调用 |
 | `AGENT_MAX_TOKENS` | 默认 64,000 Token；设为 `0` 关闭 Token 上限 |
@@ -138,7 +138,7 @@ Java 包位于 `src/main/java/com/tianmu/agent/`，资源位于 `src/main/resour
 - 普通任务默认最多 6 轮，报告可使用最多 32 轮；实际仍受模型次数、Token 和任务截止时间约束。
 - 业务指标中的按日弹幕数限最近 30 个已结束自然日；报告默认全量，明确指定的普通区间最长 30 天。统一北京时间，结束时刻不计入。
 - 互动排行基于弹幕用户字段和活跃情况，不证明关注关系或真实身份；播放位置无效时保留未知位置说明。
-- 智能评论与智能弹幕的草稿审核、作者确认发送尚未接通。
+- 智能评论暂只支持作者独立留言，不支持指定评论回复、置顶或定时发布。
 
 ## 验证与部署
 
@@ -157,3 +157,13 @@ git diff --check
 单独部署 Agent 使用根目录 `deploy/manage.py`；同时部署网站与业务后端使用 `deploy/site/`。凭据放在源码之外。网站部署中 Agent 与业务容器共享网络命名空间，重建业务容器时要同时重建 Agent；上线前核对健康状态、作者权限、真实数据口径和回退版本。
 
 HTTP / SSE、存储、Trace 和模型适配的详细契约分别保存在本模块 `docs/` 中；本文覆盖常用启动与开发信息，只有修改对应模块时才需要查阅专题文档。
+
+## 智能评论与智能弹幕
+
+`smart-comment`、`smart-danmaku` 两个 Skill 共用 `analyze_video_content` 与唯一新增工具 `prepare_creator_interactions`。任务由代码分流为 `creator.draft`，固定视频、类型和用户指定片段；先复用视频分析缓存，再一次生成原生对象数组，避免嵌套 JSON 字符串。默认评论 3 条、弹幕 5 条，每批最多 10 条。工具保存草稿并直接交付预览，不再调用模型总结，也不发送内容。
+
+作者可在对话卡片中编辑、勾选条目，点击一次“确认发送”即发布。发送仅经过 `POST /api/agent/runs/{runId}/creator-draft/confirm`，不暴露为 Harness 工具；服务端重验登录身份、任务所有者和当前视频归属。确认后冻结具体内容与时间点；网络超时保留待确认状态，只允许使用相同内容重试。
+
+草稿由 Agent 的 V6 迁移保存至专用表，随会话删除和过期任务清理；内存模式仅供开发。业务侧确认接口复用现有 `CommentService`、`BulletIngestionService`，以作者本人身份发送，以稳定记录 ID 防重。整个批次在同一事务内完成，失败回滚。普通报告和评论分析保持只读。
+
+升级需同时构建业务后端、Agent 与前端；业务后端启用 `agent.bridge.enabled`，Agent 持久化环境执行 V6 迁移。独立只读桥接部署不提供发送能力。发送不调用 LLM；测试使用模拟模型，不向生产视频发布测试内容。

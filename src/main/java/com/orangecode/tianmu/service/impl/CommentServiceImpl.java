@@ -48,6 +48,13 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CommentResponse createCommentVideo(CreateCommentRequest createCommentRequest) {
+        Snowflake snowflake = IdUtil.getSnowflake(SnowflakeConstant.WORKER_ID, SnowflakeConstant.DATA_CENTER_ID);
+        return createAuthorComment(createCommentRequest, snowflake.nextId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CommentResponse createAuthorComment(CreateCommentRequest createCommentRequest, long stableId) {
 
         CommentResponse commentResponse = new CommentResponse();
         // 创建评论
@@ -55,8 +62,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         comment.setContent(createCommentRequest.getContent());
         comment.setVideoId(createCommentRequest.getVideoId());
         comment.setUserId(createCommentRequest.getUserId());
-        Snowflake snowflake = IdUtil.getSnowflake(SnowflakeConstant.WORKER_ID, SnowflakeConstant.DATA_CENTER_ID);
-        comment.setCommentId(snowflake.nextId());
+        comment.setCommentId(stableId);
+        comment.setParentCommentId(0L);
 
         // 如果有父评论，则设置父评论id
         if (createCommentRequest.getParentCommentId() != null) {

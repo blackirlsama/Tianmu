@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /** Deterministic first-version grammar; ambiguous ranges are clarified, never inferred by a model. */
 public final class DanmakuReportTask {
     private DanmakuReportTask() {}
-    public static boolean requested(String text) { return !AudienceReportTask.requested(text) && !com.tianmu.agent.core.ConversationTopics.general(text) && text.contains("弹幕") && (text.contains("报告") || text.contains("分析")); }
+    public static boolean requested(String text) { return !CreatorInteractionTask.requested(text) && !AudienceReportTask.requested(text) && !com.tianmu.agent.core.ConversationTopics.general(text) && text.contains("弹幕") && (text.contains("报告") || text.contains("分析")); }
     public static Query parse(String text, LocalDate date) {
         return parse(text, date, date.atStartOfDay(ZONE));
     }

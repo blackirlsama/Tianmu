@@ -1,0 +1,1 @@
+{"name":"smart-danmaku","version":"1.0.0","description":"智能弹幕：结合本人视频画面生成带播放时间点的作者弹幕草稿，预览修改并确认后以作者本人账号发送。","tools":["analyze_video_content","prepare_creator_interactions"]}

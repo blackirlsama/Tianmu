@@ -137,6 +137,12 @@ public class ToolDispatcher {
         public <T> T query(Function<CallControl, T> operation) { return harness.toolCall(run, operation); }
         public <T> T videoQuery(Function<CallControl, T> operation) { return harness.videoToolCall(run, operation); }
         public void checkVideoQuery(long videoId) { business.checkVideoQuery(run, videoId); }
+        public void checkCreatorDraft(long videoId, String kind) {
+            run.checkpoint();
+            if (run.task() == null || !(run.task().specification().typed() instanceof com.tianmu.agent.core.TaskConditions.Interaction expected)
+                    || expected.video().videoId() != videoId || !expected.kind().equals(kind))
+                throw new com.tianmu.agent.core.AgentException("TASK_CONSTRAINT_VIOLATION", "草稿对象或类型与用户请求不一致。");
+        }
         public void checkVideoQuery(long videoId, Long startMs, Long endMs) { business.checkVideoQuery(run, videoId, startMs, endMs); }
         public Evidence registerVideoEvidence(com.tianmu.agent.core.VideoContent.Facts facts) { return business.registerVideoEvidence(run, facts); }
         public void checkDanmakuQuery(com.tianmu.agent.core.DanmakuTypes.Query query) { business.checkDanmakuQuery(run, query); }

@@ -23,6 +23,7 @@ public final class QaCatalog implements RunCompletionListener {
     public QaCatalog(QaStore store,QaPolicy policy,Clock clock){this.store=store;this.policy=policy;this.clock=clock;}
     public QaPolicy policy(){return policy;}
     public void completed(RunState run,Snapshot snapshot){
+        if (run.pageContext()!=null) return;
         if(!policy.enabled() || snapshot.status()!=Status.SUCCEEDED || snapshot.stopReason()!=StopReason.ANSWER
                 || snapshot.task()==null || !snapshot.task().specification().type().equals("conversation") || snapshot.turnSeq()!=1
                 || snapshot.answer()==null || !snapshot.answer().evidenceIds().isEmpty() || !run.execution().evidence().snapshot().isEmpty())return;
@@ -51,6 +52,7 @@ public final class QaCatalog implements RunCompletionListener {
         if(changed[0] && state!=null)org.slf4j.LoggerFactory.getLogger(getClass()).info("qa_admission question={} version={} active={}",questionKey,state.version(),state.activeAnswer()!=null);
     }
     public Optional<FaqAnswer> find(Input input){
+        if (input.memory().environment()!=null) return Optional.empty();
         if(!policy.enabled() || !staticQuestion(input.query()))return Optional.empty();
         QaState state=store.get(owner(input.scope()),hash(normalize(input.query())));
         if(state==null || state.disabled() || state.activeAnswer()==null || !clock.instant().isBefore(state.activeUntil()))return Optional.empty();

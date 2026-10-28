@@ -20,6 +20,7 @@ public final class DeepSeekClient {
     private final ObjectMapper mapper;
     private final HttpClient http;
     private final com.tianmu.agent.model.ModelContextBuilder contexts;
+    private final com.tianmu.agent.model.HarnessContextBuilder harnessContexts;
     private volatile long quotaBlockedUntil;
     private static final long QUOTA_COOLDOWN_NANOS=Duration.ofMinutes(5).toNanos();
     public DeepSeekClient(DeepSeekProperties config, ObjectMapper mapper) {
@@ -27,16 +28,18 @@ public final class DeepSeekClient {
     }
     public DeepSeekClient(DeepSeekProperties config, ObjectMapper mapper, com.tianmu.agent.model.ContextPolicy contextPolicy) {
         contexts = new com.tianmu.agent.model.ModelContextBuilder(mapper, contextPolicy);
+        harnessContexts = new com.tianmu.agent.model.HarnessContextBuilder(mapper,contextPolicy);
         this.config = config; this.mapper = mapper.copy()
                 .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         http = HttpClient.newBuilder().connectTimeout(config.connectTimeout()).followRedirects(HttpClient.Redirect.NEVER).build();
     }
     public List<Map<String, String>> messages(String instruction, Map<String, ?> input) { return contexts.build(instruction, input); }
-    public JsonNode complete(String model, List<Map<String, String>> messages, int maxTokens, CallControl control) {
+    public List<Map<String,Object>> harnessMessages(String instruction,com.tianmu.agent.core.AgentTypes.ModelContext context) { return harnessContexts.build(instruction,context); }
+    public JsonNode complete(String model, List<? extends Map<String, ?>> messages, int maxTokens, CallControl control) {
         return complete(model,messages,maxTokens,control,false);
     }
-    public JsonNode complete(String model, List<Map<String, String>> messages, int maxTokens, CallControl control, boolean external) {
+    public JsonNode complete(String model, List<? extends Map<String, ?>> messages, int maxTokens, CallControl control, boolean external) {
         control.checkpoint();
         if(quotaBlockedUntil!=0 && System.nanoTime()-quotaBlockedUntil<0)
             throw new AgentException("MODEL_QUOTA_EXHAUSTED","Model provider quota is unavailable; calls paused for five minutes");

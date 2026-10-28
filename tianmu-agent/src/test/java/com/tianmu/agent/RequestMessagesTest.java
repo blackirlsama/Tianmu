@@ -16,7 +16,8 @@ class RequestMessagesTest {
         var legacy = RequestMessages.normalize("你能做什么\n\n[页面上下文：当前视频1001。]", null);
         assertEquals("你能做什么", legacy.message()); assertEquals(page, legacy.context());
         assertEquals("查询视频1002昨天的弹幕数", RequestMessages.execution("查询视频1002昨天的弹幕数", page));
-        assertEquals("昨天有多少条弹幕？\n当前视频：视频1001", RequestMessages.execution("昨天有多少条弹幕？", page));
+        assertEquals("昨天有多少条弹幕？", RequestMessages.execution("昨天有多少条弹幕？", page));
+        assertEquals("昨天有多少条弹幕？\n视频1001",RequestMessages.forParsing("昨天有多少条弹幕？",page));
         for (String advice : List.of("如何提高弹幕互动？", "怎么分析弹幕？", "解释一下弹幕数是什么意思")) {
             assertEquals(advice, RequestMessages.execution(advice, page));
             assertEquals("unclassified", com.tianmu.agent.preparation.TaskMeaning.defaults().resolve(advice, java.time.LocalDate.of(2026, 10, 25)).type());
@@ -31,7 +32,8 @@ class RequestMessagesTest {
         var page = new RequestContext("1001");
         var first = repo.create("昨天有多少条弹幕？", owner, null, "key", null, page);
         assertEquals("昨天有多少条弹幕？", first.run().message);
-        assertTrue(first.run().query().contains("视频1001"));
+        assertEquals("昨天有多少条弹幕？",first.run().query());
+        assertEquals(page,first.run().pageContext());
         assertFalse(repo.create("昨天有多少条弹幕？", owner, null, "key", null, page).fresh());
         assertThrows(AgentException.class, () -> repo.create("昨天有多少条弹幕？", owner, null, "key", null, new RequestContext("1002")));
         assertEquals("帮我写开场白\n用户补充：轻松一点", ClarificationInputs.combine("帮我写开场白", "轻松一点"));

@@ -50,14 +50,14 @@ class DeterministicPreparationTest {
             }
         }
     }
-    @Test void unclassifiedRequestStillUsesUnderstandingButDoesNotPayForDisabledEmotion() {
+    @Test void unclassifiedRequestReachesHarnessWithoutPayingForIntentOrEmotion() {
         try (var f = new HarnessLifecycleTest.Fixture(); var prep = new PreparationService((i,c) -> Optional.empty(), new PreparationFlowTest.Model() {
             public Emotion emotion(Input i, CallControl c) { fail("Emotion is disabled"); return null; }
         }, policy(), f.harness)) {
             RunState run = run("解释一下构图"); f.harness.start(run);
             var result = prep.prepare(run, run.message);
             assertEquals(Route.HARNESS, result.route());
-            assertEquals(2, run.snapshot().preparationCalls());
+            assertEquals(0, run.snapshot().preparationCalls());
             assertEquals(Emotion.UNKNOWN, result.request().emotion());
             assertTrue(result.request().skippedStages().contains("emotion")); run.cancel();
         }

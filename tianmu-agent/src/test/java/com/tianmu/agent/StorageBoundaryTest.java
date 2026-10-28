@@ -65,17 +65,17 @@ class StorageBoundaryTest {
     }
     @Test void memoryKeepsNewestCompletePairsAndSourceRemainsUnchanged() {
         var source = history(10, 50); var view = new MemoryBuilder().build(7, source);
-        assertEquals(20, source.size()); assertEquals(8, view.recent().size());
-        assertEquals(13, view.recent().get(0).sequence()); assertEquals(7, view.version());
-        assertFalse(view.olderSummary().isBlank()); assertTrue(view.boundary().contains("CURRENT_FOCUS_BOUNDARY"));
+        assertEquals(20, source.size()); assertEquals(4, view.recent().size());
+        assertEquals(17, view.recent().get(0).sequence()); assertEquals(7, view.version());
+        assertTrue(view.olderSummary().isBlank()); assertTrue(view.boundary().contains("CURRENT_FOCUS_BOUNDARY"));
         assertThrows(UnsupportedOperationException.class, () -> view.recent().clear());
     }
     @Test void rawHistoryAlsoHonorsTheTotalCharacterLimitWithoutSplittingPairs() {
         var source = history(10, 8000); var view = new MemoryBuilder().build(1, source);
         assertTrue(view.recent().size() % 2 == 0);
-        assertTrue(view.olderSummary().length() + view.recent().stream().mapToInt(m -> m.text().length()).sum() <= 16000);
+        assertTrue(view.olderSummary().length() + view.recent().stream().mapToInt(m -> m.text().length()).sum() <= 6000);
         assertTrue(view.truncated()); assertEquals(20, source.size());
-        assertEquals(List.of(19L, 20L), view.recent().stream().map(Message::sequence).toList());
+        assertTrue(view.recent().isEmpty());
         for (int padding = 0; padding < 4; padding++) {
             var emoji = history(5, 1994); Message first = emoji.get(0), last = emoji.get(9);
             emoji.set(0, new Message(first.id(), first.runId(), first.sequence(), first.role(), "😀".repeat(100), first.at()));

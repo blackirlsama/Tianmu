@@ -10,7 +10,7 @@ import java.util.*;
 public class ReadSkillTool implements AgentTool {
     public String name() { return "read_skill"; }
     public int order() { return 20; }
-    public boolean requiresSkill() { return false; }
+    public Exposure exposure() { return Exposure.GENERAL; }
     public boolean canActivateSkills() { return true; }
     @SuppressWarnings("unchecked")
     public ToolDefinition describe(ToolDefinition declared, SkillCatalog skills) {

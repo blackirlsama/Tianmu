@@ -5,9 +5,11 @@ import com.tianmu.agent.skill.SkillCatalog;
 
 /** One trusted Java handler per tool. Descriptions and input schemas live in resources/tools. */
 public interface AgentTool {
+    enum Exposure { GENERAL, SKILL }
     String name();
     default int order() { return 100; }
-    default boolean requiresSkill() { return true; }
+    /** Business tools are hidden by default. Exposure never grants access to business data. */
+    default Exposure exposure() { return Exposure.SKILL; }
     default boolean canActivateSkills() { return false; }
     default ToolDefinition describe(ToolDefinition declared, SkillCatalog skills) { return declared; }
     ToolResult execute(ToolCall call, ToolContext context);

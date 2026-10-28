@@ -20,11 +20,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class PreparationFlowTest {
     static class Model implements PreparationModelPort {
         public Intent intent(Input i, CallControl c) {
-            return TaskMeaning.defaults().resolve(i.query(), i.businessDate()).type().equals("video.metric") ? Intent.VIDEO_METRIC : Intent.OTHER;
+            return TaskMeaning.defaults().resolve(i.targetedQuery(), i.businessDate()).type().equals("video.metric") ? Intent.VIDEO_METRIC : Intent.OTHER;
         }
         public Emotion emotion(Input i, CallControl c) { return Emotion.NEUTRAL; }
         Understanding accepted(Input i, String query) {
-            return Understanding.proceed(TaskMeaning.defaults().resolve(i.query(), i.businessDate(),i.requestedAt()).conditions(), query);
+            return Understanding.proceed(TaskMeaning.defaults().resolve(i.query(), i.businessDate(),i.requestedAt(),i.memory().environment()).conditions(), query);
         }
         public Understanding understand(Input i, CallControl c) { return accepted(i, i.query()); }
     }

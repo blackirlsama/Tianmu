@@ -27,6 +27,8 @@ public class PreparationService implements AutoCloseable {
     private final List<QueryReadinessPolicy> validators;
     private final TaskMeaning meaning;
     private final com.tianmu.agent.runtime.store.ConversationStore repository;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private org.springframework.beans.factory.ObjectProvider<com.tianmu.agent.query.VideoPagePort> pages;
     private org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor calls = com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-preparation", 6, 6, 48);
     private boolean ownsExecutor = true;
     private record Completed<T>(T value, Instant at) {}
@@ -54,7 +56,7 @@ public class PreparationService implements AutoCloseable {
         calls.shutdown(); calls = executor; ownsExecutor = false;
     }
     public Result prepare(RunState run, String query) {
-        Input input = new Input(run.message, run.businessDate, run.owner, run.memory(), run.createdAt);
+        Input input = new Input(run.message, run.businessDate, run.owner, run.memory().withContext(run.pageContext(),run.memory().focus()), run.createdAt);
         Set<String> degraded = new LinkedHashSet<>(), skipped = new LinkedHashSet<>();
         Instant faqDeadline = deadline(run, policy.faqTimeout());
         Branch<Optional<FaqAnswer>> lookup = submit(run, "faq", faqDeadline, input, c -> faq.find(input, c));
@@ -67,10 +69,27 @@ public class PreparationService implements AutoCloseable {
                 new PreparedRequest(run.message, query, Emotion.UNKNOWN, degraded, Set.of("intent", "understanding", "emotion")), hit.get(), null);
 
         if (repository != null) run.memory(harness.stage(run, "agent.memory.load", null, null, Map.of(), () -> repository.memory(run)));
+        var page = run.pageContext();
+        if (page != null) {
+            if (!run.owner.videoIds().contains(Long.parseLong(page.videoId()))) throw new AgentException("FORBIDDEN","Current page outside scope");
+            var port = pages == null ? null : pages.getIfAvailable();
+            if (port != null) {
+                var metadata = port.page(Long.parseLong(page.videoId()),run.owner);
+                if (metadata == null || !page.videoId().equals(metadata.videoId())) throw new AgentException("BUSINESS_UNAVAILABLE","Invalid page metadata");
+                page = new com.tianmu.agent.core.RequestContext(page.videoId(),metadata.title(),page.playbackMs()!=null && page.playbackMs()<metadata.durationMs() ? page.playbackMs():null);
+            } else page = new com.tianmu.agent.core.RequestContext(page.videoId(),"",page.playbackMs());
+        }
+        var prior = run.memory().focus();
+        if (prior == null) prior = com.tianmu.agent.application.ConversationFocus.recover(run.memory().recent(),page);
+        var focus = com.tianmu.agent.application.ConversationFocus.update(run.id,run.message,page,prior);
+        if (run.memory().focus()!=null && !Objects.equals(run.memory().focus().referenceVideoId(),focus.referenceVideoId()))
+            run.memory(new com.tianmu.agent.core.MemoryTypes.View(run.memory().version(),"",List.of(),true,run.memory().boundary(),page,focus));
+        else run.memory(run.memory().withContext(page,focus));
+        if (repository != null) repository.focus(run,focus);
         Input contextInput = new Input(query, run.businessDate, run.owner, run.memory(), run.createdAt);
         run.emit("PROGRESS", Map.of("stage", "preparing"));
-        var specification = meaning.resolve(run.query(), run.businessDate, run.createdAt);
-        if (!specification.equals(meaning.resolve(query, run.businessDate, run.createdAt)))
+        var specification = meaning.resolve(run.query(), run.businessDate, run.createdAt,run.memory().environment());
+        if (!specification.equals(meaning.resolve(query, run.businessDate, run.createdAt,run.memory().environment())))
             throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Input transformation changed the task conditions");
         Optional<Clarification> required = harness.stage(run, "agent.prepare.validate", null, null, Map.of(),
                 () -> validators.stream().map(v -> v.validate(contextInput)).flatMap(Optional::stream).filter(Clarification::required).findFirst());
@@ -86,7 +105,7 @@ public class PreparationService implements AutoCloseable {
                 case "video.content" -> Intent.OTHER;
                 case "danmaku.overview" -> Intent.OTHER;
                 case "comments.analysis" -> Intent.OTHER;
-                default -> Intent.UNKNOWN;
+                default -> Intent.OTHER;
             };
             if (known != Intent.UNKNOWN) {
                 skipped.addAll(Set.of("intent", "understanding", "emotion", "rewrite"));
@@ -127,7 +146,7 @@ public class PreparationService implements AutoCloseable {
             }
             String rewritten = result.rewrittenQuery();
             if (!safeRewrite(query, rewritten)
-                    || !specification.equals(meaning.resolve(rewritten, run.businessDate, run.createdAt))) {
+                    || !specification.equals(meaning.resolve(rewritten, run.businessDate, run.createdAt,run.memory().environment()))) {
                 degraded.add("rewrite"); rewritten = query;
             }
             Emotion feeling = readyEmotion(run, emotion, emotionEnd, degraded, skipped);

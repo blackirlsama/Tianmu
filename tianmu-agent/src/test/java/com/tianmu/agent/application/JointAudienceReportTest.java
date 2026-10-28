@@ -78,7 +78,7 @@ class JointAudienceReportTest {
         var d=data();var doc=CreatorReportDocument.from(d,List.of(new Topic("T1","一部分","观众反馈","",List.of("2"),2,"",List.of())),null);
         assertFalse(doc.coverage().complete());assertThrows(AgentException.class,()->CreatorAudienceReport.render(doc));
         String message=RequestMessages.execution("结合视频生成观众反馈报告",new RequestContext("1001"));
-        assertEquals("audience.report",TaskMeaning.defaults().resolve(message,LocalDate.now(),Instant.now()).type());
+        assertEquals("audience.report",TaskMeaning.defaults().resolve(message,LocalDate.now(),Instant.now(),new RequestContext("1001")).type());
         assertEquals("audience.report",TaskMeaning.defaults().resolve("分析视频1001的弹幕和评论",LocalDate.now(),Instant.now()).type());
         assertEquals("audience.report",TaskMeaning.defaults().resolve("分析视频1001的评论并做复盘",LocalDate.now(),Instant.now()).type());
     }

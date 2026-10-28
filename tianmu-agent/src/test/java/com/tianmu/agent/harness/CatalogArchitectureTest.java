@@ -31,8 +31,26 @@ class CatalogArchitectureTest {
         List<Resource> all = new ArrayList<>(Arrays.asList(original)); all.add(item); return all.toArray(Resource[]::new);
     }
     List<AgentTool> builtins() {
-        return new ArrayList<>(List.of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new com.tianmu.agent.tool.builtin.QueryAudienceTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryVideoCommentsTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.CommentQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
+        return new ArrayList<>(List.of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new com.tianmu.agent.tool.builtin.ReadHistoryTool(), new PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new com.tianmu.agent.tool.builtin.QueryAudienceTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryVideoCommentsTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.CommentQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
                 new QueryVideoMetricsTool((q, s) -> { fail("Query must not run"); return null; })));
+    }
+    @Test void generalToolsAreAlwaysVisibleAndBusinessToolsRequireTheirOwnSkill() {
+        var catalog = new ToolCatalog(); var skills = new SkillCatalog();
+        var registry = new ToolRegistry(builtins(),catalog,skills);
+        var snapshot = registry.names();
+        assertEquals(Set.of("list_skills","read_skill","read_result","read_history"),registry.definitions(Set.of(),snapshot).stream().map(ToolDefinition::name).collect(java.util.stream.Collectors.toSet()));
+        assertEquals("SKILL_REQUIRED",assertThrows(AgentException.class,()->registry.admit("query_video_metrics",Set.of("video-content"),snapshot)).code());
+        assertNotNull(registry.admit("read_result",Set.of(),snapshot));
+        var video = registry.definitions(Set.of("video-content"),snapshot).stream().map(ToolDefinition::name).toList();
+        assertTrue(video.contains("analyze_video_content")); assertFalse(video.contains("query_video_metrics"));
+        assertFalse(video.contains("prepare_creator_interactions"));
+        var both = registry.definitions(Set.of("video-content","smart-danmaku"),snapshot).stream().map(ToolDefinition::name).toList();
+        assertEquals(1,both.stream().filter("analyze_video_content"::equals).count());
+        assertTrue(both.contains("prepare_creator_interactions"));
+        assertNotNull(registry.admit("prepare_creator_interactions",Set.of("smart-danmaku"),snapshot));
+        Set<String> olderSnapshot = new HashSet<>(snapshot); olderSnapshot.remove("analyze_video_content");
+        assertFalse(registry.definitions(Set.of("video-content"),olderSnapshot).stream().anyMatch(t->t.name().equals("analyze_video_content")));
+        assertEquals("TOOL_NOT_AVAILABLE",assertThrows(AgentException.class,()->registry.admit("analyze_video_content",Set.of("video-content"),olderSnapshot)).code());
     }
     @Test void newSkillAndToolCanRegisterWithoutChangingDispatcher() {
         SkillCatalog skills = new SkillCatalog(append(ResourceFiles.discover("classpath*:skills/*/skill.json"), skill("echo-analysis", "echo")));

@@ -451,7 +451,7 @@ async function submit() {
   notice.value = '';
   let body;
   try {
-    body = buildChatRequest(focus.value, form.videoId);
+    body = buildChatRequest(focus.value, form.videoId, contextTitle.value);
   } catch (error) {
     notice.value = error.message;
     return;

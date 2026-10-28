@@ -37,9 +37,13 @@ class MysqlConversationStoreTest {
     @Test void messageReadFiltersRevokedVideoScopesAndChecksSessionBeforeDatabaseRead() throws Exception {
         var db = mock(JdbcTemplate.class); var cache = mock(RedisMemoryCache.class);
         var store = new MysqlConversationStore(db, json, cache, access(false)); UUID session = UUID.randomUUID();
-        when(db.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(message(Set.of(1001L), 1), message(Set.of(1002L), 2)));
+        var revokedAnswer=new HashMap<>(message(Set.of(1002L),3));
+        revokedAnswer.put("role","ASSISTANT");revokedAnswer.put("content","secret video facts");
+        when(db.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(message(Set.of(1001L), 1), message(Set.of(1002L), 2),revokedAnswer));
         var result = store.messages(session, owner, 10);
-        assertEquals(1, result.size()); assertEquals(1, result.get(0).sequence());
+        assertEquals(3, result.size()); assertEquals(1, result.get(0).sequence());
+        assertEquals("private message",result.get(1).text());
+        assertEquals("[先前视频结果当前无权限，已隐藏]",result.get(2).text());
         clearInvocations(db);
         assertEquals("SESSION_NOT_FOUND", assertThrows(AgentException.class, () -> store.messages(session,
                 new AccessScope("tenant", "bob", Set.of(1001L)), 10)).code());

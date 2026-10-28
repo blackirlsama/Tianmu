@@ -68,8 +68,7 @@ public class AgentRuntime {
         runLoop(run, task.query());
     }
     private void runLoop(RunState run, String message) {
-        List<String> available = tools.definitions(run.execution().activeSkills()).stream()
-                .filter(tool -> run.task() == null || run.task().allowedTools().contains(tool.name()))
+        List<String> available = tools.definitions(run).stream()
                 .map(ToolDefinition::name).toList();
         Map<String, Object> start = new HashMap<>();
         start.put("agent.max_turns", maxTurns(run));
@@ -112,8 +111,8 @@ public class AgentRuntime {
         return harness.stage(run, "agent.context", null, null, Map.of("context.observation_count", run.execution().observations().size()),
                 () -> harness.transform(run, TransformPoint.CONTEXT, new ModelContext(message,
                         run.businessDate, run.owner, run.execution().activeSkills(), run.execution().observations(),
-                        finalizing ? List.of() : tools.definitions(run.execution().activeSkills()).stream().filter(t -> run.task() == null || run.task().allowedTools().contains(t.name())).toList(), remaining, finalizing,
-                        finalizing ? finalizeDirective : "", run.preparedRequest(), run.task(), run.memory())));
+                        finalizing ? List.of() : tools.definitions(run), remaining, finalizing,
+                        finalizing ? finalizeDirective : "", run.preparedRequest(), run.task(), run.memory(),run.execution().exchanges())));
     }
     private Decision decide(RunState run, ModelContext context) {
         return harness.stage(run, context.finalizing() ? "agent.model.finalize" : "agent.model", HookPoint.PRE_MODEL, HookPoint.POST_MODEL,
@@ -145,12 +144,14 @@ public class AgentRuntime {
         String name = call.name();
         run.emit("PROGRESS", Map.of("stage", "tool", "tool", name));
         ToolResult result;
+        var executed = new java.util.concurrent.atomic.AtomicReference<ToolCall>(call);
         try {
             int attempt = name.equals(progress.failingTool) ? progress.consecutiveFailures + 1 : 1;
             result = harness.stage(run, "agent.tool", HookPoint.PRE_TOOL, HookPoint.POST_TOOL,
                     Map.of("tool.name", name, "execution.attempt", attempt, "execution.retry_count", attempt - 1), () -> {
                 TraceDetails.input(call);
                 ToolCall actual = harness.transform(run, TransformPoint.TOOL_CALL, call);
+                executed.set(actual);
                 if (progress.successfulCalls.contains(actual)) throw new AgentException("NO_PROGRESS", "Repeated successful tool call");
                 ToolResult raw = tools.execute(actual, run);
                 ToolResult admitted = harness.transform(run, TransformPoint.TOOL_RESULT, raw);
@@ -167,11 +168,11 @@ public class AgentRuntime {
             // INVALID_REPORT is raised before artifact persistence; correction cannot duplicate a stored report.
             if ("INVALID_REPORT".equals(e.code())) feedback.put("error_message", e.getMessage());
             result = harness.transform(run, TransformPoint.TOOL_RESULT, new ToolResult(name, feedback, null));
-            run.execution().observe(result);
+            run.execution().observe(executed.get(),result);
             run.emit("PROGRESS", Map.of("stage", "tool_failed", "tool", name, "code", e.code(), "attempt", attempt));
             return false;
         }
-        run.execution().observe(result);
+        run.execution().observe(executed.get(),result);
         run.emit("PROGRESS", Map.of("stage", "tool_completed", "tool", name));
         if (result.terminalAnswer() != null) {
             delivery.answer(run, result.terminalAnswer(), delivery.reserve(run), StopReason.TOOL_DELIVERY);

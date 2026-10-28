@@ -158,13 +158,19 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
                     db.update("INSERT INTO agent_session(tenant_id,owner_user_id,session_id,expires_at) VALUES(?,?,?,?)", owner.tenantId(), owner.userId(), sid.toString(), stamp(expiry));
                 }
                 Map<String, Object> sess = session(sid, owner, true);
+                RequestContext executionContext = context;
                 String query = RequestMessages.execution(message, context);
                 if (reply != null) {
                     Map<String, Object> origin = row(reply, owner, false);
                     if (!sid.toString().equals(origin.get("session_id")) || !"NEEDS_INPUT".equals(origin.get("status"))) throw new AgentException("CLARIFICATION_CONFLICT", "Clarification does not belong to this session");
                     var pending = db.queryForList("SELECT * FROM agent_clarification WHERE tenant_id=? AND run_id=? AND status='OPEN' AND expires_at>UTC_TIMESTAMP(6) FOR UPDATE", owner.tenantId(), reply.toString());
                     if (pending.isEmpty()) throw new AgentException("CLARIFICATION_CONFLICT", "Clarification is expired or already resumed");
-                    query = ClarificationInputs.combine(pending.get(0).get("original_query").toString(), message, LocalDate.parse(origin.get("business_date").toString()));
+                    var originRequest=decode(origin.get("request_json"),com.fasterxml.jackson.databind.JsonNode.class);
+                    RequestContext originPage=originRequest.hasNonNull("context") ? decode(originRequest.get("context"),RequestContext.class):null;
+                    if(originPage!=null && context!=null && !originPage.videoId().equals(context.videoId()))
+                        throw new AgentException("CLARIFICATION_CONFLICT","Current page changed while answering a pending clarification");
+                    if(executionContext==null)executionContext=originPage;
+                    query = ClarificationInputs.combine(RequestMessages.forParsing(pending.get(0).get("original_query").toString(),originPage), message, LocalDate.parse(origin.get("business_date").toString()));
                 }
                 Object current = sess.get("current_run_id");
                 if (current != null) {
@@ -176,10 +182,11 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
                 Meta m = new Meta(id, sid, turn, generation, version, owner, message, query, now, deadline);
                 RunState initial = new RunState(id, sid, turn, owner, message, query, now, deadline, RunBackend.MEMORY,
                         new com.tianmu.agent.runtime.events.InMemoryRunEventStore(), new InMemoryEvidenceStore(), false);
+                initial.pageContext(executionContext);
                 initial.bindPersistedControl(maxCalls);
                 db.update("INSERT INTO agent_run(tenant_id,owner_user_id,session_id,run_id,turn_seq,session_generation,base_history_version,history_before_turn,idempotency_key,request_fingerprint,request_json,access_scope_json,execution_query,snapshot_json,reply_to_run_id,business_date,business_timezone,deadline_at,created_at,events_expires_at,data_expires_at,lease_owner,lease_token,lease_until,last_event_seq,max_model_calls) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,1,?)",
                         owner.tenantId(), owner.userId(), sid.toString(), id.toString(), turn, generation, version, turn - 1, key, fingerprint,
-                        encode(context == null ? Map.of("message", message) : Map.of("message", message, "context", context)), encode(owner), query, encode(initial.snapshot()), reply == null ? null : reply.toString(),
+                        encode(executionContext == null ? Map.of("message", message) : Map.of("message", message, "context", executionContext)), encode(owner), query, encode(initial.snapshot()), reply == null ? null : reply.toString(),
                         java.sql.Date.valueOf(initial.businessDate), "Asia/Shanghai", stamp(deadline), stamp(now), stamp(now.plus(Duration.ofDays(7))), stamp(expiry), instance, stamp(deadline), maxCalls);
                 db.update("UPDATE agent_session SET generation=?,next_turn_seq=?,current_run_id=?,updated_at=?,expires_at=?,version=version+1 WHERE tenant_id=? AND session_id=?",
                         generation, turn + 1, id.toString(), stamp(now), stamp(expiry), owner.tenantId(), sid.toString());
@@ -198,6 +205,8 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
     private RunState materialize(Map<String, Object> row, boolean restored) {
         Meta m = meta(row);
         RunState run = new RunState(m.id(), m.session(), m.turn(), m.owner(), m.message(), m.query(), m.created(), m.deadline(), new Backend(m), new Events(m), new EvidenceRecords(m), restored);
+        var request = decode(row.get("request_json"),com.fasterxml.jackson.databind.JsonNode.class);
+        if (request.hasNonNull("context")) run.pageContext(decode(request.get("context"),RequestContext.class));
         run.bindPersistedControl((int) number(row, "max_model_calls"));
         if (restored) run.restore(snapshot(row)); return run;
     }
@@ -375,6 +384,7 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
         return Map.of("video",value.data().videoId(),"date",value.data().date(),"metric",value.data().metric());
     }
     @Override public MemoryTypes.View memory(RunState run) { return conversations.memory(run); }
+    @Override public void focus(RunState run, MemoryTypes.Focus value) { conversations.focus(run,value); }
     @Override public List<MemoryTypes.Message> messages(UUID sid, AccessScope owner, long before) { return conversations.messages(sid, owner, before); }
     @Override public Set<Long> resourcesForRun(UUID id, AccessScope owner) {
         return read(() -> {

@@ -20,10 +20,10 @@ public final class RequestMessages {
         return new Input(raw, context);
     }
     public static String execution(String message, RequestContext context) {
-        boolean creatorDraft = com.tianmu.agent.preparation.CreatorInteractionTask.requested(message);
-        // Only data questions need a page target. Explicit user targets always take precedence.
-        if (context == null || !(creatorDraft || message.contains("弹幕") || com.tianmu.agent.preparation.AudienceReportTask.requested(message) || com.tianmu.agent.preparation.CommentAnalysisTask.requested(message) || ConversationTopics.videoContent(message))
-                || !creatorDraft && ConversationTopics.general(message) || DanmakuTarget.matcher(message).find()) return message;
-        return message + "\n当前视频：视频" + context.videoId();
+        return message;
+    }
+    /** Parser-only fallback. Never persisted as, or substituted for, the user's message. */
+    public static String forParsing(String message, RequestContext context) {
+        return context == null ? message : context.forParsing(message);
     }
 }

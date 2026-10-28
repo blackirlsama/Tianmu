@@ -39,7 +39,11 @@ public final class AgentTypes {
     public record ModelContext(String message, LocalDate businessDate, AccessScope scope,
                                Set<String> activeSkills, List<ToolResult> observations,
                                List<ToolDefinition> availableTools, int remainingSteps,
-                               boolean finalizing, String systemDirective, PreparedRequest preparation, PreparedTask task, MemoryTypes.View memory) {
+                               boolean finalizing, String systemDirective, PreparedRequest preparation, PreparedTask task, MemoryTypes.View memory, List<ToolExchange> exchanges) {
+        public ModelContext(String message,LocalDate date,AccessScope scope,Set<String> skills,List<ToolResult> results,
+                            List<ToolDefinition> tools,int remaining,boolean finalizing,String directive,PreparedRequest preparation,PreparedTask task,MemoryTypes.View memory) {
+            this(message,date,scope,skills,results,tools,remaining,finalizing,directive,preparation,task,memory,List.of());
+        }
         public ModelContext(String message, LocalDate date, AccessScope scope, Set<String> skills,
                             List<ToolResult> results, List<ToolDefinition> tools, int remaining, boolean finalizing, String directive, PreparedRequest preparation, PreparedTask task) {
             this(message, date, scope, skills, results, tools, remaining, finalizing, directive, preparation, task, MemoryTypes.View.empty());
@@ -60,8 +64,10 @@ public final class AgentTypes {
             activeSkills = Set.copyOf(activeSkills);
             observations = List.copyOf(observations);
             availableTools = List.copyOf(availableTools);
+            exchanges = List.copyOf(exchanges);
         }
     }
+    public record ToolExchange(ToolCall call,ToolResult result) {}
     public record ToolDefinition(String name, String description, Map<String, Object> inputSchema) {
         public ToolDefinition { inputSchema = ImmutablePayload.map(inputSchema); }
     }

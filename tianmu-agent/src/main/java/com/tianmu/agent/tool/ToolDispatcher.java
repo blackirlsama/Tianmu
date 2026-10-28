@@ -24,18 +24,24 @@ public class ToolDispatcher {
     private final RuntimeHarness harness;
     private final ToolRegistry registry;
     private final com.tianmu.agent.application.ReportArtifacts artifacts;
+    private com.tianmu.agent.runtime.store.ConversationStore conversations;
     @org.springframework.beans.factory.annotation.Autowired
+    public ToolDispatcher(SkillCatalog skills,RuntimeHarness harness,ToolRegistry registry,com.tianmu.agent.runtime.store.ReportStore reports,
+                          com.tianmu.agent.runtime.store.ConversationStore conversations) {
+        this(skills,harness,registry,reports);this.conversations=conversations;
+    }
     public ToolDispatcher(SkillCatalog skills, RuntimeHarness harness, ToolRegistry registry, com.tianmu.agent.runtime.store.ReportStore reports) {
         this.skills = skills; this.harness = harness; this.registry = registry; this.artifacts = new com.tianmu.agent.application.ReportArtifacts(reports);
     }
     public ToolDispatcher(SkillCatalog skills, RuntimeHarness harness, ToolRegistry registry) { this(skills, harness, registry, null); }
     public List<ToolDefinition> definitions(Set<String> activeSkills) { return registry.definitions(activeSkills); }
+    public List<ToolDefinition> definitions(RunState run) {
+        return registry.definitions(run.execution().activeSkills(), snapshotTools(run));
+    }
+    private Set<String> snapshotTools(RunState run) { return run.task() == null ? registry.names() : run.task().allowedTools(); }
     public ToolResult execute(ToolCall call, RunState run) {
         run.checkpoint();
-        AgentTool tool = registry.get(call.name());
-        if (run.task() != null && !run.task().allowedTools().contains(call.name()))
-            throw new AgentException("TOOL_NOT_AVAILABLE", "Tool is outside the prepared capability ceiling");
-        if (tool.requiresSkill()) skills.checkTool(call.name(), run.execution().activeSkills());
+        AgentTool tool = registry.admit(call.name(), run.execution().activeSkills(), snapshotTools(run));
         try {
             var span = io.opentelemetry.api.trace.Span.current();
             com.tianmu.agent.harness.trace.TraceAttributes.apply(span, Map.of("tool.call_id", span.getSpanContext().getSpanId()));
@@ -59,6 +65,19 @@ public class ToolDispatcher {
         public String reportCacheVariant(){return run.task()==null?run.query():run.task().query();}
         public Integer remainingModelCalls(){return Math.max(0,run.modelCallLimit()-run.snapshot().totalModelCalls());}
         public void checkpoint() { run.checkpoint(); }
+        public Map<String,Object> history(long before,int limit,String query) {
+            run.checkpoint();
+            if (conversations==null) throw new AgentException("HISTORY_UNAVAILABLE","History unavailable");
+            var loaded=conversations.messages(run.sessionId,run.owner,Math.min(before,run.turnSeq*2-1));
+            var matched=loaded.stream().filter(m->query.isEmpty() || m.text().toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))).toList();
+            List<Map<String,Object>> records=new ArrayList<>();
+            for(var m:matched.subList(Math.max(0,matched.size()-limit),matched.size())) {
+                String text=m.text();boolean truncated=text.length()>1600;
+                if(truncated)text=text.substring(0,Character.isHighSurrogate(text.charAt(1599)) ? 1599:1600);
+                records.add(Map.of("role",m.role().toLowerCase(Locale.ROOT),"text",text,"run_id",m.runId().toString(),"sequence",m.sequence(),"truncated",truncated));
+            }
+            return Map.of("messages",records,"next_before",loaded.isEmpty()?0:loaded.get(0).sequence(),"more_available",loaded.size()==50);
+        }
         public boolean reportRequiresVideo(){return !run.query().matches("(?s).*(?:不要|不需要|无需|不)(?:读取|分析|看|结合|读)?(?:视频|画面).*");}
         public List<Map<String, String>> listSkills() { return skills.list(); }
         public Skill activateSkill(String name) {
@@ -92,8 +111,7 @@ public class ToolDispatcher {
         }
         public List<ToolDefinition> definitionsForSkill(String name) {
             Skill skill = skills.read(name);
-            return registry.definitions(run.execution().activeSkills()).stream().filter(d -> skill.tools().contains(d.name()))
-                    .filter(d -> run.task() == null || run.task().allowedTools().contains(d.name())).toList();
+            return definitions(run).stream().filter(d -> skill.tools().contains(d.name())).toList();
         }
         public Evidence evidence(String id) {
             Evidence value = run.execution().evidence().get(id);

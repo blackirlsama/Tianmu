@@ -12,7 +12,7 @@ public class ReadResultTool implements AgentTool {
             .findAndRegisterModules().disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     public String name() { return "read_result"; }
     public int order() { return 30; }
-    public boolean requiresSkill() { return false; }
+    public Exposure exposure() { return Exposure.GENERAL; }
     public ToolResult execute(ToolCall call, ToolContext context) {
         Evidence evidence = context.evidence(ToolArguments.text(call, "result_id"));
         final String body;

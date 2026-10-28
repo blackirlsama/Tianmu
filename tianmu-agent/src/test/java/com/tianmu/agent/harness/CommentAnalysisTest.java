@@ -49,7 +49,7 @@ class CommentAnalysisTest {
     private ToolDispatcher dispatcher(HarnessLifecycleTest.Fixture fixture, CommentQueryPort port) {
         var beans = new DefaultListableBeanFactory(); beans.registerSingleton("comments", port);
         var skills = new SkillCatalog();
-        var handlers = List.<AgentTool>of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()),
+        var handlers = List.<AgentTool>of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new com.tianmu.agent.tool.builtin.ReadHistoryTool(), new PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()),
                 new QueryVideoCommentsTool(beans.getBeanProvider(CommentQueryPort.class)),
                 new QueryAudienceTool(beans.getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError(); }),
                 new AnalyzeVideoContentTool(null, new ObjectMapper().findAndRegisterModules()),
@@ -145,9 +145,9 @@ class CommentAnalysisTest {
         assertEquals("comments.analysis", spec.type());
         var q = ((TaskConditions.Report)spec.typed()).query();
         assertEquals(Duration.ofDays(7), Duration.between(q.start(), q.end()));
-        assertFalse(TaskCapabilities.toolsFor(spec.type(), new ToolCatalog().all().keySet()).contains("create_danmaku_report"));
+        assertFalse(new SkillCatalog().read("comment-analysis").tools().contains("create_danmaku_report"));
         assertTrue(TaskMeaning.defaults().resolve("什么是评论运营建议", date, now).conditions().isEmpty());
         String scoped = RequestMessages.execution("请分析这个视频过去七天的评论", new RequestContext("1001"));
-        assertEquals("comments.analysis", TaskMeaning.defaults().resolve(scoped, date, now).type());
+        assertEquals("comments.analysis", TaskMeaning.defaults().resolve(scoped, date, now,new RequestContext("1001")).type());
     }
 }

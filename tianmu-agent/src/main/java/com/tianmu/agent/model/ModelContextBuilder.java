@@ -36,7 +36,7 @@ public final class ModelContextBuilder {
         check(result);
         return result;
     }
-    private int releaseClassifiedBatches(ObjectNode view) {
+    int releaseClassifiedBatches(ObjectNode view) {
         if(!(view.path("results") instanceof ArrayNode results))return 0;
         Map<String,ObjectNode> latest=new HashMap<>();
         for(JsonNode result:results)if(result.path("data") instanceof ObjectNode data && data.path("classification").isObject()) {
@@ -55,7 +55,7 @@ public final class ModelContextBuilder {
     }
 
     /** Final guard also applies to callers that supply their own messages. */
-    public void check(List<Map<String, String>> messages) {
+    public void check(List<? extends Map<String, ?>> messages) {
         if (bytes(messages) > policy.maxInputBytes())
             throw new AgentException("MODEL_CONTEXT_TOO_LARGE", "Required instructions, task and evidence exceed model context budget");
     }
@@ -74,7 +74,7 @@ public final class ModelContextBuilder {
         return true;
     }
 
-    private int deduplicateSchemas(ObjectNode view) {
+    int deduplicateSchemas(ObjectNode view) {
         if (!(view.path("tools") instanceof ArrayNode tools) || !(view.path("results") instanceof ArrayNode results)) return 0;
         Set<JsonNode> exposed = new HashSet<>(); tools.forEach(exposed::add);
         int removed = 0;

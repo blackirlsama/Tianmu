@@ -9,6 +9,6 @@ import java.util.Map;
 public class ListSkillsTool implements AgentTool {
     public String name() { return "list_skills"; }
     public int order() { return 10; }
-    public boolean requiresSkill() { return false; }
+    public Exposure exposure() { return Exposure.GENERAL; }
     public ToolResult execute(ToolCall call, ToolContext context) { return new ToolResult(name(), Map.of("skills", context.listSkills()), null); }
 }

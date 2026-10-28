@@ -12,7 +12,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Cache errors only affect this derived view, never the authoritative database commit. */
 public final class RedisMemoryCache implements AutoCloseable {
-    public record Window(long version, long beforeTurn, Instant validUntil, List<Message> messages) {
+    public record Window(long version, long beforeTurn, Instant validUntil, List<Message> messages, com.tianmu.agent.core.MemoryTypes.Focus focus) {
+        public Window(long version,long beforeTurn,Instant until,List<Message> messages) { this(version,beforeTurn,until,messages,null); }
         public Window { messages = List.copyOf(messages); }
     }
     private final ObjectMapper mapper; private final RedisClient client;
@@ -54,7 +55,7 @@ public final class RedisMemoryCache implements AutoCloseable {
             var c = connect(); if (c == null) return client == null;
             List<Message> selected = new ArrayList<>(window.messages()); String body;
             do {
-                body = mapper.writeValueAsString(new Window(window.version(), window.beforeTurn(), window.validUntil(), selected));
+                body = mapper.writeValueAsString(new Window(window.version(), window.beforeTurn(), window.validUntil(), selected,window.focus()));
                 if (body.getBytes(StandardCharsets.UTF_8).length <= 262123) break;
                 if (selected.isEmpty()) return false;
                 selected.remove(0); if (!selected.isEmpty()) selected.remove(0);

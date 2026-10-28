@@ -22,10 +22,10 @@ class ProgressiveToolsTest {
             fixture.execute(run, context -> {
                 int step = context.observations().size();
                 if (step == 0) {
-                    assertEquals(3, context.availableTools().size());
+                    assertEquals(4, context.availableTools().size());
                     return Decision.tool("read_skill", Map.of("name", "video-metrics"));
                 }
-                assertEquals(4, context.availableTools().size());
+                assertEquals(5, context.availableTools().size());
                 if (step == 1) {
                     assertFalse(context.observations().get(0).data().toString().contains("# 弹幕指标口径"));
                     return Decision.tool("read_skill", Map.of("name", "video-metrics", "resource", "metric-semantics", "limit", 32));
@@ -83,10 +83,10 @@ class ProgressiveToolsTest {
     }
     @Test void referenceAccessRequiresRootSkillAndDoesNotAddAnotherTool() {
         SkillCatalog skills = new SkillCatalog();
-        List<AgentTool> handlers = List.of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new com.tianmu.agent.tool.builtin.PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new com.tianmu.agent.tool.builtin.QueryAudienceTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryVideoCommentsTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.CommentQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
+        List<AgentTool> handlers = List.of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new com.tianmu.agent.tool.builtin.ReadHistoryTool(), new com.tianmu.agent.tool.builtin.PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new com.tianmu.agent.tool.builtin.QueryAudienceTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryVideoCommentsTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.CommentQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
                 new QueryVideoMetricsTool((q, s) -> { throw new AssertionError("Unexpected business query"); }));
         ToolRegistry registry = new ToolRegistry(handlers, new ToolCatalog(), skills);
-        assertEquals(10, new ToolCatalog().all().size());
+        assertEquals(11, new ToolCatalog().all().size());
         try (var fixture = new HarnessLifecycleTest.Fixture()) {
             var run = fixture.run(); run.start();
             ToolDispatcher dispatcher = new ToolDispatcher(skills, fixture.harness, registry);
@@ -123,7 +123,7 @@ class ProgressiveToolsTest {
     }
     @Test void evidencePagingUsesOwnedOriginalWithoutChangingLegacyShape() throws Exception {
         var skills = new SkillCatalog();
-        var registry = new ToolRegistry(List.of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new com.tianmu.agent.tool.builtin.PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new com.tianmu.agent.tool.builtin.QueryAudienceTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryVideoCommentsTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.CommentQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
+        var registry = new ToolRegistry(List.of(new ListSkillsTool(), new ReadSkillTool(), new ReadResultTool(), new com.tianmu.agent.tool.builtin.ReadHistoryTool(), new com.tianmu.agent.tool.builtin.PrepareCreatorInteractionsTool(new com.tianmu.agent.interaction.MemoryCreatorDraftStore()), new AnalyzeVideoContentTool(null, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()), new com.tianmu.agent.tool.builtin.QueryAudienceTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.AudienceQueryPort.class)), new QueryVideoCommentsTool(new org.springframework.beans.factory.support.DefaultListableBeanFactory().getBeanProvider(com.tianmu.agent.query.CommentQueryPort.class)), new QueryDanmakuTool((q, s, c) -> { throw new AssertionError("Unexpected live query"); }), new CreateDanmakuReportTool(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
                 new QueryVideoMetricsTool((q, s) -> { throw new AssertionError(); })), new ToolCatalog(), skills);
         try (var fixture = new HarnessLifecycleTest.Fixture()) {
             var run = fixture.run(); run.start();

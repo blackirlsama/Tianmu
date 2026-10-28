@@ -100,12 +100,14 @@ class DeepSeekAdapterTest {
                 new ModelContext(input().query(), input().businessDate(), input().scope(), Set.of(), List.of(), List.of(), 6,
                         false, "", null, null, memory), control());
         assertEquals(2, requests.size());
-        for (JsonNode request : requests) {
-            JsonNode payload = mapper.readTree(request.path("messages").get(1).path("content").asText());
-            assertEquals(input().query(), payload.path("query").asText());
-            assertTrue(payload.path("memory").path("truncated").asBoolean());
-            assertEquals("", payload.path("memory").path("olderSummary").asText());
-        }
+        JsonNode payload=mapper.readTree(requests.get(0).path("messages").get(1).path("content").asText());
+        assertEquals(input().query(),payload.path("query").asText());
+        assertTrue(payload.path("memory").path("truncated").asBoolean());
+        assertEquals("",payload.path("memory").path("olderSummary").asText());
+        var nativeMessages=requests.get(1).path("messages");
+        assertEquals("user",nativeMessages.get(nativeMessages.size()-1).path("role").asText());
+        assertEquals(input().query(),nativeMessages.get(nativeMessages.size()-1).path("content").asText());
+        assertFalse(nativeMessages.toString().contains("oldoldold"));
         assertFalse(memory.truncated()); assertEquals(6000, memory.olderSummary().length());
     }
     @Test void modelTraceCapturesActualMessagesProviderResponseAndReportedUsageWithoutCredentials() throws Exception {

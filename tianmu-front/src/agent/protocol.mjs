@@ -12,12 +12,12 @@ export function buildChatMessage(text) {
 }
 
 // Page selection travels separately; the server validates it before any data query.
-export function buildChatRequest(text, videoId = '') {
+export function buildChatRequest(text, videoId = '', videoTitle = '') {
   const body = { message: buildChatMessage(text) }
   if (videoId) {
     if (!/^[1-9]\d{0,18}$/.test(videoId) || (videoId.length === 19 && videoId > '9223372036854775807'))
       throw new Error('当前视频 ID 无效，请重新打开视频页面')
-    body.context = { videoId }
+    body.context = { videoId, ...(videoTitle ? { videoTitle: videoTitle.slice(0,160) } : {}) }
   }
   return body
 }

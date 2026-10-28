@@ -39,7 +39,7 @@ public class AgentController {
                                            @RequestHeader(value = "Idempotency-Key", required = false) String key, @RequestBody @Valid CreateRun input) {
         var request = RequestMessages.normalize(input.message(), input.context());
         String execution = RequestMessages.execution(request.message(), request.context());
-        RunState run = runs.create(request.message(), identity.forCreate(credential(auth), execution, input.replyToRunId()), input.sessionId(), key, input.replyToRunId(), request.context());
+        RunState run = runs.create(request.message(), identity.forCreate(credential(auth), execution, input.replyToRunId(),request.context(),input.sessionId()), input.sessionId(), key, input.replyToRunId(), request.context());
         return ResponseEntity.accepted().location(URI.create("/api/agent/runs/" + run.id)).body(run.snapshot());
     }
     @GetMapping("/{id}")

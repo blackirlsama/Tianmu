@@ -16,10 +16,12 @@ class RedisMemoryIntegrationTest {
         try (var cache = cache(Integer.parseInt(System.getenv("AGENT_REDIS_PORT")))) {
             String key = RedisMemoryCache.key("it", "alice", UUID.randomUUID());
             var msg = new Message(UUID.randomUUID(), UUID.randomUUID(), 1, "USER", "newest", Instant.now());
+            var focus = new com.tianmu.agent.core.MemoryTypes.Focus("下一条视频灵感",msg.runId(),"1001");
             try {
-                assertTrue(cache.put(key, new RedisMemoryCache.Window(2, 1, Instant.now().plusSeconds(30), List.of(msg))));
+                assertTrue(cache.put(key, new RedisMemoryCache.Window(2, 1, Instant.now().plusSeconds(30), List.of(msg),focus)));
                 assertTrue(cache.put(key, new RedisMemoryCache.Window(1, 1, Instant.now().plusSeconds(30), List.of())));
                 var view = cache.get(key, 2, 1); assertNotNull(view); assertEquals("newest", view.messages().get(0).text());
+                assertEquals(focus,view.focus());
                 assertNull(cache.get(key, 1, 1)); assertEquals(1, cache.hits.get());
             } finally { cache.evict(key); }
         }

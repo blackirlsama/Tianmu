@@ -9,6 +9,14 @@ import java.util.*;
 
 /** Fixed read-only metric. Permission and count share one SQL statement/snapshot. */
 public final class BusinessMetrics {
+    public record Page(String videoId,String title,long durationMs) {}
+    public Page page(BusinessAuthentication.Principal principal,long videoId) {
+        var rows = db.queryForList("SELECT title,duration FROM video WHERE video_id=? AND user_id=? AND is_delete=0",videoId,Long.parseLong(principal.userId()));
+        if (rows.size()!=1) throw new BridgeException("FORBIDDEN",403);
+        var row = rows.get(0);
+        long duration = row.get("duration") instanceof Number number && Double.isFinite(number.doubleValue()) ? Math.max(0,Math.round(number.doubleValue()*1000)) : 0;
+        return new Page(Long.toString(videoId),Objects.toString(row.get("title"),""),duration);
+    }
     public record Metric(long videoId, LocalDate date, String metric, long value, String metricVersion,
             String source, Instant dataAsOf, String timezone, boolean complete, boolean demo) {}
     private final JdbcTemplate db;

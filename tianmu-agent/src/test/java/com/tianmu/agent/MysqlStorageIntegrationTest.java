@@ -46,6 +46,18 @@ class MysqlStorageIntegrationTest {
         run.start(); run.prepared(new Result(Route.FAQ, new PreparedRequest(run.message, run.query(), Emotion.UNKNOWN, Set.of()), new FaqAnswer("fixture", "1", "approved"), null));
         assertTrue(run.succeed(run.reserveFinalResponse(), new Answer("approved", List.of()), StopReason.FAQ_ANSWER));
     }
+    @Test void pageAndConversationFocusSurviveReloadWithoutMixingUserTextWithMetadata() {
+        var page=new RequestContext("1001","author supplied title",1500L);
+        var run=repository.create("下一个视频给我一点灵感",owner,null,UUID.randomUUID().toString(),null,page).run();sessions.add(run.sessionId);
+        var focus=new MemoryTypes.Focus(run.message,run.id,"1001");repository.focus(run,focus);faq(run);
+        var loaded=repository.load(run.id,owner);assertEquals(page,loaded.pageContext());assertEquals(run.message,loaded.query());
+        var next=repository.create("就是现在的视频",owner,run.sessionId,UUID.randomUUID().toString(),null,page).run();
+        assertEquals(focus,repository.memory(next).focus());
+        repository.focus(next,new MemoryTypes.Focus("新目标",next.id,"1001"));
+        repository.focus(run,focus);
+        assertEquals(2L,db.queryForObject("SELECT turn_seq FROM agent_conversation_focus WHERE tenant_id=? AND session_id=?",Long.class,owner.tenantId(),run.sessionId.toString()));
+        faq(next);
+    }
     @Test void creatorDraftCasSurvivesReloadAndSessionDeletionRemovesIt() {
         var run = create("creator draft");
         var store = new MysqlCreatorDraftStore(source,mapper);

@@ -21,6 +21,7 @@ public class RunState implements EvidenceContext {
     private final String executionQuery;
     private final RunBackend backend;
     private MemoryTypes.View memory = MemoryTypes.View.empty();
+    private com.tianmu.agent.core.RequestContext pageContext;
     private Snapshot restored;
     public final AccessScope owner;
     public final String message;
@@ -59,6 +60,11 @@ public class RunState implements EvidenceContext {
     }
     public synchronized void bindPersistedControl(int limit) { persistedControl = true; modelCallLimit = limit; }
     public String query() { return executionQuery; }
+    public synchronized void pageContext(com.tianmu.agent.core.RequestContext value) {
+        if (pageContext != null && !pageContext.equals(value)) throw new IllegalStateException("Page context already bound");
+        pageContext = value;
+    }
+    public synchronized com.tianmu.agent.core.RequestContext pageContext() { return pageContext; }
     public synchronized void memory(MemoryTypes.View value) { memory = Objects.requireNonNull(value); }
     public synchronized MemoryTypes.View memory() { return memory; }
     public synchronized void restore(Snapshot value) {

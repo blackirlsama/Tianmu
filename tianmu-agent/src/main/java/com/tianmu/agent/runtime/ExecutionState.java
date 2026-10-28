@@ -8,6 +8,7 @@ import java.util.*;
 public final class ExecutionState {
     private final Set<String> activeSkills = new HashSet<>();
     private final List<ToolResult> observations = new ArrayList<>();
+    private final List<com.tianmu.agent.core.AgentTypes.ToolExchange> exchanges = new ArrayList<>();
     private final EvidenceStore evidence;
     private final Map<String, Integer> commentOffsets = new HashMap<>();
     public synchronized int commentOffset(String id) { return commentOffsets.getOrDefault(id, 0); }
@@ -25,5 +26,9 @@ public final class ExecutionState {
     public synchronized void activateSkill(String name) { activeSkills.add(name); }
     public synchronized List<ToolResult> observations() { return List.copyOf(observations); }
     public synchronized void observe(ToolResult value) { observations.add(value); }
+    public synchronized void observe(com.tianmu.agent.core.AgentTypes.ToolCall call,ToolResult value) {
+        observations.add(value);exchanges.add(new com.tianmu.agent.core.AgentTypes.ToolExchange(call,value));
+    }
+    public synchronized List<com.tianmu.agent.core.AgentTypes.ToolExchange> exchanges() { return List.copyOf(exchanges); }
     public EvidenceStore evidence() { return evidence; }
 }

@@ -24,14 +24,8 @@ final class DeepSeekHarnessModel implements ModelPort {
         return decide(context, new CallControl(Instant.now().plusSeconds(30), new CancellationToken()));
     }
     public Decision decide(ModelContext context, CallControl control) {
-        Map<String, Object> input = new LinkedHashMap<>();
-        input.put("memory", context.memory()); input.put("query", context.message()); input.put("businessDate", context.businessDate().toString());
-        input.put("tools", context.availableTools()); input.put("results", context.observations());
-        input.put("activeSkills", context.activeSkills()); input.put("remainingSteps", context.remainingSteps());
-        input.put("preparation", context.preparation()); input.put("finalizing", context.finalizing());
-        if (context.task() != null) input.put("taskSpecification", context.task().specification());
-        String prompt = systemPrompt + "\n\n" + focusPrompt + (context.finalizing() ? "\n\n" + context.systemDirective() : "") + "\n\n" + commonPrompt;
-        JsonNode result = client.complete(config.harnessModel(), client.messages(prompt, input), config.harnessMaxTokens(), control);
+        String prompt = systemPrompt + "\n\n" + focusPrompt + "\n\n" + commonPrompt;
+        JsonNode result = client.complete(config.harnessModel(), client.harnessMessages(prompt,context), config.harnessMaxTokens(), control);
         try {
             return switch (text(result, "kind")) {
                 case "TOOL" -> {

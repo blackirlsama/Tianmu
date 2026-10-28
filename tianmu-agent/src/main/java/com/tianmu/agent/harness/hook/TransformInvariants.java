@@ -38,6 +38,7 @@ final class TransformInvariants {
                     && context.remainingSteps() == original.remainingSteps() && context.businessDate().equals(original.businessDate())
                     && context.message().equals(original.message()) && context.finalizing() == original.finalizing()
                     && Objects.equals(context.systemDirective(), original.systemDirective())
+                    && original.exchanges().containsAll(context.exchanges())
                     && Objects.equals(context.preparation(), original.preparation()) && Objects.equals(context.task(), original.task()) && Objects.equals(context.memory(), original.memory()));
             require(new HashSet<>(context.availableTools()).size() == context.availableTools().size()
                     && original.availableTools().containsAll(context.availableTools()));

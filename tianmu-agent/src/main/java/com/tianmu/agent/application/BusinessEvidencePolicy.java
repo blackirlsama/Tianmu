@@ -21,6 +21,7 @@ public final class BusinessEvidencePolicy {
             if (run.task() != null && run.task().specification().type().equals("danmaku.report"))
                 throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Use the prepared danmaku analysis query for report tasks");
             if (!run.scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "Out-of-scope video");
+            checkPinnedVideo(run, query.videoId());
             if (query.date().isBefore(run.businessDate().minusDays(30)) || !query.date().isBefore(run.businessDate()))
                 throw new AgentException("DATE_OUT_OF_RANGE", "Only completed days within the previous 30 days are supported");
             if (run.task() != null && run.task().specification().type().equals("video.metric")) {
@@ -43,6 +44,7 @@ public final class BusinessEvidencePolicy {
         public void checkVideoQuery(EvidenceContext run, long videoId, Long startMs, Long endMs) {
             run.checkpoint();
             if (!run.scope().videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside scope");
+            checkPinnedVideo(run, videoId);
             if (run.task() == null) return;
             var expected = run.task().specification().typed();
             if (expected instanceof TaskConditions.Interaction interaction) interaction.video().check(videoId, startMs, endMs);
@@ -51,6 +53,17 @@ public final class BusinessEvidencePolicy {
                 if (report.query().videoId() != videoId)
                     throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Video differs from prepared report");
             }
+        }
+        private void checkPinnedVideo(EvidenceContext run, long videoId) {
+            if (run.task() == null) return;
+            var expected = run.task().specification().typed();
+            long target = 0;
+            if (expected instanceof TaskConditions.Metric metric) target = metric.videoId();
+            else if (expected instanceof TaskConditions.Video video) target = video.videoId();
+            else if (expected instanceof TaskConditions.Report report) target = report.query().videoId();
+            else if (expected instanceof TaskConditions.Interaction interaction) target = interaction.video().videoId();
+            if (target > 0 && target != videoId)
+                throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Video differs from the confirmed task target");
         }
         public Evidence registerVideoEvidence(EvidenceContext run, com.tianmu.agent.core.VideoContent.Facts facts) {
             checkVideoQuery(run, facts.videoId(), facts.startMs(), facts.endMs());

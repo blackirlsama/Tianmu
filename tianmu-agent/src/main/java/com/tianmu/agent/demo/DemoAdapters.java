@@ -64,6 +64,8 @@ public class DemoAdapters {
     }
     @Bean @Profile("!deepseek") ModelPort scriptedDemoModel() {
         return context -> {
+            if(context.task()!=null && context.task().specification().typed() instanceof com.tianmu.agent.core.TaskConditions.Metric metric)
+                return metricDecision(context,metric.videoId(),metric.date());
             if(context.task()!=null && "danmaku.overview".equals(context.task().specification().type())) {
                 if(!context.activeSkills().contains("danmaku-analysis"))return Decision.tool("read_skill",Map.of("name","danmaku-analysis"));
                 var found=context.observations().stream().filter(r->r.tool().equals("query_danmaku")).findFirst();
@@ -104,6 +106,13 @@ public class DemoAdapters {
                     + " 的弹幕数为 " + result.data().get("value") + " 条。此结果仅用于验证基架，不代表真实业务数据。",
                     List.of(result.evidenceId()));
         };
+    }
+    private static Decision metricDecision(ModelContext context,long videoId,LocalDate date) {
+        if(!context.activeSkills().contains("video-metrics"))return Decision.tool("read_skill",Map.of("name","video-metrics"));
+        var metric=context.observations().stream().filter(r->r.tool().equals("query_video_metrics")).findFirst();
+        if(metric.isEmpty())return Decision.tool("query_video_metrics",Map.of("video_id",videoId,"date",date.toString(),"metric","bullet_count"));
+        var result=metric.get();
+        return Decision.answer("【模拟数据】视频 "+videoId+" 在 "+date+" 的弹幕数为 "+result.data().get("value")+" 条。此结果仅用于验证基架，不代表真实业务数据。",List.of(result.evidenceId()));
     }
     @Bean @Profile("!business") com.tianmu.agent.query.DanmakuQueryPort demoDanmakuQuery() {
         return (query, scope, control) -> {

@@ -21,6 +21,10 @@ public final class AgentBridgeController {
     public BusinessAuthentication.Principal principal(@RequestHeader(value="Authorization", required=false) String auth) {
         return authentication.authenticate(auth);
     }
+    @GetMapping("/video-context")
+    public BusinessMetrics.Page page(@RequestHeader(value="Authorization",required=false) String auth,@RequestParam long videoId) {
+        return metrics.page(authentication.authenticate(auth),videoId);
+    }
     @PostMapping("/authorize")
     public Resources authorize(@RequestHeader(value="Authorization", required=false) String auth, @RequestBody Resources input) {
         var principal = authentication.authenticate(auth);

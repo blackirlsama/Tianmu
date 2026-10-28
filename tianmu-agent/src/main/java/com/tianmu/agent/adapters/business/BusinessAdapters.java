@@ -33,7 +33,7 @@ public class BusinessAdapters {
     }
 }
 
-final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.query.CommentQueryPort, com.tianmu.agent.query.AudienceQueryPort, com.tianmu.agent.video.VideoContentPort, com.tianmu.agent.interaction.CreatorPublicationPort {
+final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, com.tianmu.agent.query.DanmakuQueryPort, com.tianmu.agent.query.CommentQueryPort, com.tianmu.agent.query.AudienceQueryPort, com.tianmu.agent.video.VideoContentPort, com.tianmu.agent.interaction.CreatorPublicationPort, com.tianmu.agent.query.VideoPagePort {
     private record RawSample(String id, int bucket, String text, boolean truncated, Long playbackMs) {}
     private record AnalysisResponse(DanmakuTypes.Query query, long totalMessages, long uniqueSenders,
             List<DanmakuTypes.Bucket> buckets, List<RawSample> samples, Instant dataAsOf, String source, boolean demo, com.tianmu.agent.core.AudienceData.Overview audience,com.tianmu.agent.core.AudienceReportData.Sources sources) {}
@@ -128,6 +128,19 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         while (matcher.find()) try { resources.add(Long.parseLong(matcher.group(1))); }
         catch (NumberFormatException e) { throw new AgentException("INVALID_REQUEST", "Invalid video ID"); }
         return grant(principal, resources, true);
+    }
+    @Override public AccessScope forCreate(String credential,String message,UUID reply,com.tianmu.agent.core.RequestContext page,UUID session) {
+        AccessScope current = forCreate(credential,message,reply);
+        Set<Long> required = new HashSet<>(current.videoIds());
+        if (page!=null) required.add(Long.parseLong(page.videoId()));
+        Set<Long> granted = new HashSet<>(allowed(current,required,true));
+        return new AccessScope(current.tenantId(),current.userId(),granted,current.authorizationRef());
+    }
+    @Override public com.tianmu.agent.query.VideoPagePort.Page page(long videoId,AccessScope scope) {
+        if (!scope.videoIds().contains(videoId)) throw new AgentException("FORBIDDEN","Current page outside scope");
+        JsonNode data = request("GET","/internal/agent/video-context?videoId="+videoId,credentials.token(scope.authorizationRef()),null,null);
+        try { return json.treeToValue(data,com.tianmu.agent.query.VideoPagePort.Page.class); }
+        catch (Exception e) { throw new AgentException("BUSINESS_UNAVAILABLE","Invalid page metadata"); }
     }
     @Override public AccessScope forRun(String credential, UUID id) {
         AccessScope principal = authenticate(credential);

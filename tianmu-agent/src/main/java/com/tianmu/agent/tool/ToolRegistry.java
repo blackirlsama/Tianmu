@@ -16,7 +16,9 @@ public class ToolRegistry {
         this.skills = skills;
         Map<String, AgentTool> loaded = new LinkedHashMap<>();
         for (AgentTool tool : tools)
-            if (tool == null || !ResourceFiles.name(tool.name())) throw new IllegalStateException("Invalid tool handler");
+            if (tool == null || !ResourceFiles.name(tool.name()) || tool.exposure() == null
+                    || tool.exposure() == AgentTool.Exposure.SKILL && tool.canActivateSkills())
+                throw new IllegalStateException("Invalid tool handler or activation privilege");
         tools.stream().sorted(Comparator.comparingInt(AgentTool::order).thenComparing(AgentTool::name)).forEach(tool -> {
             if (!ResourceFiles.name(tool.name()) || loaded.putIfAbsent(tool.name(), tool) != null)
                 throw new IllegalStateException("Invalid or duplicate tool handler");
@@ -25,7 +27,7 @@ public class ToolRegistry {
         for (String name : skills.names())
             if (!loaded.keySet().containsAll(skills.read(name).tools())) throw new IllegalStateException("Skill references an unknown tool: " + name);
         for (AgentTool tool : loaded.values())
-            if (tool.requiresSkill() && skills.names().stream().noneMatch(name -> skills.read(name).tools().contains(tool.name())))
+            if (tool.exposure() == AgentTool.Exposure.SKILL && skills.names().stream().noneMatch(name -> skills.read(name).tools().contains(tool.name())))
                 throw new IllegalStateException("Business tool is not declared by any skill: " + tool.name());
         Map<String, ToolDefinition> described = new LinkedHashMap<>();
         loaded.forEach((name, tool) -> {
@@ -43,9 +45,21 @@ public class ToolRegistry {
     }
     public ToolDefinition definition(String name) { get(name); return definitions.get(name); }
     public List<ToolDefinition> definitions(Set<String> activeSkills) {
+        return definitions(activeSkills, definitions.keySet());
+    }
+    /** Single source of truth for discovery, Skill schema disclosure and execution admission. */
+    public List<ToolDefinition> definitions(Set<String> activeSkills, Set<String> snapshotTools) {
         Set<String> active = new HashSet<>();
         activeSkills.forEach(name -> active.addAll(skills.read(name).tools()));
-        return handlers.values().stream().filter(tool -> !tool.requiresSkill() || active.contains(tool.name()))
+        return handlers.values().stream().filter(tool -> snapshotTools.contains(tool.name()))
+                .filter(tool -> tool.exposure() == AgentTool.Exposure.GENERAL || active.contains(tool.name()))
                 .map(tool -> definitions.get(tool.name())).toList();
     }
+    public AgentTool admit(String name, Set<String> activeSkills, Set<String> snapshotTools) {
+        AgentTool tool = get(name);
+        if (!snapshotTools.contains(name)) throw new AgentException("TOOL_NOT_AVAILABLE", "Tool was not in this run's registry snapshot");
+        if (tool.exposure() == AgentTool.Exposure.SKILL) skills.checkTool(name, activeSkills);
+        return tool;
+    }
+    public Set<String> names() { return definitions.keySet(); }
 }

@@ -18,8 +18,8 @@ class ConversationFlowTest {
         var page = new RequestContext("1001");
         for (String text : List.of("请分析这个视频的画面内容，概括主要内容，并给出关键画面的播放时间点。", "请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。")) {
             String execution = com.tianmu.agent.application.RequestMessages.execution(text,page);
-            assertTrue(execution.endsWith("当前视频：视频1001"));
-            assertEquals("video.content",TaskMeaning.defaults().resolve(execution,java.time.LocalDate.now()).type());
+            assertEquals(text,execution);
+            assertEquals("video.content",TaskMeaning.defaults().resolve(execution,java.time.LocalDate.now(),java.time.Instant.now(),page).type());
             assertEquals(execution,com.tianmu.agent.application.RequestMessages.execution(execution,page));
         }
         for (String text : List.of("你能做什么？", "给我一些提升观众互动意愿的通用运营建议。", "帮我写三句自然的互动引导文案，不要太像广告。", "请分析视频1002的画面内容。"))
@@ -34,7 +34,7 @@ class ConversationFlowTest {
             var run = new RunState(new AccessScope("demo", "alice", Set.of()), question);
             var runtime = new AgentRuntime(context -> {
                 assertEquals("conversation", context.task().specification().type());
-                assertTrue(context.availableTools().isEmpty());
+                assertEquals(Set.of("list_skills","read_skill","read_result","read_history"), context.availableTools().stream().map(ToolDefinition::name).collect(java.util.stream.Collectors.toSet()));
                 return Decision.answer("欢迎来到直播间，今天一起发现一些实用的小惊喜。", List.of());
             }, fixture.tools, fixture.harness);
             new RequestOrchestrator(prep, runtime, fixture.harness).execute(run);
@@ -47,7 +47,7 @@ class ConversationFlowTest {
     @Test void dataQuestionsStillCannotDeliverUnprovenNumbers() {
         try (var fixture = new HarnessLifecycleTest.Fixture();
              var prep = new PreparationService((input, control) -> Optional.empty(), new PreparationFlowTest.Model(),
-                     new PreparationPolicy(Duration.ofMillis(200), Duration.ofMillis(400)), fixture.harness)) {
+                     new PreparationPolicy(Duration.ofMillis(200),Duration.ofMillis(400),Duration.ofMillis(200),Duration.ofMillis(200),true,false), fixture.harness)) {
             var repo = new MemoryRunRepository();
             var run = repo.create("昨天有多少条弹幕？", new AccessScope("demo", "alice", Set.of(1001L)), null, null, null, new RequestContext("1001")).run();
             var runtime = new AgentRuntime(context -> {
@@ -65,7 +65,7 @@ class ConversationFlowTest {
              var prep = new PreparationService(new ClasspathFaqPort(new ClassPathResource("faq/business.json"), null),
                      new PreparationFlowTest.Model() {
                          public Intent intent(Input i, com.tianmu.agent.runtime.control.CallControl c) { fail("FAQ must bypass preparation model"); return null; }
-                     }, new PreparationPolicy(Duration.ofMillis(200), Duration.ofMillis(400)), fixture.harness)) {
+                     }, new PreparationPolicy(Duration.ofMillis(200),Duration.ofMillis(400),Duration.ofMillis(200),Duration.ofMillis(200),true,false), fixture.harness)) {
             var run = new MemoryRunRepository().create("你能做什么", new AccessScope("demo", "alice", Set.of()), null, null, null, new RequestContext("1001")).run();
             new RequestOrchestrator(prep, new AgentRuntime(context -> { fail("FAQ must bypass harness model"); return null; }, fixture.tools, fixture.harness), fixture.harness).execute(run);
             assertEquals(Status.SUCCEEDED, run.snapshot().status());

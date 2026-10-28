@@ -68,17 +68,19 @@ class TaskContractTest {
         verifyNoInteractions(video);
         run.cancel();
     }
-    @Test void preparedTaskCeilingsExcludeOtherBusinessToolsAndNewlyRegisteredTools() {
-        Set<String> all = new HashSet<>(new ToolCatalog().all().keySet()); all.add("future_mutation");
-        assertEquals(Set.of("list_skills", "read_skill", "read_result", "analyze_video_content"), TaskCapabilities.toolsFor("video.content", all));
-        assertFalse(TaskCapabilities.toolsFor("video.metric", all).contains("analyze_video_content"));
-        assertFalse(TaskCapabilities.toolsFor("danmaku.report", all).contains("query_video_metrics"));
-        assertTrue(TaskCapabilities.toolsFor("unclassified", all).isEmpty());
+    @Test void preparedTaskFreezesRegistryWhileSkillActivationCannotChangeTheConfirmedVideo() {
         try (var fixture = new HarnessLifecycleTest.Fixture()) {
+            RunState general = prepared("你好");
+            assertEquals(new ToolCatalog().all().keySet(),general.task().allowedTools());
+            assertDoesNotThrow(() -> new BusinessEvidencePolicy().checkVideoQuery(general,1001));
+            assertEquals(Set.of("list_skills","read_skill","read_result","read_history"),fixture.tools.definitions(general).stream().map(ToolDefinition::name).collect(java.util.stream.Collectors.toSet()));
+            general.cancel();
             RunState run = prepared("分析视频1001第2秒到第6秒的画面");
+            assertEquals(new ToolCatalog().all().keySet(),run.task().allowedTools());
+            assertFalse(run.task().allowedTools().contains("future_mutation"));
             run.execution().activateSkill("video-metrics");
-            assertEquals("TOOL_NOT_AVAILABLE", assertThrows(AgentException.class, () -> fixture.tools.execute(
-                    new ToolCall("query_video_metrics", Map.of("video_id", 1001, "date", "2026-10-25", "metric", "bullet_count")), run)).code());
+            assertEquals("TASK_CONSTRAINT_VIOLATION", assertThrows(AgentException.class, () -> fixture.tools.execute(
+                    new ToolCall("query_video_metrics", Map.of("video_id", 1002, "date", run.businessDate.minusDays(1).toString(), "metric", "bullet_count")), run)).code());
             assertEquals(0, fixture.queries.get());
             run.cancel();
         }

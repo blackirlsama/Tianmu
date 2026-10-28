@@ -16,7 +16,7 @@ import com.tianmu.agent.preparation.TaskMeaning;
 @Component
 public class TaskAssembler {
     private final Map<String, String> versions;
-    private final Set<String> allowedTools;
+    private final Set<String> registrySnapshot;
     private final TaskMeaning meaning;
     public TaskAssembler(SkillCatalog skills, PromptCatalog prompts, ToolCatalog tools) { this(skills, prompts, tools, TaskMeaning.defaults()); }
     @org.springframework.beans.factory.annotation.Autowired
@@ -27,12 +27,12 @@ public class TaskAssembler {
         skills.names().forEach(name -> loaded.put("skill-content:" + name, skills.fingerprint(name)));
         prompts.ids().forEach(id -> loaded.put("prompt:" + id, prompts.get(id).version()));
         tools.all().forEach((name, definition) -> loaded.put("tool:" + name, fingerprint(definition)));
-        versions = Map.copyOf(loaded); allowedTools = Set.copyOf(tools.all().keySet());
+        versions = Map.copyOf(loaded); registrySnapshot = Set.copyOf(tools.all().keySet());
     }
     public PreparedTask assemble(RunState run) {
         run.checkpoint();
         var preparation = Objects.requireNonNull(run.preparedRequest());
-        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate, run.createdAt) : preparation.specification();
+        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate, run.createdAt,run.memory().environment()) : preparation.specification();
         boolean conversation = "unclassified".equals(specification.type())
                 && Set.of(com.tianmu.agent.core.PreparationTypes.Intent.KNOWLEDGE, com.tianmu.agent.core.PreparationTypes.Intent.OTHER).contains(preparation.intent());
         if (conversation) specification = new Specification("conversation", Map.of(), Map.of());
@@ -42,7 +42,7 @@ public class TaskAssembler {
             specification = new Specification(specification.type(), specification.conditions(), provenance);
         }
         return new PreparedTask(run.id, run.message, preparation.query(), run.businessDate, "Asia/Shanghai", run.owner,
-                preparation, specification, versions, TaskCapabilities.toolsFor(specification.type(), allowedTools), run.deadline(), run.modelCallLimit());
+                preparation, specification, versions, registrySnapshot, run.deadline(), run.modelCallLimit());
     }
     private String fingerprint(ToolDefinition definition) {
         try {

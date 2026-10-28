@@ -24,8 +24,8 @@ public final class CreatorInteractionTask implements TaskSpecificationResolver, 
         try { return Optional.of(parse(text)); } catch (IllegalArgumentException e) { return Optional.empty(); }
     }
     public Optional<com.tianmu.agent.core.PreparationTypes.Clarification> validate(com.tianmu.agent.core.PreparationTypes.Input input) {
-        if (!requested(input.query())) return Optional.empty();
-        try { parse(input.query()); return Optional.empty(); }
+        if (!requested(input.targetedQuery())) return Optional.empty();
+        try { parse(input.targetedQuery()); return Optional.empty(); }
         catch (IllegalArgumentException e) { return Optional.of(new com.tianmu.agent.core.PreparationTypes.Clarification(true, e.getMessage())); }
     }
 }

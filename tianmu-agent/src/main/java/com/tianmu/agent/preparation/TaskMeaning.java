@@ -18,4 +18,10 @@ public class TaskMeaning {
         if (matches.size() > 1) throw new IllegalStateException("Ambiguous task specification resolvers");
         return matches.isEmpty() ? new Specification("unclassified", Map.of(), Map.of()) : matches.get(0);
     }
+    public Specification resolve(String text,LocalDate date,java.time.Instant at,com.tianmu.agent.core.RequestContext page) {
+        var spec = resolve(com.tianmu.agent.application.RequestMessages.forParsing(text,page),date,at);
+        if (page == null || com.tianmu.agent.core.DanmakuTarget.matcher(text).find() || !spec.conditions().containsKey("video_id")) return spec;
+        Map<String,String> provenance = new HashMap<>(spec.provenance());provenance.put("video_id","page_context");
+        return new Specification(spec.type(),spec.conditions(),provenance);
+    }
 }

@@ -20,7 +20,7 @@ public class CommentVideoResponse {
 
     private String avatar;
 
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private Date createTime;
 
     private List<CommentResponse> children;

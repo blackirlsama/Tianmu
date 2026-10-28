@@ -15,6 +15,38 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class CommentServiceImplTest {
+    @Test void creationSuppliesCurrentInstantInsteadOfDatabaseTimezoneDefault() {
+        var service = spy(new CommentServiceImpl());
+        var users = mock(UserService.class);
+        var stats = mock(com.orangecode.tianmu.service.VideoStatsService.class);
+        var update = mock(com.baomidou.mybatisplus.extension.conditions.update.LambdaUpdateChainWrapper.class, RETURNS_SELF);
+        var query = mock(com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper.class, RETURNS_SELF);
+        doReturn(update).when(update).setSql(anyString(),any(Object[].class));
+        doReturn(update).when(update).eq(any(),any());
+        doReturn(query).when(query).eq(any(),any());
+        when(stats.lambdaUpdate()).thenReturn(update); when(update.update()).thenReturn(true);
+        when(users.lambdaQuery()).thenReturn(query); when(query.one()).thenReturn(user(1));
+        ReflectionTestUtils.setField(service,"userService",users); ReflectionTestUtils.setField(service,"videoStatsService",stats);
+        var saved = new java.util.concurrent.atomic.AtomicReference<Comment>();
+        doAnswer(call -> { saved.set(call.getArgument(0)); return true; }).when(service).save(any(Comment.class));
+        doAnswer(call -> saved.get()).when(service).getById(any(java.io.Serializable.class));
+        var request = new com.orangecode.tianmu.model.dto.video.CreateCommentRequest();
+        request.setContent("作者留言"); request.setUserId(1L); request.setVideoId(99L);
+        long before = System.currentTimeMillis();
+        var result = service.createAuthorComment(request,123L);
+        assertNotNull(saved.get().getCreateTime());
+        assertTrue(saved.get().getCreateTime().getTime() >= before);
+        assertTrue(saved.get().getCreateTime().getTime() <= System.currentTimeMillis());
+        assertEquals(saved.get().getCreateTime(),result.getCreateTime());
+    }
+    @Test void rootAndReplyTimestampsCarryExplicitOffsetAcrossServerTimezones() throws Exception {
+        var instant = Date.from(java.time.Instant.parse("2026-10-28T16:38:24Z"));
+        var root = new com.orangecode.tianmu.model.vo.video.CommentVideoResponse();root.setCreateTime(instant);
+        var reply = new com.orangecode.tianmu.model.vo.video.CommentResponse();reply.setCreateTime(instant);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper().setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        for (Object response : List.of(root,reply))
+            assertEquals("2026-10-29T00:38:24+08:00",mapper.readTree(mapper.writeValueAsString(response)).get("createTime").asText());
+    }
     @Test
     void listsZeroAndNullRootsWithDirectAndNestedReplies() {
         var service = spy(new CommentServiceImpl());

@@ -64,6 +64,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         comment.setUserId(createCommentRequest.getUserId());
         comment.setCommentId(stableId);
         comment.setParentCommentId(0L);
+        // DATETIME has no timezone. Let JDBC encode the current instant using its configured storage zone;
+        // the database CURRENT_TIMESTAMP default may run in a different session zone (UTC in production).
+        comment.setCreateTime(new Date());
 
         // 如果有父评论，则设置父评论id
         if (createCommentRequest.getParentCommentId() != null) {

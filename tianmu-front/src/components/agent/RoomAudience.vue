@@ -1,14 +1,8 @@
 <template>
-  <section class="room-audience" aria-label="视频房间分析">
-    <header><strong>视频房间 · 弹幕复盘</strong><button type="button" @click="open = !open">{{ open ? '收起' : '展开' }}</button></header>
+  <section class="room-audience" aria-label="实时弹幕汇总">
+    <header><strong>实时弹幕汇总</strong><button type="button" @click="open = !open">{{ open ? '收起' : '展开' }}</button></header>
     <div v-if="open">
-      <form class="report-range" @submit.prevent="report">
-        <p>分析报告：未填写时间时默认过去七天。以下时间均为北京时间。</p>
-        <label>开始<input v-model="range.start" type="datetime-local" /></label>
-        <label>结束<input v-model="range.end" type="datetime-local" /></label>
-        <button :disabled="busy" type="submit">结合视频生成报告</button>
-      </form>
-      <div class="room-live-heading"><strong>实时弹幕汇总</strong><button type="button" @click="monitoring ? stop() : start()">{{ monitoring ? '停止汇总' : '开始汇总' }}</button></div>
+      <div class="room-live-heading"><strong>当前视频</strong><button type="button" @click="monitoring ? stop() : start()">{{ monitoring ? '停止汇总' : '开始汇总' }}</button></div>
       <p class="room-hint">使用当前视频的弹幕作为房间讨论；从开始汇总时累计已入库弹幕，页面每15秒刷新，话题最多每30秒更新。关闭面板停止刷新。</p>
       <p class="room-hint">按当前区间全量分析弹幕，内容较多时分批处理；正文原话仅用于举例，分析不抽样。</p>
       <p v-if="error" role="status">{{ error }}</p>
@@ -18,7 +12,6 @@
         <template v-if="snapshot.data">
           <div class="room-metrics"><span>弹幕 <b>{{ snapshot.data.totalMessages }}</b></span><span>参与用户 <b>{{ snapshot.data.uniqueSenders }}</b></span></div>
           <p class="room-hint">统计范围：{{ snapshot.start }} — {{ snapshot.end }}。不含尚未入库或已删除记录。</p>
-          <button type="button" :disabled="busy" @click="reportSnapshot">按本次区间生成报告</button>
           <p class="room-hint">数量数据截至 {{ formatDataUpdatedAt(snapshot.data.dataAsOf) }}；话题摘要更新于 {{ formatDataUpdatedAt(snapshot.updatedAt) || '尚未生成' }}。</p>
           <p v-if="snapshot.data.audience" class="room-hint">已读取 {{ snapshot.data.audience.corpusMessages }} 条弹幕；上次成功摘要处理 {{ classified }} 条。{{ snapshot.videoAnalyzed ? '已结合视频画面。' : '尚未结合视频画面。' }}</p>
           <article v-for="topic in snapshot.topics" :key="topic.id" class="room-topic">
@@ -38,17 +31,14 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, defineProps, onBeforeUnmount, ref, watch } from 'vue'
 import { getRoomSummary } from '@/api/agent'
 import { useUserStore } from '@/store/user'
 import { createRoomMonitor } from '@/agent/room-monitor.mjs'
-import { buildReportMessage, chinaTime, sevenDayRange, formatDataUpdatedAt } from '@/agent/protocol.mjs'
-const props = defineProps({ videoId: { type: String, required: true }, busy: Boolean })
-const emit = defineEmits(['report'])
+import { chinaTime, formatDataUpdatedAt } from '@/agent/protocol.mjs'
+const props = defineProps({ videoId: { type: String, required: true } })
 const userStore = useUserStore()
 const open = ref(false), monitoring = ref(false), snapshot = ref(null), error = ref('')
-const range = reactive(sevenDayRange())
-let defaultRange = { ...range }
 let since = '', watchedVideo = ''
 const classified = computed(() => (snapshot.value?.topics || []).reduce((n, t) => n + t.messages, 0))
 function examples(topic) { if (snapshot.value?.state !== 'READY') return []; const ids = new Set(topic.sampleIds.slice(0, 3)); return (snapshot.value?.data?.audience?.corpus || []).filter(g => ids.has(g.id)) }
@@ -63,20 +53,6 @@ function topicTrend(topic) {
   const at = from + bins.indexOf(peak) * Math.ceil((to - from) / 12000) * 1000
   return `这类讨论在 ${chinaTime(new Date(at)).replace('T', ' ')} 附近最集中，该时段有 ${peak} 条相关弹幕。`
 }
-function reportSnapshot() {
-  try { emit('report', buildReportMessage({ videoId: props.videoId, start: snapshot.value.start, end: snapshot.value.end, focus: '结合视频内容整理话题、真实例子和建议。' })); error.value = '' }
-  catch (e) { error.value = e.message }
-}
-function report() {
-  try {
-    let times = { ...range }
-    if ((!times.start && !times.end) || (times.start === defaultRange.start && times.end === defaultRange.end)) {
-      times = sevenDayRange(); defaultRange = { ...times }; Object.assign(range, times)
-    }
-    emit('report', buildReportMessage({ videoId: props.videoId, ...times, focus: '归纳主要话题，结合相关视频内容解释，附真实弹幕例子和改进建议，并展示互动用户榜。' }))
-    error.value = ''
-  } catch (e) { error.value = e.message }
-}
 const monitor = createRoomMonitor({
   fetchSnapshot: signal => getRoomSummary(watchedVideo, since, signal),
   onSnapshot(next) {
@@ -90,7 +66,7 @@ const monitor = createRoomMonitor({
 })
 function stop() { monitor.stop(); monitoring.value = false }
 function start() { stop(); watchedVideo = props.videoId; since = chinaTime(new Date(Date.now() - 1000)); snapshot.value = null; error.value = ''; monitoring.value = true; monitor.start() }
-watch(() => props.videoId, () => { stop(); snapshot.value = null; error.value = ''; defaultRange = sevenDayRange(); Object.assign(range, defaultRange) })
+watch(() => props.videoId, () => { stop(); snapshot.value = null; error.value = '' })
 watch(() => userStore.user.token, () => { stop(); snapshot.value = null; error.value = ''; open.value = false })
 watch(open, value => { if (!value) stop() })
 onBeforeUnmount(stop)

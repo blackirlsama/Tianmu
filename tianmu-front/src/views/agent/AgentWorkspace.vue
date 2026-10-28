@@ -43,13 +43,11 @@
       </header>
       <div ref="conversationElement" class="conversation-scroll">
         <div class="workspace-content">
-          <RoomAudience v-if="form.videoId" :video-id="form.videoId" :busy="busy" @report="text => { focus = text; submit(); }" />
-          <QaKnowledge />
           <section v-if="!turns.length" class="workspace-intro">
             <div class="welcome-symbol" aria-hidden="true">✦<i>✧</i></div>
             <div class="intro-tag">你的内容运营搭档</div>
-            <h1>一起，看懂内容与观众。</h1>
-            <p>看视频、聊反馈，也一起想想下一次内容。<br />直接提问，需要报告时再告诉我。</p>
+            <h1>{{ form.videoId ? '这个视频，下一步怎么做？' : '一起，做好下一次内容。' }}</h1>
+            <p>分析观众反馈、查看互动数据，或深入一个视频片段。<br />选择下方功能，也可以直接提问。</p>
             <div class="conversation-context" v-if="form.videoId">
               <span>▣ 当前视频</span><strong>{{ contextTitle || '视频 ' + form.videoId }}</strong
               ><small>#{{ form.videoId }}</small>
@@ -68,6 +66,13 @@
             </div>
             <p class="suggestion-hint">点选问题后可以修改，确认后再发送。</p>
           </section>
+          <details class="workspace-tools" @toggle="toolsOpen = $event.target.open">
+            <summary>更多工具<span>实时弹幕汇总 · 常见问答</span></summary>
+            <template v-if="toolsOpen">
+              <RoomAudience v-if="form.videoId" :video-id="form.videoId" />
+              <QaKnowledge />
+            </template>
+          </details>
           <div v-if="notice" class="workspace-notice" role="alert">
             {{ notice
             }}<button
@@ -277,21 +282,19 @@ const generalSuggestions = [
   { icon: '▷', title: '怎样分析视频', description: '了解全片概览和片段分析', text: '怎么用你分析视频画面内容和观众反馈？' },
 ];
 const videoSuggestions = [
-  { icon: '✎', title: '评论在聊什么', description: '读取全部评论，保留回复上下文', text: '请分析这个视频过去七天的评论，归纳观众问题、讨论话题和改进建议。' },
-  { icon: '▷', title: '观众在讨论什么', description: '默认过去七天，结合视频做复盘', text: '请分析这个视频的弹幕和评论，结合视频内容归纳主要话题、观众原话和改进建议，生成观众反馈报告。' },
-  { icon: '◴', title: '细看一个片段', description: '选中示例时间，修改后再发送', text: '请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。', selection: '第1秒到第4秒' },
-  { icon: '◷', title: '查昨天的弹幕数', description: '快速查数量，直接告诉你结果', text: '这个视频昨天有多少条弹幕？' },
-  { icon: '▤', title: '结合画面做复盘', description: '把视频内容与观众反馈整理成报告', text: '请分析这个视频昨天的弹幕和评论，结合实际视频画面生成一份观众反馈报告。' },
-  generalSuggestions[1],
-  generalSuggestions[2],
+  { icon: '▤', title: '观众反馈报告', description: '结合视频画面，分析全部弹幕与评论', text: '请分析这个视频全部的弹幕和评论，结合实际视频画面生成观众反馈报告，包含主要话题、观众原话和改进建议。' },
+  { icon: '✎', title: '评论分析', description: '梳理讨论话题、观众问题与回复上下文', text: '请分析这个视频全部的评论，保留回复上下文，归纳讨论话题、观众问题和改进建议。' },
+  { icon: '◷', title: '互动统计', description: '查看弹幕、评论数量与活跃观众', text: '请统计这个视频全部的弹幕数量和评论数量，并列出互动最活跃的观众。' },
+  { icon: '▷', title: '视频片段分析', description: '指定时间，查看这一段发生了什么', text: '请只分析这个视频第1秒到第4秒的画面内容，说明这段出现了什么。', selection: '第1秒到第4秒' },
 ];
+const toolsOpen = ref(false);
 
 const router = useRouter(),
   route = useRoute(),
   userStore = useUserStore();
 const form = reactive({ videoId: '', ...yesterdayRange() });
 const suggestions = computed(() => form.videoId ? videoSuggestions : generalSuggestions);
-const quickSuggestions = computed(() => form.videoId ? [videoSuggestions[0], videoSuggestions[1], videoSuggestions[3]] : [generalSuggestions[1], generalSuggestions[2]]);
+const quickSuggestions = computed(() => form.videoId ? videoSuggestions.slice(0, 3) : [generalSuggestions[1], generalSuggestions[2]]);
 const contextTitle = computed(() => (props.videoId === form.videoId ? props.videoTitle : ''));
 const currentQueryRun = computed(() =>
   props.embedded ? route.query.assistantRunId : route.query.runId
@@ -809,6 +812,10 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   padding: 26px 36px;
 }
+.workspace-tools { margin: 12px 0 20px; color: #756b7f; font-size: 12px; }
+.workspace-tools > summary { cursor: pointer; padding: 10px 0; }
+.workspace-tools > summary span { margin-left: 12px; color: #a198a9; font-size: 11px; }
+.workspace-tools > summary:focus-visible, .suggestion-grid button:focus-visible { outline: 2px solid #cda5c3; outline-offset: 3px; }
 .workspace-intro {
   text-align: center;
   padding: 32px 0 20px;

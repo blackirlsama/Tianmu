@@ -78,11 +78,14 @@ public final class HarnessContextBuilder {
             ToolCall call=context.exchanges().stream().filter(e->e.result().equals(observed)).map(ToolExchange::call).findFirst()
                     .orElse(new ToolCall(observed.tool(),Map.of()));
             String id="call_host_"+i;
-            out.add(Map.of("role","assistant","content","","tool_calls",List.of(Map.of("id",id,"type","function",
+            // Keep the JSON decision alongside native metadata; this is still a JSON decision protocol.
+            String decision=encode(Map.of("kind","TOOL","call",call));
+            out.add(Map.of("role","assistant","content",decision,"tool_calls",List.of(Map.of("id",id,"type","function",
                     "function",Map.of("name",call.name(),"arguments",encode(call.arguments()))))));
             ObjectNode result=((ObjectNode)results.get(i)).deepCopy();result.remove("terminalAnswer");
             out.add(Map.of("role","tool","tool_call_id",id,"content",encode(result)));
         }
+        if(!results.isEmpty() && !context.finalizing())out.add(message("system","工具结果已返回。继续处理本轮用户目标，只输出一个符合既定 kind/call/answer 格式的 JSON 对象；不要输出空白。"));
         if(context.finalizing())out.add(message("system",context.systemDirective()));
         return out;
     }

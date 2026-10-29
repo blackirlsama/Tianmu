@@ -9,6 +9,7 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
+    "@vue-flow/core": "^1.48.2",
     "artplayer": "^5.2.2",
     "artplayer-plugin-danmuku": "^5.1.5",
     "axios": "^1.8.1",

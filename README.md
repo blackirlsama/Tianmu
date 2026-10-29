@@ -107,81 +107,47 @@ flowchart TB
 
 ![天幕运营助手：视频页对话与观众反馈报告](images/agent-workspace.png)
 
-Agent 是独立的 Spring Boot 服务。一次请求先完成准备与路由，再进入 Harness 执行循环：构造上下文、调用模型、执行工具、回收结果，直到生成回答或交付报告。Hook 围绕关键阶段提供前置检查与后置观察，不替代循环本身。
+Agent 是独立的 Spring Boot 服务，采用“模型决策、工具执行、结果反馈”的循环。模型根据当前上下文决定下一步，工具负责读取真实数据或生成产物，执行结果再进入下一轮上下文，直到完成回答或报告。
 
 ```mermaid
 flowchart TB
-    Web["作者助手"] -->|用户消息 / 当前视频| Entry["请求准备与路由"]
-    Entry --> Route{"执行路径"}
-    Route -->|直接回答 / 需要补充| Delivery["回答 / 澄清 / 报告交付"]
-    Route -->|需要模型与工具| Context
+    Request["用户请求"] --> Prepare["请求准备<br/>确认视频、目标与权限"]
+    Prepare --> Context
 
     subgraph Loop["Harness · Agent Loop"]
-        Context["构造本轮上下文<br/>历史 + 任务 + 可用工具 + 已有结果"]
-        Model["模型调用<br/>原生 messages / tools"]
-        Decision{"模型决策"}
-        Tools["Tool Dispatcher<br/>校验参数与权限，执行工具"]
-        Observation["接收工具结果<br/>更新证据与执行状态"]
+        Context["构建上下文<br/>用户需求 + 对话历史 + 工具结果"]
+        Model["模型理解与决策"]
+        Decision{"下一步？"}
+        Tools["执行工具<br/>读取数据 / 分析视频 / 生成报告"]
+        Observation["接收结果<br/>保存证据，更新任务状态"]
 
         Context --> Model
-        Model -->|回答 / 澄清 / tool_calls| Decision
-        Decision -->|调用工具| Tools
-        Tools -->|工具结果 / 可恢复错误| Observation
-        Observation -->|携带结果，进入下一轮| Context
+        Model --> Decision
+        Decision -->|需要数据或操作| Tools
+        Tools --> Observation
+        Observation -->|反馈结果，继续推理| Context
     end
 
-    Decision -->|回答 / 澄清| Delivery
-    Tools -->|报告等终态产物| Delivery
-    Delivery -->|SSE 进度 / 答案 / 产物链接| Web
-    Delivery --> End["请求结束"]
-
-    Tools <-->|按需激活能力| Skills["Skill Catalog"]
-    Tools <-->|查询数据 / 返回证据| Bridge["鉴权业务桥接"]
-    Bridge <-->|授权业务数据| Backend["视频业务后端"]
-    Context <-->|读取历史与状态| Store[("MySQL / Redis / 私有对象存储")]
-    Observation -->|保存证据与进度| Store
-    Delivery -->|保存最终结果| Store
-
-    subgraph Extensions["执行控制与扩展"]
-        Control["Loop Control<br/>轮次 / 时限 / 预算 / 取消"]
-        Hooks["Hook Dispatcher<br/>前置 Gate / 后置 Observer"]
-        Transform["Transform<br/>上下文与结果变换"]
-    end
-
-    Control -. 每轮检查，超限或取消则退出 .-> Context
-    Hooks -. REQUEST_START / PRE_ROUTE .-> Entry
-    Hooks -. PRE_MODEL / POST_MODEL .-> Model
-    Hooks -. PRE_TOOL / POST_TOOL .-> Tools
-    Hooks -. PRE_SKILL / POST_SKILL .-> Skills
-    Hooks -. PRE_DELIVER / POST_DELIVER .-> Delivery
-    Hooks -. REQUEST_END / ON_ERROR / ON_CANCEL .-> End
-    Transform -. CONTEXT .-> Context
-    Transform -. MODEL_RESULT .-> Decision
-    Transform -. TOOL_RESULT .-> Observation
-
-    Loop -. Span 与详情引用 .-> Trace["OpenTelemetry / JSONL"]
-    Trace -. 可选采集链路 .-> Lake["Kafka / ClickHouse"]
+    Decision -->|可以回答 / 需要澄清| Delivery["交付结果<br/>回答 / 澄清 / 报告"]
+    Observation -->|工具已完成交付| Delivery
 
     classDef core fill:#f0ecff,stroke:#8971bc,color:#382b59
     classDef tool fill:#e6f5ef,stroke:#55977d,color:#234b3d
-    classDef extension fill:#fff4de,stroke:#b99340,color:#58451d
     classDef result fill:#e8f1ff,stroke:#4f7db8,color:#1c3555
     class Context,Model,Decision core
-    class Tools,Observation,Skills,Bridge tool
-    class Control,Hooks,Transform extension
-    class Web,Entry,Route,Delivery,End,Trace,Lake result
+    class Tools,Observation tool
+    class Request,Prepare,Delivery result
 ```
 
 | 组件 | 职责 |
 | --- | --- |
-| Agent Loop | 工具结果重新进入上下文，驱动下一轮模型决策；回答、澄清或终态产物结束循环 |
-| Loop Control | 约束轮次、时限和调用预算，处理取消与终止 |
-| Hook | 在模型、工具、Skill 和交付阶段前后插入检查或观察逻辑 |
-| Transform | 在固定位置处理上下文和结果，保留权限与任务约束 |
-| Skill / Tool | Skill 按需开放能力，Tool 执行操作并把证据或产物返回循环 |
-| 存储与 Trace | 保存对话、任务与结果，记录每轮模型和工具的调用关系 |
+| Harness | 驱动模型与工具循环，管理任务进度、执行边界和结果交付 |
+| 上下文 | 汇集当前需求、视频信息、对话历史与已有结果，为每轮决策提供依据 |
+| 模型适配器 | 对接文本与视频模型，负责理解和决策 |
+| Skill / Tool | Skill 组织能力，Tool 通过业务接口读取数据或执行操作 |
+| 存储与追踪 | 保存对话、任务和产物，记录调用过程，支持恢复与排查 |
 
-图中实线表示请求、数据或结果流向，虚线表示扩展点、执行控制和追踪链路。前置 Hook 可阻止尚未执行的操作，后置 Hook 用于观察；可恢复的工具错误会反馈给模型，终止错误和取消则结束请求。
+这套设计将三件事分开：**模型决定做什么，工具完成具体工作，Harness 控制如何执行。** 统计计算、权限校验和报告渲染由代码完成；工具结果保留为证据，既支撑后续推理，也支撑最终交付。图中聚焦需要模型与工具协作的请求，固定问答等简单请求可直接返回。
 
 Agent 不直接修改业务数据库，发布操作由用户确认后交给业务后端执行。详细开发与配置说明见 [`tianmu-agent/README.md`](tianmu-agent/README.md)。
 

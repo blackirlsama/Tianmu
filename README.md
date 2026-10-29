@@ -50,31 +50,56 @@
 
 ## 后端架构
 
-视频后端采用模块化单体结构，围绕用户、文件、视频、互动与搜索组织业务。HTTP 接口承接网站请求，Netty 处理弹幕长连接，中间件提供缓存、检索、对象存储与异步处理能力。
+视频后端采用模块化单体结构。网站通过 HTTP 读写业务数据，通过 WebSocket 收发弹幕；媒体文件、业务记录、缓存与搜索索引分别流向对应的存储服务。
 
 ```mermaid
 flowchart TB
-    Web[Vue 3 视频网站] --> Gateway[Nginx]
-    Gateway --> API[Spring Boot HTTP API]
-    Gateway --> WS[Netty 弹幕服务]
-    API --> Modules[用户 / 文件 / 视频 / 互动 / 搜索]
-    WS --> Bullet[弹幕处理]
-    Modules --> DB[(MySQL)]
-    Modules --> Cache[(Redis)]
-    Modules --> Files[(MinIO)]
-    Modules --> Search[(Elasticsearch)]
-    Modules --> Async[RocketMQ / Canal]
-    Bullet --> DB
-    Bullet --> Cache
+    Web["Vue 3 网站 / 播放器"] <-->|HTTP 请求 / 响应| Gateway["Nginx"]
+
+    subgraph Services["业务服务 · Spring Boot"]
+        API["用户 / 视频 / 评论接口"]
+        Upload["文件上传服务"]
+        Search["搜索服务"]
+        WS["Netty 弹幕服务"]
+        Consumer["弹幕消息消费者"]
+    end
+
+    Gateway <-->|业务请求 / JSON 结果| API
+    Gateway -->|文件分片| Upload
+    Gateway <-->|搜索词 / 查询结果| Search
+    Web <-->|WebSocket：发送 / 广播| Gateway
+    Gateway <-->|弹幕连接| WS
+
+    API <-->|业务记录读写| DB[("MySQL")]
+    API <-->|热点数据读写| Cache[("Redis")]
+    Upload -->|媒体文件| Files[("MinIO")]
+    Upload -->|文件元数据| DB
+    Files -->|视频文件 / 播放读取| Web
+    Search <-->|全文检索 / 命中结果| ES[("Elasticsearch")]
+
+    WS -->|弹幕事件| MQ["RocketMQ"]
+    MQ -->|消费消息| Consumer
+    Consumer -->|幂等入库| DB
+    DB -. Binlog 变更 .-> Canal["Canal 变更订阅"]
+    Canal -->|更新弹幕与业务缓存| Cache
+    Canal -->|更新用户与视频索引| ES
+
+    classDef entry fill:#e8f1ff,stroke:#4f7db8,color:#1c3555
+    classDef service fill:#f0ecff,stroke:#8971bc,color:#382b59
+    classDef storage fill:#fff4de,stroke:#b99340,color:#58451d
+    classDef event fill:#e6f5ef,stroke:#55977d,color:#234b3d
+    class Web,Gateway entry
+    class API,Upload,Search,WS,Consumer service
+    class DB,Cache,Files,ES storage
+    class MQ,Canal event
 ```
 
 | 层次 | 技术与职责 |
 | --- | --- |
-| 接入层 | Nginx 反向代理、HTTP API、WebSocket |
-| 业务层 | Spring Boot、MyBatis-Plus；用户、视频、上传、互动与搜索 |
-| 实时通信 | Netty；弹幕连接与消息分发 |
-| 数据存储 | MySQL 保存业务数据，Redis 提供缓存，MinIO 保存媒体文件 |
-| 搜索与同步 | Elasticsearch、RocketMQ、Canal；检索、异步消息与数据变更处理 |
+| 业务请求 | 网站 → Nginx → 业务接口 → MySQL / Redis，查询结果返回网站 |
+| 视频上传与播放 | 上传服务写入 MinIO，并保存文件元数据；播放器读取媒体文件 |
+| 弹幕发送 | WebSocket → Netty → RocketMQ → 消费者 → MySQL；Netty 同时负责连接与广播 |
+| 数据同步与搜索 | MySQL 变更经 Canal 更新 Redis 与 Elasticsearch，搜索服务读取索引返回结果 |
 
 业务后端代码位于 [`src/`](src/)，部署说明见[完整网站部署](deploy/site/README.md)。
 
@@ -82,31 +107,81 @@ flowchart TB
 
 ![天幕运营助手：视频页对话与观众反馈报告](images/agent-workspace.png)
 
-Agent 是独立的 Spring Boot 服务。它接收用户需求，通过 Harness 执行模型与工具调用，使用 Skill 组织能力，并通过业务桥接访问视频平台。报告由结构化结果渲染，执行过程通过 Trace 记录。
+Agent 是独立的 Spring Boot 服务。一次请求先完成准备与路由，再进入 Harness 执行循环：构造上下文、调用模型、执行工具、回收结果，直到生成回答或交付报告。Hook 围绕关键阶段提供前置检查与后置观察，不替代循环本身。
 
 ```mermaid
 flowchart TB
-    Web[作者助手] --> Entry[请求准备与身份校验]
-    Entry --> Harness[Harness 执行循环]
-    Harness <--> Model[文本 / 视频模型适配器]
-    Harness --> Skills[Skill 与 Tool]
-    Skills --> Bridge[鉴权业务桥接]
-    Bridge --> Backend[视频业务后端]
-    Skills --> Report[报告生成与草稿交付]
-    Report --> Web
-    Harness --> Store[(会话 / 任务 / 结果存储)]
-    Harness -. 执行追踪 .-> Trace[OpenTelemetry / JSONL]
-    Trace -. 可选采集链路 .-> Lake[Kafka / ClickHouse]
+    Web["作者助手"] -->|用户消息 / 当前视频| Entry["请求准备与路由"]
+    Entry --> Route{"执行路径"}
+    Route -->|直接回答 / 需要补充| Delivery["回答 / 澄清 / 报告交付"]
+    Route -->|需要模型与工具| Context
+
+    subgraph Loop["Harness · Agent Loop"]
+        Context["构造本轮上下文<br/>历史 + 任务 + 可用工具 + 已有结果"]
+        Model["模型调用<br/>原生 messages / tools"]
+        Decision{"模型决策"}
+        Tools["Tool Dispatcher<br/>校验参数与权限，执行工具"]
+        Observation["接收工具结果<br/>更新证据与执行状态"]
+
+        Context --> Model
+        Model -->|回答 / 澄清 / tool_calls| Decision
+        Decision -->|调用工具| Tools
+        Tools -->|工具结果 / 可恢复错误| Observation
+        Observation -->|携带结果，进入下一轮| Context
+    end
+
+    Decision -->|回答 / 澄清| Delivery
+    Tools -->|报告等终态产物| Delivery
+    Delivery -->|SSE 进度 / 答案 / 产物链接| Web
+    Delivery --> End["请求结束"]
+
+    Tools <-->|按需激活能力| Skills["Skill Catalog"]
+    Tools <-->|查询数据 / 返回证据| Bridge["鉴权业务桥接"]
+    Bridge <-->|授权业务数据| Backend["视频业务后端"]
+    Context <-->|读取历史与状态| Store[("MySQL / Redis / 私有对象存储")]
+    Observation -->|保存证据与进度| Store
+    Delivery -->|保存最终结果| Store
+
+    subgraph Extensions["执行控制与扩展"]
+        Control["Loop Control<br/>轮次 / 时限 / 预算 / 取消"]
+        Hooks["Hook Dispatcher<br/>前置 Gate / 后置 Observer"]
+        Transform["Transform<br/>上下文与结果变换"]
+    end
+
+    Control -. 每轮检查，超限或取消则退出 .-> Context
+    Hooks -. REQUEST_START / PRE_ROUTE .-> Entry
+    Hooks -. PRE_MODEL / POST_MODEL .-> Model
+    Hooks -. PRE_TOOL / POST_TOOL .-> Tools
+    Hooks -. PRE_SKILL / POST_SKILL .-> Skills
+    Hooks -. PRE_DELIVER / POST_DELIVER .-> Delivery
+    Hooks -. REQUEST_END / ON_ERROR / ON_CANCEL .-> End
+    Transform -. CONTEXT .-> Context
+    Transform -. MODEL_RESULT .-> Decision
+    Transform -. TOOL_RESULT .-> Observation
+
+    Loop -. Span 与详情引用 .-> Trace["OpenTelemetry / JSONL"]
+    Trace -. 可选采集链路 .-> Lake["Kafka / ClickHouse"]
+
+    classDef core fill:#f0ecff,stroke:#8971bc,color:#382b59
+    classDef tool fill:#e6f5ef,stroke:#55977d,color:#234b3d
+    classDef extension fill:#fff4de,stroke:#b99340,color:#58451d
+    classDef result fill:#e8f1ff,stroke:#4f7db8,color:#1c3555
+    class Context,Model,Decision core
+    class Tools,Observation,Skills,Bridge tool
+    class Control,Hooks,Transform extension
+    class Web,Entry,Route,Delivery,End,Trace,Lake result
 ```
 
 | 组件 | 职责 |
 | --- | --- |
-| 请求准备 | 识别任务，确定当前视频与访问范围 |
-| Harness | 管理执行循环、模型调用、工具调度与任务生命周期 |
-| Skill / Tool | 组织业务能力，提供受控的数据读取与操作入口 |
-| 模型适配器 | 对接文本模型、视频理解等外部服务 |
-| 结果与存储 | 保存对话和任务，交付报告、草稿及其他产物 |
-| 可观测性 | 记录调用关系、状态、耗时与用量，辅助调试和分析 |
+| Agent Loop | 工具结果重新进入上下文，驱动下一轮模型决策；回答、澄清或终态产物结束循环 |
+| Loop Control | 约束轮次、时限和调用预算，处理取消与终止 |
+| Hook | 在模型、工具、Skill 和交付阶段前后插入检查或观察逻辑 |
+| Transform | 在固定位置处理上下文和结果，保留权限与任务约束 |
+| Skill / Tool | Skill 按需开放能力，Tool 执行操作并把证据或产物返回循环 |
+| 存储与 Trace | 保存对话、任务与结果，记录每轮模型和工具的调用关系 |
+
+图中实线表示请求、数据或结果流向，虚线表示扩展点、执行控制和追踪链路。前置 Hook 可阻止尚未执行的操作，后置 Hook 用于观察；可恢复的工具错误会反馈给模型，终止错误和取消则结束请求。
 
 Agent 不直接修改业务数据库，发布操作由用户确认后交给业务后端执行。详细开发与配置说明见 [`tianmu-agent/README.md`](tianmu-agent/README.md)。
 

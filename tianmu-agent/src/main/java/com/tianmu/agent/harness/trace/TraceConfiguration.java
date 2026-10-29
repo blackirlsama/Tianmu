@@ -17,6 +17,7 @@ import java.util.*;
 @Configuration
 @EnableConfigurationProperties(TraceProperties.class)
 public class TraceConfiguration {
+    @Bean RunTraceQuery runTraceQuery(TraceProperties properties, ObjectMapper mapper) { return new RunTraceQuery(properties, mapper); }
     @Bean TraceExportStats traceExportStats() { return new TraceExportStats(); }
     private TraceSink configuredSink(TraceProperties properties) throws Exception {
         if ("file".equals(properties.sink())) return new JsonlTraceSink(
@@ -66,9 +67,10 @@ public class TraceConfiguration {
         return io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter.builder().setEndpoint(endpoint)
                 .setTimeout(java.time.Duration.ofSeconds(3)).build();
     }
-    @Bean(destroyMethod = "close") SdkTracerProvider harnessTracerProvider(io.opentelemetry.sdk.trace.export.SpanExporter exporter) {
+    @Bean(destroyMethod = "close") SdkTracerProvider harnessTracerProvider(io.opentelemetry.sdk.trace.export.SpanExporter exporter, RunTraceQuery queries) {
         return SdkTracerProvider.builder().setSampler(Sampler.alwaysOn()).setResource(Resource.create(Attributes.of(
                 AttributeKey.stringKey("service.name"), "tianmu-operations-agent")))
+                .addSpanProcessor(queries)
                 .addSpanProcessor(exporter instanceof OutboxSpanExporter ? SimpleSpanProcessor.create(exporter) :
                         io.opentelemetry.sdk.trace.export.BatchSpanProcessor.builder(exporter).setMaxQueueSize(2048)
                                 .setScheduleDelay(java.time.Duration.ofMillis(200)).build()).build();

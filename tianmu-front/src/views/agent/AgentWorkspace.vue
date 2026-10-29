@@ -163,6 +163,7 @@
                     </li>
                   </ol>
                 </details>
+                <router-link v-if="validRunId(turn.runId)" class="text-button" :to="{ path: '/trace', query: { runId: turn.runId } }" target="_blank" rel="noopener">查看运行追踪 ↗</router-link>
                 <CreatorDraft v-if="turn.snapshot?.status === 'SUCCEEDED' && turn.snapshot?.task?.specification?.type === 'creator.draft'" :run-id="turn.runId" />
                 <div
                   v-if="turn.reportPath && turn.snapshot?.status === 'SUCCEEDED'"

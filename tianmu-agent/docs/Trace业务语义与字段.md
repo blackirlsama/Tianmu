@@ -101,4 +101,12 @@ python scripts/render_trace.py --trace var/trace-demo/spans.jsonl --details var/
 
 生命周期由 HarnessSession 的终态 CAS 和执行计数控制，排队取消、错误与正常提前返回均有唯一 finish。进程被强杀时未结束 Span 无法由 outbox 恢复；晚到、未响应取消的适配器也可能在 finish 后产生记录，因此 finish 不是“所有记录已经到齐”的证明。
 
-现有同步刷盘、容量上限、失败重试、eventId 去重契约保持不变。Kafka Consumer、在线 Trace 列表查询、跨服务 HTTP 注入、动态采样仍待建设；本地修改需部署后才能用于服务器流量。
+### 前端按运行查询
+
+`GET /api/agent/runs/{runId}/trace` 返回 `{run, spans, source, truncated, modelMode, businessMode}`。与详情接口一样使用 Bearer 身份，先由 `IdentityPort.forRun` 和 `RunRepository.load` 校验当前用户、租户、视频范围与任务归属，再查询元数据；响应不缓存，不包含详情正文。
+
+`RunTraceQuery` 作为附加 SpanProcessor 收集真正已结束的 Span，不改变文件、Kafka、OTLP 出口。实例内最多缓存 20,000 个节点，1 小时过期；file 模式在缓存未命中时回读轮转归档，扫描预算 64 MiB。单次最多返回 2,000 个节点，受限或归档读取不完整时 `truncated=true`。记录同时按 run.id 和原始 traceId / run.trace_id 过滤；eventId 只是本查询视图的事件标识，节点按 traceId/spanId 关联。
+
+`modelMode=DEMO` 或 `businessMode=DEMO` 明确表示模拟适配器，不能把本地流程联调当作真实模型实验。仅返回已结束 Span，终态通知可能早于节点清理，前端会在终态后继续短暂刷新；这仍不保证所有晚到节点已到齐。
+
+现有同步刷盘、容量上限、失败重试、eventId 去重契约保持不变。全量在线 Trace 列表、跨实例 ClickHouse 历史读取、跨服务 HTTP 注入、动态采样仍待建设；本地修改需部署后才能用于服务器流量。

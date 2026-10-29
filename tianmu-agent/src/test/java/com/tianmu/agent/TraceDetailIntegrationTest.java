@@ -32,6 +32,18 @@ class TraceDetailIntegrationTest {
         while (exported.stream().noneMatch(s -> s.name().equals("agent.run") && run.id.toString().equals(s.attributes().get("run.id"))) && System.nanoTime() < deadline) Thread.sleep(20);
         assertEquals(Status.SUCCEEDED, run.snapshot().status());
         var spans = exported.stream().filter(s -> run.id.toString().equals(s.attributes().get("run.id"))).toList();
+        String tracePath = "/api/agent/runs/" + run.id + "/trace";
+        String traceBody = mvc.perform(get(tracePath).header("Authorization", "Bearer demo-alice"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.run.runId").value(run.id.toString()))
+                .andExpect(jsonPath("$.modelMode").value("DEMO"))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        var observed = json.readTree(traceBody).path("spans");
+        assertTrue(observed.size() > 5);
+        for (var item : observed) assertEquals(run.id.toString(), item.path("attributes").path("run.id").asText());
+        assertFalse(traceBody.contains("这款什么时候发货？"));
+        mvc.perform(get(tracePath)).andExpect(status().isUnauthorized());
+        mvc.perform(get(tracePath).header("Authorization", "Bearer demo-bob")).andExpect(status().isNotFound());
         var query = spans.stream().filter(s -> s.name().equals("agent.tool") && "query_danmaku".equals(s.attributes().get("tool.name"))).findFirst().orElseThrow();
         assertEquals("TOOL", query.attributes().get("node.type"));
         assertEquals("SUCCEEDED", query.attributes().get("node.status"));

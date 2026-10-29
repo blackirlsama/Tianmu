@@ -1,15 +1,30 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TraceGraph from '@/components/trace/TraceGraph.vue'
 import TraceIcon from '@/components/trace/TraceIcon.vue'
 import TraceCode from '@/components/trace/TraceCode.vue'
 import { demoFiles } from '@/trace/demo-trace.mjs'
 import { parseTraceFile, formatDuration, formatValue, statusLabel } from '@/trace/trace-data.mjs'
+import { createTraceClient, validTraceRunId } from '@/trace/trace-client.mjs'
+import { readStoredUser } from '@/lib/auth'
 
 const examples = demoFiles.flatMap((data) => parseTraceFile(JSON.stringify(data), '内置演示日志'))
-const traces = ref(examples)
-const activeId = ref(examples[0].id)
-const selectedId = ref(examples[0].nodes.find((node) => node.type === 'llm_inference').id)
+const traces = ref([])
+const activeId = ref('')
+const selectedId = ref('')
+const sourceMode = ref('backend')
+const authMode = ref('website')
+const runIdInput = ref(new URLSearchParams(window.location.search).get('runId') || '')
+const question = ref('分析直播间1001昨天的弹幕并生成报告')
+const backendLoading = ref(false)
+const backendError = ref('')
+const backendNote = ref('输入运行 ID，或向 Agent 发起提问，读取实际执行日志。')
+const backendMode = ref('')
+const detailLoading = ref(false)
+const detailError = ref('')
+let generation = 0, requestAbort, detailAbort, pollTimer
+const detailCache = new Map()
+const client = createTraceClient({ getToken: () => authMode.value === 'demo' ? 'demo-alice' : readStoredUser().token })
 const mode = ref('graph')
 const detailTab = ref('payload')
 const fileInput = ref(null)
@@ -17,14 +32,15 @@ const importError = ref('')
 const importing = ref(false)
 const previousTitle = document.title
 document.title = 'Trace Studio · 天幕运行追踪'
-onBeforeUnmount(() => { document.title = previousTitle })
+onBeforeUnmount(() => { stopBackend(); window.removeEventListener('storage', identityChanged); document.title = previousTitle })
 
 const trace = computed(() => traces.value.find((item) => item.id === activeId.value) || traces.value[0])
-const selected = computed(() => trace.value.nodes.find((node) => node.id === selectedId.value))
-const timingNodes = computed(() => trace.value.nodes.filter((node) => !['REQUEST', 'LOOP'].includes(node.kind)))
-const toolCount = computed(() => trace.value.nodes.filter((node) => node.type === 'tool_call' || node.kind === 'TOOL').length)
-const modelCount = computed(() => trace.value.nodes.filter((node) => node.kind === 'MODEL').length)
-const share = computed(() => selected.value?.durationMs != null && trace.value.durationMs > 0 ? `${(selected.value.durationMs / trace.value.durationMs * 100).toFixed(1)}%` : '未提供')
+const selected = computed(() => trace.value?.nodes.find((node) => node.id === selectedId.value))
+const timingNodes = computed(() => (trace.value?.nodes || []).filter((node) => trace.value.nodes.length > 12 ? ['MODEL', 'TOOL', 'DELIVERY'].includes(node.kind) : !['REQUEST', 'LOOP'].includes(node.kind)))
+const toolCount = computed(() => (trace.value?.nodes || []).filter((node) => node.type === 'tool_call' || node.kind === 'TOOL').length)
+const modelCount = computed(() => (trace.value?.nodes || []).filter((node) => node.kind === 'MODEL').length)
+const share = computed(() => selected.value?.durationMs != null && trace.value?.durationMs > 0 ? `${(selected.value.durationMs / trace.value.durationMs * 100).toFixed(1)}%` : '未提供')
+const sourceLabel = computed(() => sourceMode.value === 'backend' ? '后端运行日志' : trace.value?.demo ? '演示数据' : '已导入日志')
 const kindLabel = (node) => ({ MODEL: '模型调用', TOOL: '工具调用', REQUEST: '运行入口', ROUTING: '请求路由', LOOP: '执行循环', DELIVERY: '结果交付' }[node.kind] || '执行阶段')
 const iconFor = (node) => node.kind === 'MODEL' ? 'model' : node.kind === 'TOOL' ? 'tool' : 'stage'
 const clock = (value) => value == null ? '未提供' : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(value))
@@ -34,6 +50,131 @@ function selectNode(id) { selectedId.value = id }
 function changeTrace() {
   selectedId.value = trace.value.nodes.find((node) => node.type === 'llm_inference')?.id || trace.value.nodes[0].id
 }
+function stopBackend() {
+  generation++
+  clearTimeout(pollTimer)
+  requestAbort?.abort()
+  detailAbort?.abort()
+  detailCache.clear()
+  backendLoading.value = false
+  detailLoading.value = false
+  detailError.value = ''
+}
+function identityChanged() {
+  if (sourceMode.value !== 'backend') return
+  stopBackend()
+  traces.value = []
+  backendMode.value = ''
+  backendNote.value = '身份已变化，请重新加载运行。'
+}
+window.addEventListener('storage', identityChanged)
+watch(authMode, identityChanged)
+onMounted(() => { if (validTraceRunId(runIdInput.value) && readStoredUser().token) loadBackend() })
+
+async function loadBackend(create = false) {
+  stopBackend()
+  const current = generation
+  requestAbort = new AbortController()
+  const signal = requestAbort.signal
+  sourceMode.value = 'backend'
+  traces.value = []
+  activeId.value = ''
+  backendLoading.value = true
+  backendError.value = ''
+  importError.value = ''
+  backendMode.value = ''
+  backendNote.value = create ? '正在向 Agent 提交提问…' : '正在读取后端运行日志…'
+  try {
+    let id = runIdInput.value.trim()
+    if (create) {
+      const run = await client.createRun(question.value, signal)
+      if (current !== generation) return
+      id = run.runId
+      runIdInput.value = id
+    }
+    if (!validTraceRunId(id)) throw new Error('请输入 Agent 返回的有效运行 ID（UUID）。')
+    let terminalReads = 0
+    const poll = async () => {
+      try {
+        const data = await client.getTrace(id, signal)
+        if (current !== generation) return
+        backendMode.value = `${data.modelMode === 'PROVIDER' ? '真实模型提供方' : '模拟模型'} / ${data.businessMode === 'BUSINESS' ? '业务数据' : '模拟业务数据'}`
+        backendNote.value = `运行 ${id} · ${statusLabel(data.run.status)} · ${data.spans.length} 个已结束节点${data.truncated ? ' · 记录受查询上限限制' : ''}`
+        if (data.spans.length) {
+          const normalized = parseTraceFile(JSON.stringify({ spans: data.spans, title: `运行 ${id.slice(0, 8)}` }), `Agent 后端 · ${data.source === 'archive' ? '文件归档' : '近期运行'}`)
+          for (const item of normalized) {
+            item.live = true
+            item.runId = id
+            item.status = data.run.status
+            item.nodes.forEach((node) => {
+              for (const direction of ['input', 'output']) {
+                const detail = detailCache.get(`${id}/${node[`${direction}Ref`]}`)
+                if (detail) { node[direction] = detail.value; node[`${direction}State`] = detail.state }
+              }
+            })
+          }
+          const previousNode = selectedId.value
+          const previousTrace = activeId.value
+          traces.value = normalized
+          activeId.value = normalized.some((item) => item.id === previousTrace) ? previousTrace : normalized.find((item) => item.id === data.run.traceId)?.id || normalized[0].id
+          if (!trace.value.nodes.some((node) => node.id === previousNode)) changeTrace()
+        }
+        backendLoading.value = false
+        const terminal = ['SUCCEEDED', 'FAILED', 'NEEDS_INPUT', 'CANCELLED'].includes(data.run.status)
+        terminalReads = terminal ? terminalReads + 1 : 0
+        // Terminal notification can precede span cleanup; collect late records as well.
+        if (terminalReads < 3) pollTimer = setTimeout(poll, 1200)
+        else if (!data.spans.length) backendNote.value += '。此实例没有可查询节点，请检查保留期、服务实例或归档配置。'
+      } catch (error) { fail(error) }
+    }
+    const fail = (error) => {
+      if (current !== generation || error.name === 'AbortError') return
+      backendLoading.value = false
+      backendError.value = error.message
+      if ([401, 403, 404].includes(error.status)) { traces.value = []; detailCache.clear() }
+    }
+    await poll()
+  } catch (error) {
+    if (current !== generation || error.name === 'AbortError') return
+    backendLoading.value = false
+    backendError.value = error.message
+  }
+}
+
+async function loadSelectedDetails() {
+  detailAbort?.abort()
+  detailError.value = ''
+  detailLoading.value = false
+  const node = selected.value
+  if (sourceMode.value !== 'backend' || !node || !trace.value?.live) return
+  const current = generation, runId = trace.value.runId, nodeId = node.id
+  detailAbort = new AbortController()
+  const signal = detailAbort.signal
+  detailLoading.value = true
+  await Promise.all(['input', 'output'].map(async (direction) => {
+    const reference = node[`${direction}Ref`]
+    if (!reference || reference === 'UNAVAILABLE') return
+    try {
+      let detail = detailCache.get(`${runId}/${reference}`)
+      if (!detail) {
+        const payload = await client.getPayload(runId, nodeId, direction, reference, signal)
+        if (current !== generation || signal.aborted) return
+        detail = { value: payload.state === 'TRUNCATED' ? payload.preview : payload.value, state: payload.state }
+        detailCache.set(`${runId}/${reference}`, detail)
+      }
+      if (current === generation && selected.value?.id === nodeId && trace.value?.runId === runId && !signal.aborted) {
+        selected.value[direction] = detail.value
+        selected.value[`${direction}State`] = detail.state
+      }
+    } catch (error) {
+      if (current !== generation || signal.aborted || selected.value?.id !== nodeId) return
+      detailError.value = error.message
+      if ([401, 403].includes(error.status)) { backendError.value = error.message; traces.value = []; detailCache.clear(); requestAbort?.abort(); clearTimeout(pollTimer) }
+    }
+  }))
+  if (current === generation && !signal.aborted) detailLoading.value = false
+}
+watch(() => [sourceMode.value, activeId.value, selectedId.value, selected.value?.inputRef, selected.value?.outputRef].join('|'), loadSelectedDetails)
 function timingStyle(node) {
   const extent = trace.value.extentMs || 1
   return { left: `${Math.min(100, Math.max(0, (node.offsetMs || 0) / extent * 100))}%`, width: `${Math.min(100, Math.max(0.5, (node.durationMs || 0) / extent * 100))}%` }
@@ -46,6 +187,10 @@ async function importFile(event) {
   try {
     if (file.size > 10 * 1024 * 1024) throw new Error('文件超过 10 MB，请按运行拆分后导入。')
     const imported = parseTraceFile(await file.text(), file.name)
+    stopBackend()
+    sourceMode.value = 'file'
+    backendMode.value = ''
+    backendNote.value = '当前查看本地导入文件，可在此重新连接后端。'
     traces.value = imported
     activeId.value = imported[0].id
     changeTrace()
@@ -53,6 +198,11 @@ async function importFile(event) {
   finally { importing.value = false; event.target.value = '' }
 }
 function resetDemo() {
+  stopBackend()
+  sourceMode.value = 'demo'
+  backendMode.value = ''
+  backendError.value = ''
+  backendNote.value = '当前查看合成演示数据，可在此加载后端运行。'
   traces.value = examples
   activeId.value = examples[0].id
   importError.value = ''
@@ -80,10 +230,20 @@ function downloadExample() {
     <main class="studio-main">
       <div class="workspace-heading">
         <div><div class="workspace-eyebrow">OBSERVABILITY <span>/</span> AGENT TRACE</div><h1>运行追踪<span>看见每一步，让执行过程清晰可循。</span></h1></div>
-        <div class="heading-actions"><span class="source-badge" :class="{ imported: !trace.demo }"><i />{{ trace.demo ? '演示数据' : '已导入日志' }}</span><button class="import-button" type="button" :disabled="importing" @click="fileInput.click()"><TraceIcon name="upload" :size="15" />{{ importing ? '正在导入…' : '导入日志' }}</button><input ref="fileInput" class="file-input" type="file" accept=".json,.jsonl,application/json" aria-label="选择 Trace 日志" @change="importFile" /></div>
+        <div class="heading-actions"><span class="source-badge" :class="{ imported: sourceMode !== 'demo' }"><i />{{ sourceLabel }}</span><button class="import-button" type="button" :disabled="importing" @click="fileInput.click()"><TraceIcon name="upload" :size="15" />{{ importing ? '正在导入…' : '导入日志' }}</button><input ref="fileInput" class="file-input" type="file" accept=".json,.jsonl,application/json" aria-label="选择 Trace 日志" @change="importFile" /></div>
       </div>
       <div v-if="importError" class="import-error" role="alert"><TraceIcon name="info" :size="16" />{{ importError }}</div>
 
+      <section class="backend-connection studio-panel">
+        <div class="connection-title"><h2><TraceIcon name="trace" :size="16" />连接 Agent 后端</h2><span>/api/agent · 已授权运行</span><button type="button" @click="resetDemo">查看界面演示</button></div>
+        <div class="connection-controls"><label>访问身份<select v-model="authMode" aria-label="后端访问身份"><option value="website">使用天幕网站登录态</option><option value="demo">本地免 Key 联调（demo-alice）</option></select></label><label class="run-id-field">运行 ID<input v-model="runIdInput" placeholder="粘贴 Agent 返回的 runId（UUID）" aria-label="后端运行 ID" /></label><button class="import-button" type="button" :disabled="backendLoading" @click="loadBackend(false)">{{ backendLoading ? '正在连接…' : '加载 / 刷新运行' }}</button></div>
+        <div class="connection-create"><input v-model="question" maxlength="2000" aria-label="发送给 Agent 的提问" placeholder="输入提问，执行后查看这次运行的实际 Trace" /><button class="import-button" type="button" :disabled="backendLoading || !question.trim()" @click="loadBackend(true)">执行并追踪<TraceIcon name="arrow" :size="14" /></button></div>
+        <p class="connection-note" role="status">{{ backendNote }}<strong v-if="backendMode">服务模式：{{ backendMode }}</strong></p>
+        <p v-if="authMode === 'demo'" class="connection-warning">本地联调会执行真正的 HTTP 请求和 Agent 流程，但默认使用模拟模型、模拟业务数据，不计入真实模型对比实验。</p>
+        <p v-if="backendError" class="connection-error" role="alert">{{ backendError }}</p>
+      </section>
+
+      <template v-if="trace">
       <div class="trace-toolbar">
         <div class="trace-breadcrumb"><TraceIcon name="trace" :size="15" /><span>Traces</span><TraceIcon name="chevron" :size="12" /><strong>{{ trace.runId }}</strong><span class="status-pill" :class="trace.status.toLowerCase()"><i />{{ statusLabel(trace.status) }}</span></div>
         <div class="toolbar-metrics"><span><TraceIcon name="clock" :size="14" /><em>总耗时</em><b>{{ formatDuration(trace.durationMs) }}</b></span><span><TraceIcon name="token" :size="14" /><em>Tokens</em><b>{{ formatValue(trace.totalTokens) }}</b><small v-if="!trace.usageComplete">部分 / 缺失</small></span></div>
@@ -101,11 +261,11 @@ function downloadExample() {
             <div class="metadata-divider" /><div class="call-totals"><div><strong>{{ modelCount }}</strong><span>模型调用</span></div><div><strong>{{ toolCount }}</strong><span>工具调用</span></div><div><strong>{{ trace.nodes.length }}</strong><span>全部节点</span></div></div>
             <div class="metadata-divider" /><div class="trace-id-label">TRACE ID</div><div class="trace-id">{{ trace.id }}</div><div class="source-caption">来源 · {{ trace.source }}</div>
           </section>
-          <section class="guide-card"><span class="guide-icon"><TraceIcon name="info" :size="17" /></span><h3>{{ trace.demo ? '从一次调用开始探索' : '日志已在浏览器中解析' }}</h3><p>{{ trace.demo ? '选择调用图中的任意节点，查看输入、输出与执行耗时。演示日志仅用于交互预览。' : '按真实父子关系还原调用图。缺失内容按采集状态展示，文件不会上传到服务端。' }}</p><button v-if="trace.demo" type="button" @click="downloadExample">下载示例日志<TraceIcon name="arrow" :size="14" /></button><button v-else type="button" @click="resetDemo">返回演示数据<TraceIcon name="arrow" :size="14" /></button></section>
+          <section class="guide-card"><span class="guide-icon"><TraceIcon name="info" :size="17" /></span><h3>{{ trace.live ? '后端实际执行记录' : trace.demo ? '从一次调用开始探索' : '日志已在浏览器中解析' }}</h3><p>{{ trace.live ? '节点来自后端运行记录。点击节点，通过带身份校验的接口读取脱敏输入输出；此处展示已结束节点，可刷新获取晚到记录。' : trace.demo ? '演示日志仅用于交互预览，不作为模型实验结果。' : '按真实父子关系还原调用图。文件在浏览器本地解析，不上传。' }}</p><button v-if="trace.demo" type="button" @click="downloadExample">下载示例日志<TraceIcon name="arrow" :size="14" /></button></section>
         </aside>
 
         <section class="graph-column studio-panel">
-          <div class="view-tabs"><button type="button" :class="{ active: mode === 'graph' }" :aria-pressed="mode === 'graph'" @click="mode = 'graph'"><TraceIcon name="trace" :size="14" />调用图</button><button type="button" :class="{ active: mode === 'list' }" :aria-pressed="mode === 'list'" @click="mode = 'list'"><TraceIcon name="list" :size="14" />节点列表</button><span class="view-tabs-note">{{ trace.demo ? 'DEMO TRACE' : 'IMPORTED TRACE' }}</span></div>
+          <div class="view-tabs"><button type="button" :class="{ active: mode === 'graph' }" :aria-pressed="mode === 'graph'" @click="mode = 'graph'"><TraceIcon name="trace" :size="14" />调用图</button><button type="button" :class="{ active: mode === 'list' }" :aria-pressed="mode === 'list'" @click="mode = 'list'"><TraceIcon name="list" :size="14" />节点列表</button><span class="view-tabs-note">{{ trace.live ? 'BACKEND TRACE' : trace.demo ? 'DEMO TRACE' : 'IMPORTED TRACE' }}</span></div>
           <TraceGraph :trace="trace" :selected-id="selectedId" :mode="mode" @select="selectNode" />
           <section class="timing-panel">
             <div class="timing-heading"><h2><TraceIcon name="clock" :size="15" />执行时间线<span>Timing</span></h2><span>相对开始时间 · ms</span></div>
@@ -121,6 +281,7 @@ function downloadExample() {
             <div class="node-status-line"><span class="status-pill" :class="selected.status.toLowerCase()"><i />{{ statusLabel(selected.status) }}</span><span v-if="selected.turn != null">第 {{ selected.turn }} 轮</span><span v-if="selected.model">{{ selected.model }}</span></div>
             <div class="duration-card"><div><span>执行耗时</span><strong data-testid="inspector-duration">{{ formatDuration(selected.durationMs) }}</strong></div><div><span>占总耗时</span><b>{{ share }}</b></div></div>
             <div class="inspector-tabs"><button type="button" :class="{ active: detailTab === 'payload' }" :aria-pressed="detailTab === 'payload'" @click="detailTab = 'payload'">输入 / 输出</button><button type="button" :class="{ active: detailTab === 'metadata' }" :aria-pressed="detailTab === 'metadata'" @click="detailTab = 'metadata'">元信息</button></div>
+            <p v-if="detailLoading" class="connection-note" role="status">正在从后端读取节点详情…</p><p v-if="detailError" class="connection-error" role="alert">{{ detailError }}<button type="button" @click="loadSelectedDetails">重试详情</button></p>
             <template v-if="detailTab === 'payload'">
               <TraceCode title="输入 Input" :value="selected.input" :state="selected.inputState" :reference="selected.inputRef" />
               <TraceCode title="输出 Output" :value="selected.output" :state="selected.outputState" :reference="selected.outputRef" />
@@ -131,7 +292,9 @@ function downloadExample() {
           </div>
         </aside>
       </div>
-      <footer class="studio-footer"><span><i />Tianmu Trace Studio<span class="footer-divider">/</span>场景 C · 多模型行为分析</span><span>{{ trace.demo ? '演示数据，不代表模型评测结果' : '数据来源：本地导入日志' }}<span class="footer-divider">·</span>前端预览 v0.1</span></footer>
+      </template>
+      <section v-else class="trace-empty studio-panel"><TraceIcon name="trace" :size="30" /><h2>{{ backendLoading ? '正在读取运行记录' : '等待连接运行数据' }}</h2><p>从上方加载已有运行，或执行一次提问。后端未连接时不会显示模拟结果。</p><p>默认接口地址由 TIANMU_AGENT_PROXY_TARGET 配置，当前开发默认指向本机 8201 端口。</p></section>
+      <footer class="studio-footer"><span><i />Tianmu Trace Studio<span class="footer-divider">/</span>场景 C · 多模型行为分析</span><span>{{ sourceMode === 'backend' ? '数据来源：Agent 后端运行记录' : trace?.demo ? '演示数据，不代表模型评测结果' : '数据来源：本地导入日志' }}<span class="footer-divider">·</span>Trace Studio v0.2</span></footer>
     </main>
   </div>
 </template>
@@ -142,6 +305,22 @@ html.trace-workspace-page #app { max-width:none;background:#0b1018; }
 </style>
 
 <style scoped>
+.backend-connection { padding:18px 20px;margin-bottom:20px; }
+.connection-title { display:flex;align-items:center;gap:12px;margin-bottom:16px; }
+.connection-title h2 { margin:0;display:flex;align-items:center;gap:8px;color:#bcd0ec;font-size:13px;font-weight:500; }
+.connection-title>span { color:#526f94;font:10px var(--trace-mono); }
+.connection-title>button { margin-left:auto;background:none;border:0;color:#7d9fc9;font-size:10px;cursor:pointer; }
+.connection-controls { display:flex;align-items:flex-end;gap:12px; }
+.connection-controls label { display:flex;flex-direction:column;gap:6px;font-size:10px;color:#6985a8; }
+.connection-controls select,.connection-controls input,.connection-create input { background:#0d1623;border:1px solid #2d405b;border-radius:5px;color:#b2c9e9;padding:9px 10px;min-width:0;font-size:11px;outline:none; }
+.connection-controls select:focus,.connection-controls input:focus,.connection-create input:focus { border-color:#6dabae; }
+.run-id-field { flex:1; }.run-id-field input { width:100%;font-family:var(--trace-mono); }
+.connection-create { display:flex;gap:12px;margin-top:12px; }.connection-create input { flex:1; }
+.connection-note { color:#728bab;font-size:10px;line-height:1.8;margin:12px 0 0;overflow-wrap:anywhere; }.connection-note strong { margin-left:15px;color:#a2bddf;font-weight:400; }
+.connection-warning { color:#b29c70;font-size:10px;line-height:1.8;margin:8px 0 0; }
+.connection-error { color:#e3a1a8;font-size:11px;line-height:1.8;margin:12px 0 0; }.connection-error button { color:#8cbce8;border:0;background:none;cursor:pointer;margin-left:8px;font-size:10px; }
+.trace-empty { min-height:310px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:30px;color:#5e83ae;text-align:center; }.trace-empty h2 { color:#a9c2e1;font-size:17px;font-weight:400;margin:0; }.trace-empty p { color:#6480a3;font-size:11px;margin:0;line-height:1.8; }
+@media(max-width:700px){.backend-connection{padding:16px}.connection-title>span{display:none}.connection-controls{flex-wrap:wrap;gap:10px}.connection-controls label:first-child{width:100%}.connection-controls label:first-child select{width:100%}.connection-controls .run-id-field{width:100%;flex:auto}.connection-controls>.import-button{margin-left:auto}.connection-create{flex-wrap:wrap}.connection-create input{width:100%;flex:auto}.connection-create button{margin-left:auto}.connection-note strong{display:block;margin-left:0}.trace-empty{padding:25px 15px}.trace-empty p{font-size:10px}}
 .trace-studio { --trace-mono:'Cascadia Code','SFMono-Regular',Consolas,'Liberation Mono',monospace;min-height:100vh;background:radial-gradient(ellipse at 40% 0%,#14223944,transparent 55%),#0b1018;color:#cbd5e5;font-family:Inter,'Harmony Font','Microsoft YaHei',sans-serif;font-size:13px;line-height:1.5;color-scheme:dark; }
 .trace-studio * { box-sizing:border-box; }.trace-studio button,.trace-studio select { font-family:inherit; }.trace-studio button:focus-visible,.trace-studio select:focus-visible,.trace-studio a:focus-visible { outline:2px solid #61d1cf;outline-offset:4px; }.trace-studio button:disabled { opacity:.5;cursor:wait; }
 .studio-topbar { height:71px;border-bottom:1px solid #202a3b;display:flex;align-items:center;padding:0 34px;gap:18px;background:#101620b3; }.studio-brand { display:flex;align-items:center;gap:10px;color:#e5edf8;text-decoration:none; }.brand-symbol { display:grid;place-items:center;width:35px;height:35px;border-radius:10px;background:linear-gradient(145deg,#284369,#153241);color:#72d8dd;border:1px solid #355775; }.studio-brand strong { display:flex;align-items:baseline;gap:8px;font-weight:600;font-size:18px;letter-spacing:2px; }.studio-brand strong span { font:9px var(--trace-mono);letter-spacing:1.4px;color:#788da9; }.topbar-separator { height:20px;width:1px;background:#2b3545;margin:0 2px; }.studio-product { font-size:14px;font-weight:500;letter-spacing:.2px;color:#c0cde1; }.version-tag { padding:2px 5px;border:1px solid #344155;border-radius:4px;color:#8295b1;font:8px var(--trace-mono);letter-spacing:1px;margin-left:-10px; }.topbar-right { display:flex;align-items:center;gap:24px;margin-left:auto; }.local-status { display:flex;align-items:center;gap:7px;color:#7f91ab;font-size:11px; }.local-status i { width:5px;height:5px;border-radius:50%;background:#62bfa5;box-shadow:0 0 7px #62bfa522; }.avatar { width:29px;height:29px;border:1px solid #34415a;border-radius:50%;display:grid;place-items:center;background:#202f46;color:#9dbdeb;font:12px var(--trace-mono); }

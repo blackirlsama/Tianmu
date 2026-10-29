@@ -2,16 +2,37 @@
 
 Vue 3 视频平台与天幕运营助手，与仓库根目录的业务后端、`tianmu-agent/` 协作。
 
-## Trace Studio 第一版
+## Trace Studio：后端运行接入
 
-安装依赖并运行 `npm run serve` 后，打开开发服务器的 `/trace`（默认 `http://localhost:8080/trace`）。该页面无需登录和后端，可单独验收前端交互。
+安装依赖并运行 `npm run serve` 后，打开开发服务器的 `/trace`（默认 `http://localhost:8080/trace`）。页面默认等待后端连接，不会自动用演示数据替代读取失败的运行。
+
+### 接入实际运行
+
+1. 部署或本地启动包含 `GET /api/agent/runs/{runId}/trace` 的最新 Agent 后端。
+2. 前端 `.env.local` 中设置 `TIANMU_AGENT_PROXY_TARGET=http://你的Agent地址:8201`，修改后重启 `npm run serve`。生产环境通过已有 Nginx 同源代理 `/api/agent/`。
+3. 正常登录天幕网站，在 Trace 页面选择“使用天幕网站登录态”，输入该账号的运行 ID 加载。运营助手每次回复的“查看运行追踪”也会携带 runId 打开页面。
+4. 页面轮询读取实际已结束 Span；点击节点后，通过已有的鉴权 `trace-payloads` 接口按需加载脱敏输入输出。身份变化、切换来源和离开页面时会停止请求并清空详情缓存。
+
+### 免 Key 本地联调
+
+在仓库根目录执行（Java 17）：
+
+```powershell
+.\mvnw.cmd -B -f tianmu-agent/pom.xml package
+java -jar tianmu-agent/target/operations-agent-0.7.0-SNAPSHOT.jar
+```
+
+保持前端代理指向 `http://127.0.0.1:8201`。在 `/trace` 明确选择“本地免 Key 联调（demo-alice）”，点击“执行并追踪”。这会发出实际 HTTP 请求、创建后端任务并显示本次执行的真实日志，但默认模型和业务数据仍是模拟适配器，不计入场景 C 的真实模型评测。连接真实模型和业务数据需要队员在服务器配置 `deepseek,business,persistent` 等 Profile；模型密钥只放服务端。
+
+### 数据来源与边界
 
 - 深色三栏布局：运行信息、可缩放平移的调用图、节点详情。
 - 点击调用图、节点列表或时间线中的节点，联动查看输入、输出、耗时、状态、Token 和原始属性。
 - 下拉切换正常完成、工具超时两份**合成演示日志**；演示数据不作为场景 C 的实验结果。
 - 支持导入 Tianmu TraceEnvelope JSON 数组、JSONL，以及 `{ "spans": [...], "details": { "spanId": { "input": ..., "output": ... } } }` 格式。日志在浏览器本地解析，不上传。
 - 原始 JSONL 只有元数据和私有详情引用时，页面明确显示“未提供”，不会加载其他运行的演示输入输出。可用“下载示例日志”查看包含详情的格式。
-- 本版尚未连接在线 Trace 查询或详情接口。运行级 Token 使用汇总口径，不与子节点用量重复相加；缺失 Token 不记为 0，OTel `UNSET` 不记为业务成功。
+- 后端查询近期本实例已结束 Span（上限 20,000，保留 1 小时），每次返回至多 2,000 节点；file 模式可回读受轮转限制的文件归档。Kafka/OTLP 模式近期运行也可查询，跨实例和重启后的 Kafka 历史需另接 ClickHouse 查询适配器。无记录、截断或缺失详情均明确展示。
+- 运行级 Token 使用汇总口径，不与子节点用量重复相加；缺失 Token 不记为 0，OTel `UNSET` 不记为业务成功。
 
 核心代码：`src/views/trace/TraceWorkspace.vue`、`src/components/trace/` 和 `src/trace/`。数据解析检查包含在 `npm run test:agent` 中。
 

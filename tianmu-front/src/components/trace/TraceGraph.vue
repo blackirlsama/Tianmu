@@ -1,6 +1,6 @@
 <script setup>
 /* global defineProps, defineEmits */
-import { computed, nextTick, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { VueFlow, Handle, Position } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import { layoutTrace, formatDuration, statusLabel } from '@/trace/trace-data.mjs'
@@ -9,16 +9,29 @@ import TraceIcon from './TraceIcon.vue'
 const props = defineProps({ trace: { type: Object, required: true }, selectedId: String, mode: String })
 const emit = defineEmits(['select'])
 const instance = shallowRef(null)
-const nodes = computed(() => layoutTrace(props.trace.nodes).map((node) => ({ ...node, selected: node.id === props.selectedId })))
+const showAll = ref(false)
+const compact = computed(() => props.trace.nodes.length > 12 && !showAll.value)
+const visibleNodes = computed(() => {
+  if (!compact.value) return props.trace.nodes
+  const byId = new Map(props.trace.nodes.map((node) => [node.id, node]))
+  const selected = props.trace.nodes.filter((node) => node.name === 'agent.run' || ['MODEL', 'TOOL', 'DELIVERY'].includes(node.kind) || node.id === props.selectedId || ['FAILED', 'TIMED_OUT'].includes(node.status))
+  const ids = new Set(selected.map((node) => node.id))
+  return selected.map((node) => {
+    let parent = byId.get(node.parentId)
+    while (parent && !ids.has(parent.id)) parent = byId.get(parent.parentId)
+    return { ...node, parentId: parent?.id }
+  })
+})
+const nodes = computed(() => layoutTrace(visibleNodes.value).map((node) => ({ ...node, selected: node.id === props.selectedId })))
 const edges = computed(() => {
-  const ids = new Set(props.trace.nodes.map((node) => node.id))
+  const ids = new Set(visibleNodes.value.map((node) => node.id))
   const ancestors = new Set()
-  let cursor = props.trace.nodes.find((node) => node.id === props.selectedId)
+  let cursor = visibleNodes.value.find((node) => node.id === props.selectedId)
   while (cursor && ids.has(cursor.parentId)) {
     ancestors.add(`${cursor.parentId}-${cursor.id}`)
-    cursor = props.trace.nodes.find((node) => node.id === cursor.parentId)
+    cursor = visibleNodes.value.find((node) => node.id === cursor.parentId)
   }
-  return props.trace.nodes.filter((node) => ids.has(node.parentId)).map((node) => ({
+  return visibleNodes.value.filter((node) => ids.has(node.parentId)).map((node) => ({
     id: `${node.parentId}-${node.id}`, source: node.parentId, target: node.id,
     type: 'default', style: { stroke: ancestors.has(`${node.parentId}-${node.id}`) ? '#5b9cf6' : '#35465e', strokeWidth: ancestors.has(`${node.parentId}-${node.id}`) ? 2.3 : 1.5 },
   }))
@@ -28,15 +41,16 @@ const fit = () => instance.value?.fitView({ padding: 0.1, maxZoom: 1.05, duratio
 function ready(flow) { instance.value = flow; fit() }
 watch(() => props.trace.id, async () => { await nextTick(); fit() })
 watch(() => props.mode, async () => { await nextTick(); fit() })
+watch(() => [showAll.value, visibleNodes.value.length], async () => { await nextTick(); fit() })
 </script>
 
 <template>
   <section class="trace-graph-panel">
     <div class="graph-titlebar">
-      <div class="panel-title"><TraceIcon name="trace" :size="16" /><h2>调用图 <span>Trace Graph</span></h2><span class="node-count">{{ trace.nodes.length }} 节点</span></div>
+      <div class="panel-title"><TraceIcon name="trace" :size="16" /><h2>调用图 <span>Trace Graph</span></h2><span class="node-count">{{ visibleNodes.length }}{{ compact ? ` / ${trace.nodes.length}` : '' }} 节点</span><button v-if="trace.nodes.length > 12" type="button" class="graph-filter" @click="showAll = !showAll">{{ showAll ? '折叠辅助阶段' : '展开全部' }}</button></div>
       <div class="graph-legend"><span><i class="model-dot" />模型</span><span><i class="tool-dot" />工具</span><span><i class="stage-dot" />阶段</span></div>
     </div>
-    <div v-if="mode === 'graph'" class="graph-canvas">
+    <div v-if="mode === 'graph'" class="graph-canvas" :class="{ 'many-nodes': trace.nodes.length > 12 }">
       <VueFlow
         :key="trace.id" :nodes="nodes" :edges="edges" :min-zoom="0.15" :max-zoom="1.8"
         :nodes-draggable="false" :nodes-connectable="false" :edges-updatable="false" :elements-selectable="true"
@@ -52,7 +66,7 @@ watch(() => props.mode, async () => { await nextTick(); fit() })
           </div>
         </template>
       </VueFlow>
-      <div class="graph-caption"><i />连线表示父子调用关系</div>
+      <div class="graph-caption"><i />{{ compact ? '已折叠中间阶段 · 原始父节点见元信息' : '连线表示父子调用关系' }}</div>
       <div class="graph-controls">
         <button type="button" aria-label="缩小调用图" title="缩小" @click="instance?.zoomOut({ duration: 200 })"><TraceIcon name="minus" :size="16" /></button>
         <button type="button" aria-label="放大调用图" title="放大" @click="instance?.zoomIn({ duration: 200 })"><TraceIcon name="plus" :size="16" /></button>
@@ -75,9 +89,11 @@ watch(() => props.mode, async () => { await nextTick(); fit() })
 .graph-titlebar { padding:21px 22px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px; }
 .panel-title { display:flex;align-items:center;gap:9px;color:#91a7c4; }.panel-title h2 { margin:0;font-size:13px;font-weight:550;color:#d8e2f0;white-space:nowrap; }.panel-title h2 span { color:#687c98;font-size:11px;font-weight:400;margin-left:7px; }
 .node-count { margin-left:4px;font-size:10px;color:#788ba7;border:1px solid #293448;border-radius:4px;padding:3px 6px;white-space:nowrap; }
+.graph-filter { color:#83acdf;background:none;border:0;font-size:9px;white-space:nowrap;padding:3px;cursor:pointer; }.graph-filter:hover{color:#6dd8d1}
 .graph-legend { display:flex;gap:14px;font-size:10px;color:#8492a9; }.graph-legend span { display:flex;align-items:center;gap:5px; }.graph-legend i { width:5px;height:5px;border-radius:50%; }.model-dot{background:#729fff}.tool-dot{background:#5fc9be}.stage-dot{background:#8999b1}
 .graph-canvas { position:relative;flex:1;min-height:390px;background-image:radial-gradient(#31405670 .65px,transparent .65px);background-size:18px 18px; }
 .graph-canvas :deep(.vue-flow) { position:absolute;inset:0; }
+.graph-canvas.many-nodes { min-height:530px; }
 .trace-node { width:191px;box-sizing:border-box;background:#151f2e;border:1px solid #35445c;border-radius:9px;padding:12px 13px 10px;color:#b6c8e2;transition:border-color .18s,box-shadow .18s;cursor:pointer; }
 .node-top { display:flex;align-items:center;gap:8px; }.node-icon { display:flex;color:#829ab9; }.node-name { font:12px var(--trace-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }.node-status { width:5px;height:5px;flex-shrink:0;margin-left:auto;border-radius:50%;background:#6f8199; }.node-status.succeeded { background:#65bca5; }.node-status.failed,.node-status.timed_out { background:#f08e8b; }
 .node-bottom { display:flex;justify-content:space-between;gap:8px;margin-top:9px;align-items:center;font:9px var(--trace-mono);color:#7386a1; }.node-bottom span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }.node-bottom b { color:#a7b8ce;font-weight:400;white-space:nowrap; }

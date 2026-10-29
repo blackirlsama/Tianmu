@@ -16,6 +16,8 @@ query_audience 先用代码统计、合并完全相同的表达并保留原始 I
 
 向 create_danmaku_report 提交 evidence_id、当前 offset、topics_json，以及 video_evidence_id。topics_json 每项为 topic_key、title、observation、recommendation、sample_ids，最多10项且不能多于当前批次组数；sample_ids 必须覆盖当前批次全部 G 标识。每个主题在当前批次至少分到一个 G 标识；当前批次没有成员的旧主题不要提交，不要传空 sample_ids。工具会将未分配到主题的标识放入“其他讨论”，并按首次归属去除重复标识；正文保留全部原话。topic_key 可以使用 T1 至 T100，已有主题复用同一键，发现不同主题时新增键，不为凑主题数而拆散相关讨论。
 
+自动补入的“其他讨论”使用保留键 OTHER，与 T1 至 T100 独立；如后续批次需要复用 OTHER，其标题必须仍为“其他讨论”，不能用它命名其他主题。
+
 同一主题跨批次更新 observation 和 recommendation，保留已发现的不同需求与立场。作者发言参与覆盖核对但不是观众需求证据：作者发言可单列“作者补充与引导”，不把它改写成观众赞美或期待。reply_context 只供理解，不作为本批新互动重复计数。
 
 第一批获得视频证据时，至少一个相关主题提供 video_context 和真实 sampledAtMs 中的 video_at_ms。video_at_ms 必须是整数数组，即使只有一个位置也写成 `[1320]`，最多4个位置；不能写成单个数字。无法确认的地方直接说明画面不能证实；不把设备咨询写成拍摄缺陷。

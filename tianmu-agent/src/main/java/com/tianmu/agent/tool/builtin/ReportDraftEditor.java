@@ -67,7 +67,9 @@ final class ReportDraftEditor {
                 JsonNode refs=node.path("sample_ids");
                 if(!refs.isArray())throw new IllegalArgumentException();
                 if(refs.isEmpty()){((com.fasterxml.jackson.databind.node.ArrayNode)nodes).remove(n--);continue;}
-                String key=node.path("topic_key").asText();if(!key.matches(data.sources()==null?"T[1-6]":"T(?:[1-9]|[1-9][0-9]|100)") || keys.contains(key))throw new IllegalArgumentException();
+                String key=node.path("topic_key").asText();
+                boolean fallback=key.equals("OTHER") && node.path("title").asText().equals("其他讨论");
+                if(!(fallback || key.matches(data.sources()==null?"T[1-6]":"T(?:[1-9]|[1-9][0-9]|100)")) || keys.contains(key))throw new IllegalArgumentException();
                 var expanded=json.createArrayNode();
                 for(JsonNode ref:refs){
                     if(!ref.isTextual())throw new IllegalArgumentException();String supplied=ref.textValue();
@@ -87,11 +89,9 @@ final class ReportDraftEditor {
                 ObjectNode other=null;
                 for(JsonNode node:nodes)if(node.path("title").asText().equals("其他讨论")){other=(ObjectNode)node;break;}
                 if(other==null){
-                    String fallbackKey=null;for(int i=1;i<=100;i++)if(!keys.contains("T"+i)){fallbackKey="T"+i;break;}
-                    if(fallbackKey==null)throw new AgentException("INVALID_REPORT","No topic key remains for uncategorized records");
                     other=json.createObjectNode();other.put("title","其他讨论");
                     other.put("observation","本批次中未明确归入其他主题的零散互动，具体原话见下方。");other.put("recommendation","");other.set("sample_ids",json.createArrayNode());
-                    ((com.fasterxml.jackson.databind.node.ArrayNode)nodes).add(other);keys.add(fallbackKey);
+                    ((com.fasterxml.jackson.databind.node.ArrayNode)nodes).add(other);keys.add("OTHER");
                 }
                 var otherIds=(com.fasterxml.jackson.databind.node.ArrayNode)other.get("sample_ids");
                 for(String alias:missing){String member=aliases.get(alias);otherIds.add(member);assigned.add(member);}

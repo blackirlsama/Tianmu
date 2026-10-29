@@ -114,6 +114,21 @@ class ReportSkillFlowTest {
         assertEquals(1,progress.get().topics().stream().filter(t->t.title().equals("其他讨论")).count());
         assertEquals(2,progress.get().topics().stream().flatMap(t->t.sampleIds().stream()).distinct().count());
     }
+    @Test void fallbackTopicNeverRenamesPriorTopicsAndReusesItsOwnKeyAcrossBatches() throws Exception {
+        var data=data(120);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
+        tool.execute(batch(data,progress.get()),c);
+        for(int offset:List.of(40,80)){
+            var ids=java.util.stream.IntStream.range(offset,offset+39).mapToObj(index->"G"+(index+1)).toList();
+            String topics=json.writeValueAsString(Map.of("topics",List.of(Map.of("topic_key",offset==40?"T2":"T3","title","新的讨论","observation","观众的新反馈","recommendation","","sample_ids",ids))));
+            tool.execute(new ToolCall("create_danmaku_report",Map.of("evidence_id","ev_full","offset",offset,"topics_json",topics)),c);
+        }
+        var previous=progress.get().topics().stream().filter(topic->topic.id().equals("T1")).findFirst().orElseThrow();
+        assertEquals("小鸭的外观和日常受到喜爱",previous.title());assertEquals(40,previous.messages());
+        var others=progress.get().topics().stream().filter(topic->topic.title().equals("其他讨论")).toList();
+        assertEquals(1,others.size());assertEquals("OTHER",others.get(0).id());assertEquals(2,others.get(0).messages());
+        assertEquals(List.of(data.audience().corpus().get(79).id(),data.audience().corpus().get(119).id()),others.get(0).sampleIds());
+        assertEquals(120,progress.get().topics().stream().mapToLong(Topic::messages).sum());
+    }
     @Test void videoEvidenceMustActuallyBeConnectedToAReportTopicBeforeDraftCommit() throws Exception {
         var data=data(1);var progress=new AtomicReference<>(DanmakuClassification.empty());var c=context(data,progress);var tool=new CreateDanmakuReportTool(json);
         var video=new VideoContent.Facts("video-content-v1",1001,"v",0,5000,"黄色小鸭",List.of(new VideoContent.Moment(2500,"小鸭绒毛清晰可见")),"","SAMPLED_FRAMES",List.of(2500L),"vision",Instant.now());

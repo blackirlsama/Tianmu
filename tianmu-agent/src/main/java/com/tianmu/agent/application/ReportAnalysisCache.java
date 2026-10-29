@@ -37,7 +37,7 @@ public final class ReportAnalysisCache implements com.tianmu.agent.runtime.RunCo
     public ReportAnalysisCache(ObjectMapper json,String model,AnalysisCacheStore store,Clock clock) {
         this.json=json;this.store=store;this.clock=clock;
         entries=Caffeine.newBuilder().maximumSize(64).expireAfterWrite(store==null?Duration.ofHours(1):Duration.ofSeconds(30)).build();
-        StringBuilder resources=new StringBuilder("report-analysis-cache-v2\n").append(model);
+        StringBuilder resources=new StringBuilder("report-analysis-cache-v3\n").append(model);
         for(String path:List.of("skills/audience-report/SKILL.md",
                 "tools/create_danmaku_report/tool.json","prompts/harness/system.md"))
             resources.append('\n').append(ResourceFiles.text(new ClassPathResource(path),65536));

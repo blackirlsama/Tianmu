@@ -91,6 +91,13 @@ jobs:
           python-version: '3.12'
       - name: Generate ephemeral test signing key
         run: echo "JWT_SECRET_BASE64=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - name: Match the isolated database collation to production
+        env:
+          MYSQL_PWD: ci-only-test-password
+        run: >-
+          docker exec -e MYSQL_PWD "${{ job.services.mysql.id }}"
+          mysql -uroot -e
+          'ALTER DATABASE tianmu_ci_it CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;'
       - name: Verify business module against isolated services
         if: matrix.module == 'business'
         run: mvn -B -ntp verify

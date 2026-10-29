@@ -42,6 +42,13 @@ class MysqlStorageIntegrationTest {
         if (cache != null) cache.close(); if (source != null) source.close();
     }
     RunState create(String query) { RunState run = repository.create(query, owner, null, UUID.randomUUID().toString(), null).run(); sessions.add(run.sessionId); return run; }
+    @Test void conversationFocusForeignKeyColumnsMatchSessionCollations(){
+        for(String column:List.of("tenant_id","owner_user_id","session_id")){
+            String sessionCollation=db.queryForObject("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_session' AND COLUMN_NAME=?",String.class,column);
+            String focusCollation=db.queryForObject("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_conversation_focus' AND COLUMN_NAME=?",String.class,column);
+            assertNotNull(sessionCollation);assertEquals(sessionCollation,focusCollation,column);
+        }
+    }
     void faq(RunState run) {
         run.start(); run.prepared(new Result(Route.FAQ, new PreparedRequest(run.message, run.query(), Emotion.UNKNOWN, Set.of()), new FaqAnswer("fixture", "1", "approved"), null));
         assertTrue(run.succeed(run.reserveFinalResponse(), new Answer("approved", List.of()), StopReason.FAQ_ANSWER));
@@ -96,7 +103,7 @@ class MysqlStorageIntegrationTest {
         RunState run = repository.create("昨天有多少条弹幕？", owner, null, key, null, page).run();
         sessions.add(run.sessionId);
         assertEquals("昨天有多少条弹幕？", run.message);
-        assertTrue(run.query().contains("视频1001"));
+        assertEquals(run.message,run.query());assertEquals("1001",run.pageContext().videoId());
         assertEquals("1001", db.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(request_json,'$.context.videoId')) FROM agent_run WHERE run_id=?", String.class, run.id.toString()));
         faq(run);
         assertFalse(repository.create("昨天有多少条弹幕？", owner, null, key, null, page).fresh());
@@ -105,6 +112,7 @@ class MysqlStorageIntegrationTest {
         RunState restored = repository.load(run.id, owner);
         assertEquals(run.message, restored.message);
         assertEquals(run.query(), restored.query());
+        assertEquals("1001",restored.pageContext().videoId());
     }
     @Test void evidenceArtifactAndEventReplaySurviveRepositoryReconstruction() throws Exception {
         RunState run = create("metric"); run.start();
@@ -124,7 +132,11 @@ class MysqlStorageIntegrationTest {
         RunState original = create("private historical fixture"); faq(original); repository.deliverOutbox();
         var narrow = new AccessScope(owner.tenantId(), owner.userId(), Set.of(1002L));
         RunState next = repository.create("new", narrow, original.sessionId, null, null).run();
-        assertTrue(repository.memory(next).recent().isEmpty());
+        var messages=repository.memory(next).recent();assertEquals(2,messages.size());
+        assertEquals("user",messages.get(0).role());assertEquals(original.message,messages.get(0).text());
+        assertEquals("assistant",messages.get(1).role());assertEquals("[先前视频结果当前无权限，已隐藏]",messages.get(1).text());
+        assertTrue(messages.stream().noneMatch(message->message.text().equals("approved")));
+        assertEquals(messages,repository.memory(next).recent());
         assertEquals("FORBIDDEN", assertThrows(AgentException.class, () -> repository.load(original.id, narrow)).code());
         next.cancel();
     }

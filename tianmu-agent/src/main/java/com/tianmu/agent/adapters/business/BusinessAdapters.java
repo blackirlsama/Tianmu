@@ -25,8 +25,9 @@ import java.util.regex.Pattern;
 @Profile("business")
 @EnableConfigurationProperties(BusinessProperties.class)
 public class BusinessAdapters {
-    @Bean com.tianmu.agent.faq.ClasspathFaqPort businessFaq() {
-        return new com.tianmu.agent.faq.ClasspathFaqPort(new org.springframework.core.io.ClassPathResource("faq/business.json"), null);
+    @Bean com.tianmu.agent.faq.ClasspathFaqPort businessFaq(
+            @org.springframework.beans.factory.annotation.Value("${agent.faq.location:classpath:faq/business.json}") org.springframework.core.io.Resource resource) {
+        return new com.tianmu.agent.faq.ClasspathFaqPort(resource, null);
     }
     @Bean RemoteBusinessAdapter remoteBusinessAdapter(BusinessProperties properties, ObjectMapper json, ObjectProvider<ResourceScopeStore> repositories) {
         return new RemoteBusinessAdapter(properties, json, repositories);

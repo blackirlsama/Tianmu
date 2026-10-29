@@ -28,6 +28,8 @@ management:
         readiness:
           include: readinessState,agentStorage
 agent:
+  faq:
+    location: ${AGENT_FAQ_LOCATION:classpath:faq/business.json}
   qa:
     enabled: ${AGENT_QA_ENABLED:true}
     minimum-sessions: ${AGENT_QA_MINIMUM_SESSIONS:5}

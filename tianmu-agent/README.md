@@ -107,6 +107,14 @@ curl -s -H 'Authorization: Bearer demo-alice' \
 
 作者私有 Q&A 默认要求 5 个独立会话提供相同稳定回答，且答案占比至少 90%；达到阈值后自动加入，命中不消耗模型调用。内置 FAQ 优先，作者可查看积累、停用或重新学习。默认观察窗口 30 天，有效期 7 天；动态业务结果不应当作稳定问答复用。
 
+### 人工维护的固定问答
+
+生产默认读取 `src/main/resources/faq/business.json`，预置 15 条常见问答，覆盖使用入门、全量报告口径、视频采样限制、作者草稿确认、权限、对话承接及基础运营建议。这是人工预置内容，不表示已从线上日志统计出真实提问频率；不提供任何实时业务数值或个性化分析结论。
+
+每项包含 `id`、`version`、`questions`（匹配问法数组）、`text`（批准回答）。新增或修改内容只需编辑 JSON；修改回答时更新版本。匹配只去除输入首尾空白，其余必须与某个配置问法完全一致，因此常见改写及中英文问号应明确列入数组。不做关键词模糊命中，未命中时继续原有处理流程。删除条目即可停用；重复 ID、重复问法、空配置或无效 JSON 会在启动时拒绝加载，避免悄悄选错回答。固定问答优先于自动积累问答，命中后不调用准备模型或 Harness 模型。
+
+可用 `AGENT_FAQ_LOCATION` 或 `agent.faq.location` 指定外部文件，替换默认整份配置，例如 Linux 使用 `file:/opt/tianmu/faq/business.json`，Windows 使用 `file:C:/tianmu/config/business-faq.json`。文件须为 UTF-8 JSON 数组，大小不超过 64 KiB；缺失或错误时启动失败，不静默回退。Docker 中应将该文件只读挂载到容器并使用容器内路径，环境变量可写入现有 `agent.env`。配置在启动时加载，更新外部文件后需要重启 Agent；修改内置文件则需要重新打包部署。
+
 房间汇总复用视频、播放器与弹幕表，由作者主动开启。前端每 15 秒读取，服务端每个用户、视频和区间最多每 30 秒刷新；失败时保留上一次成功摘要并标明时间。当前没有独立直播接入或持久化的实时摘要历史。
 
 ## 代码分层与扩展位置
@@ -163,6 +171,8 @@ git diff --check
 ```
 
 默认测试不需要模型 Key，也不调用付费模型。真实存储测试需隔离 MySQL / Redis，并显式设置 `AGENT_STORAGE_IT=true`。
+
+隔离测试库须以 `utf8mb4 / utf8mb4_bin` 初始化，与 `deploy/site/compose.yaml` 中生产 MySQL 的配置一致；例如创建专用 `_it` 库后执行 `ALTER DATABASE tianmu_ci_it CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;`，再执行 Flyway。MySQL 8.4 的默认 `utf8mb4_0900_ai_ci` 会导致 V7 新表和 V1 会话表的外键列排序规则不兼容。CI 在迁移前显式设置临时库默认值，保留已经上线的 V7 文件及其校验和；不要对生产库运行测试初始化或盲目执行 Flyway repair。
 
 真实业务启用 `business,deepseek,persistent`，配置 `BUSINESS_BASE_URL`、模型凭据、Agent 数据库和私有对象存储；业务桥接使用与网站登录一致的 JWT 和 Redis 会话配置。完整环境变量模板在根目录 `.env.example`。
 

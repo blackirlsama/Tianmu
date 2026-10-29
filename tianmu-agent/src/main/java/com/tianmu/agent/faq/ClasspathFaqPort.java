@@ -10,7 +10,7 @@ import org.springframework.core.io.*;
 import org.springframework.stereotype.Component;
 import java.util.*;
 
-/** Demo-only exact FAQ matches. Production adapters still own visibility and approval rules. */
+/** Configured exact FAQ matches. Production adapters still own visibility and approval rules. */
 @Component
 @Profile("demo & !business")
 public class ClasspathFaqPort implements FaqPort {

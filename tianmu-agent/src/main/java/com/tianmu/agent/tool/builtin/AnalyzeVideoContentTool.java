@@ -21,6 +21,6 @@ public final class AnalyzeVideoContentTool implements AgentTool {
         var facts=context.videoQuery(control -> video.analyze(id,start,end,focus,context.scope(),control));
         Evidence evidence=context.registerVideoEvidence(facts);
         Map<String,Object> content=json.convertValue(facts,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
-        return new ToolResult(name(),Map.of("analysis",content,"evidence_id",evidence.id(),"limitations","Sampled frames can miss brief events. Playback time is distinct from danmaku creation time. Do not infer causation."),evidence.id());
+        return new ToolResult(name(),Map.of("analysis",content,"evidence_id",evidence.id(),"question",focus,"limitations","Generic sampled-frame facts are reused across questions. Answer the question using these facts; do not infer unseen details. Use a narrower playback interval only when needed. Playback time is distinct from creation time."),evidence.id());
     }
 }

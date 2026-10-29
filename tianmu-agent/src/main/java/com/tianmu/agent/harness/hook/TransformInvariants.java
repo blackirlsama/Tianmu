@@ -21,6 +21,9 @@ final class TransformInvariants {
         }
         if (value instanceof Decision decision) {
             require(decision.kind() != null);
+            var prior=(Decision)baseline;
+            if(decision.kind()==Kind.TOOL && prior.kind()==Kind.TOOL && decision.call()!=null && prior.call()!=null)
+                require(Objects.equals(decision.call().providerCallId(),prior.call().providerCallId()));
             switch (decision.kind()) {
                 case TOOL -> require(decision.call() != null && decision.answer() == null && decision.clarification() == null);
                 case ANSWER -> require(decision.answer() != null && decision.call() == null && decision.clarification() == null);
@@ -30,6 +33,7 @@ final class TransformInvariants {
         }
         if (value instanceof ToolCall call) {
             require(call.name() != null && call.name().equals(((ToolCall) baseline).name()));
+            require(Objects.equals(call.providerCallId(),((ToolCall)baseline).providerCallId()));
         }
         if (value instanceof ToolResult result) result((ToolResult) baseline, result);
         if (value instanceof ModelContext context) {

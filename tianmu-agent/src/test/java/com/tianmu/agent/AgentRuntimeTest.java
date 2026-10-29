@@ -99,7 +99,7 @@ class AgentRuntimeTest {
     }
     @Test void repeatedCallsStopLoop() {
         RunState run = run("x");
-        with(ctx -> Decision.tool("list_skills", Map.of())).execute(run);
+        with(ctx -> new Decision(Kind.TOOL,new ToolCall("list_skills",Map.of(),java.util.UUID.randomUUID().toString()),null,null)).execute(run);
         assertEquals("NO_PROGRESS", run.snapshot().errorCode());
     }
     @Test void unknownEvidenceIsRejected() {

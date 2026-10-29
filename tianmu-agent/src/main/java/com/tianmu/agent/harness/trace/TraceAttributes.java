@@ -26,6 +26,7 @@ public final class TraceAttributes {
             "context.history_removed", "context.schemas_removed", "context.byte_limit", "context.input_bytes", "context.output_bytes", "context.changed",
             "context.format", "context.history_messages", "context.classified_batches_released",
             "model.response_repaired", "model.validation_error",
+            "model.tool_protocol", "video.fact_strategy",
             "detail.input_ref", "detail.input_state", "detail.input_bytes", "detail.input_redacted",
             "detail.output_ref", "detail.output_state", "detail.output_bytes", "detail.output_redacted",
             "detail.provider_output_ref", "detail.provider_output_state", "detail.provider_output_bytes", "detail.provider_output_redacted",

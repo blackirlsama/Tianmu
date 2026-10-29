@@ -10,7 +10,7 @@ import javax.sql.DataSource;
 import java.time.Instant;
 import java.util.*;
 
-/** Cache keys include tenant, actor, source version, range, focus and model configuration. Authorization precedes every read. */
+/** Cache keys include tenant, actor, source version, range, generic extraction strategy and model configuration. Authorization precedes every read. */
 @Component
 public final class VideoContentCache {
 

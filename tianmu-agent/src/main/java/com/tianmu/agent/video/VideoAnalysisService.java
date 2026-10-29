@@ -20,6 +20,7 @@ import java.util.function.Supplier;
 @Component
 @EnableConfigurationProperties(VideoModelProperties.class)
 public final class VideoAnalysisService {
+    static final String FACT_FOCUS="提取通用画面事实：主体、场景、可见动作、构图及可见文字。按采样时间逐项记录，不围绕某个运营问题筛选，不提供建议。";
     private final VideoModelProperties config;
     private final ObjectProvider<VideoContentPort> ports;
     private final VideoContentCache cache;
@@ -57,17 +58,17 @@ public final class VideoAnalysisService {
         long from = start == null ? 0 : start, to = end == null ? source.durationMs() : end;
         if (from < 0 || to <= from || to > source.durationMs() || start != null && to-from > 120_000)
             throw new AgentException("INVALID_ARGUMENTS", "Explicit intervals must be inside the video and at most 120 seconds");
-        TraceAttributes.apply(Span.current(),Map.of("video.id",videoId,"video.source_version",source.sourceVersion(),"video.start_ms",from,"video.end_ms",to));
+        TraceAttributes.apply(Span.current(),Map.of("video.id",videoId,"video.source_version",source.sourceVersion(),"video.start_ms",from,"video.end_ms",to,"video.fact_strategy","generic_v4"));
         String key = hash(String.join("|", List.of(scope.tenantId(), scope.userId(), Long.toString(videoId), source.sourceVersion(),
-                Long.toString(from), Long.toString(to), focus, config.baseUrl().toString(), config.provider(), config.model(),
-                config.transcriptionModel(), "video-cache-v3").stream().map(VideoAnalysisService::hash).toList()));
+                Long.toString(from), Long.toString(to), config.baseUrl().toString(), config.provider(), config.model(),
+                config.transcriptionModel(), "video-facts-v4:sampled12:generic-v1",FACT_FOCUS).stream().map(VideoAnalysisService::hash).toList()));
         VideoContent.Facts prior = cache.get(key);
         TraceAttributes.apply(Span.current(),Map.of("video.cache_hit",prior != null));
         if (prior != null) { VideoAnalysisFlights.checkpoint(control); return prior; }
         VideoContent.Facts result = flights.run(key, control, () -> {
             VideoContent.Facts cached = cache.get(key);
             if (cached != null) return cached;
-            return analyzeUncached(videoId, from, to, focus, scope, source, port, key, control);
+            return analyzeUncached(videoId, from, to, FACT_FOCUS, scope, source, port, key, control);
         });
         VideoAnalysisFlights.checkpoint(control);
         VideoContent.Source current = stage("video.source", () -> port.source(videoId, scope, control));

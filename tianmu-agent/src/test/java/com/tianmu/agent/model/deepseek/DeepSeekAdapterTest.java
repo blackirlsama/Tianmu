@@ -27,6 +27,7 @@ class DeepSeekAdapterTest {
     final List<String> auth = new CopyOnWriteArrayList<>();
     @org.junit.jupiter.api.io.TempDir java.nio.file.Path detailDirectory;
     Function<JsonNode, String> answer = input -> "{\"kind\":\"CLARIFY\",\"clarification\":\"Date?\"}";
+    Function<JsonNode,Map<String,Object>> nativeAnswer;
     int status = 200;
     CountDownLatch entered, release;
     @BeforeEach void start() throws Exception {
@@ -36,8 +37,9 @@ class DeepSeekAdapterTest {
             auth.add(exchange.getRequestHeaders().getFirst("Authorization"));
             if (entered != null) entered.countDown();
             if (release != null) try { release.await(3, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            byte[] body = mapper.writeValueAsBytes(Map.of("choices", List.of(Map.of("finish_reason", "stop",
-                    "message", Map.of("content", answer.apply(request)))), "usage", Map.of("prompt_tokens", 10, "completion_tokens", 5)));
+            var message=nativeAnswer==null ? Map.<String,Object>of("content",answer.apply(request)):nativeAnswer.apply(request);
+            byte[] body = mapper.writeValueAsBytes(Map.of("choices", List.of(Map.of("finish_reason", message.containsKey("tool_calls")?"tool_calls":"stop",
+                    "message", message)), "usage", Map.of("prompt_tokens", 10, "completion_tokens", 5)));
             try { exchange.sendResponseHeaders(status, body.length); exchange.getResponseBody().write(body); }
             finally { exchange.close(); }
         });
@@ -50,16 +52,39 @@ class DeepSeekAdapterTest {
     CallControl control() { return new CallControl(Instant.now().plusSeconds(2), new CancellationToken()); }
     Input input() { return new Input("视频1001昨天的弹幕数", LocalDate.of(2026, 10, 21), new AccessScope("private-tenant", "private-user", Set.of(1001L))); }
     ModelContext context() { return new ModelContext(input().query(), input().businessDate(), input().scope(), Set.of(), List.of(), List.of(), 6); }
-    @Test void toolDecisionAcceptsLargeVideoIdAndEitherJsonFieldOrder() {
-        answer=request->"{\"call\":{\"name\":\"analyze_video_content\",\"arguments\":{\"video_id\":2114367144786530304,\"focus\":\"观众反馈中提到的画面、光线、背景、小鸭特写、环境安静程度等\"}},\"kind\":\"TOOL\"}";
+    ModelContext nativeContext(List<ToolResult> results,List<ToolExchange> exchanges) {
+        return new ModelContext(input().query(),input().businessDate(),input().scope(),Set.of(),results,
+                List.of(new ToolDefinition("analyze_video_content","video",Map.of("type","object","properties",Map.of("video_id",Map.of("type","integer"))))),6,false,"",null,null,com.tianmu.agent.core.MemoryTypes.View.empty(),exchanges);
+    }
+    @Test void nativeToolDefinitionsAndActualProviderIdSurviveTheNextTurn() {
+        nativeAnswer=request->Map.of("tool_calls",List.of(Map.of("id","provider-call-731","type","function","function",Map.of("name","analyze_video_content","arguments","{\"video_id\":2114367144786530304,\"focus\":\"观众反馈中提到的画面\"}"))));
         var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());
-        var decision=model.decide(context(),control());
+        var decision=model.decide(nativeContext(List.of(),List.of()),control());
         assertEquals(2114367144786530304L,((Number)decision.call().arguments().get("video_id")).longValue());
+        assertEquals("provider-call-731",decision.call().providerCallId());
+        assertEquals("analyze_video_content",requests.get(0).path("tools").get(0).path("function").path("name").asText());
+        assertFalse(requests.get(0).has("response_format"));assertFalse(requests.get(0).path("parallel_tool_calls").asBoolean());
+        nativeAnswer=null;answer=request->"{\"kind\":\"ANSWER\",\"answer\":{\"text\":\"已读取\",\"evidenceIds\":[]}}";
+        var result=new ToolResult(decision.call().name(),Map.of("summary","鸭子"),"ev_1");
+        model.decide(nativeContext(List.of(result),List.of(new ToolExchange(decision.call(),result))),control());
+        var messages=requests.get(1).path("messages");
+        assertEquals("provider-call-731",messages.get(messages.size()-2).path("tool_calls").get(0).path("id").asText());
+        assertEquals("provider-call-731",messages.get(messages.size()-1).path("tool_call_id").asText());
+        assertTrue(messages.get(messages.size()-2).path("content").asText().isEmpty());
+        assertNotEquals(new ToolCall("x",Map.of("a",1),"first"),new ToolCall("x",Map.of("a",1),"second"));
     }
     @Test void redundantRootClosingBracesAreRepairedWithoutAnotherProviderCall() {
         answer=request->"{\"kind\":\"CLARIFY\",\"clarification\":\"Date?\"}}}";
-        assertEquals("Date?",new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog()).decide(context(),control()).clarification());
+        assertEquals("Date?",client.complete(properties.preparationModel(),List.of(Map.of("role","user","content","JSON")),384,control()).path("clarification").asText());
         assertEquals(1,requests.size());
+    }
+    @Test void jsonToolDecisionsAndDsmlBodiesAreNeverExecutedAsNativeCalls() {
+        var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());
+        for(String invalid:List.of("{\"kind\":\"TOOL\",\"call\":{\"name\":\"analyze_video_content\",\"arguments\":{\"video_id\":1001}}}","{\"kind\":\"CLARIFY\",\"clarification\":\"x\"}<｜｜DSML｜｜tool_calls>")) {
+            answer=request->invalid;assertThrows(RuntimeException.class,()->model.decide(nativeContext(List.of(),List.of()),control()));
+        }
+        nativeAnswer=request->Map.of("tool_calls",List.of(Map.of("id","p1","type","function","function",Map.of("name","unregistered","arguments","{}"))));
+        assertEquals("INVALID_DECISION",assertThrows(AgentException.class,()->model.decide(nativeContext(List.of(),List.of()),control())).code());
     }
     @Test void repairNeverAcceptsDuplicateKeysOrTrailingData() {
         var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());

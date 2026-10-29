@@ -70,6 +70,20 @@ class VideoAnalysisServiceTest {
             verifyNoInteractions(http);
         }
     }
+    @Test void differentlyWordedQuestionsReuseGenericFactsAndStillReauthorize() {
+        var beans=new StaticListableBeanFactory();var authorizations=new AtomicInteger();beans.addBean("video",port(authorizations));
+        var vision=mock(VisionModelPort.class);
+        when(vision.understand(any(),eq(VideoAnalysisService.FACT_FOCUS),anyString(),any())).thenReturn(JSON.createObjectNode().put("summary","角色在草地上").set("moments",JSON.createArrayNode().add(JSON.createObjectNode().put("atMs",500).put("observation","草地上的角色"))));
+        var service=new VideoAnalysisService(new VideoModelProperties(true,"compatible",URI.create("https://vision.example"),"key","vision",""),beans.getBeanProvider(VideoContentPort.class),new VideoContentCache(beans.getBeanProvider(javax.sql.DataSource.class),JSON),OpenTelemetry.noop().getTracer("test"),vision,mock(TranscriptionPort.class),new VideoAnalysisFlights());
+        var first=service.analyze(7,null,null,"下一条视频给我灵感",owner("1"),control());
+        assertEquals(first,service.analyze(7,null,null,"就是现在的视频，换个措辞问灵感",owner("1"),control()));
+        verify(vision,times(1)).understand(any(),eq(VideoAnalysisService.FACT_FOCUS),anyString(),any());
+        assertEquals(3,authorizations.get());
+        assertEquals("FORBIDDEN",assertThrows(AgentException.class,()->service.analyze(7,null,null,"同一个问题",new AccessScope("tenant","1",Set.of()),control())).code());
+        service.analyze(7,null,null,"另一个作者",owner("2"),control());
+        service.analyze(7,0L,700L,"新片段",owner("1"),control());
+        verify(vision,times(3)).understand(any(),eq(VideoAnalysisService.FACT_FOCUS),anyString(),any());
+    }
     @Test void transcriptionWithoutUsageRetainsBudgetAndPreventsVisionDispatch() {
         VideoContentPort port = new VideoContentPort() {
             public VideoContent.Source source(long id, AccessScope scope, CallControl c) { return new VideoContent.Source(id, VERSION, 1000); }

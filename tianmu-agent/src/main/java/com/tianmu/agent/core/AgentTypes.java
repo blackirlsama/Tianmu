@@ -14,7 +14,8 @@ public final class AgentTypes {
         public AccessScope(String tenantId, String userId, Set<Long> videoIds) { this(tenantId, userId, videoIds, ""); }
         public AccessScope { videoIds = Set.copyOf(videoIds); authorizationRef = authorizationRef == null ? "" : authorizationRef; }
     }
-    public record ToolCall(String name, Map<String, Object> arguments) {
+    public record ToolCall(String name, Map<String, Object> arguments, String providerCallId) {
+        public ToolCall(String name,Map<String,Object> arguments) { this(name,arguments,null); }
         public ToolCall { arguments = ImmutablePayload.map(arguments); }
     }
     public record AnswerNote(String label, String text, Instant updatedAt, String timezone) {}

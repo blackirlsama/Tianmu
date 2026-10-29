@@ -6,7 +6,7 @@
   },
   {
     "id": "common.current-focus-boundary",
-    "version": "2.0.1",
+    "version": "2.1.0",
     "path": "common/current-focus-boundary.md"
   },
   {
@@ -26,7 +26,7 @@
   },
   {
     "id": "harness.system",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "path": "harness/system.md"
   },
   {

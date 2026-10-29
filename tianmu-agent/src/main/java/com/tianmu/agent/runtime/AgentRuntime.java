@@ -30,7 +30,7 @@ public class AgentRuntime {
         final Set<ToolCall> successfulCalls = new HashSet<>();
         String failingTool;
         int consecutiveFailures;
-        void success(ToolCall call) { successfulCalls.add(call); failingTool = null; consecutiveFailures = 0; }
+        void success(ToolCall call) { successfulCalls.add(new ToolCall(call.name(),call.arguments())); failingTool = null; consecutiveFailures = 0; }
         int failure(String name) {
             consecutiveFailures = name.equals(failingTool) ? consecutiveFailures + 1 : 1;
             failingTool = name;
@@ -152,7 +152,7 @@ public class AgentRuntime {
                 TraceDetails.input(call);
                 ToolCall actual = harness.transform(run, TransformPoint.TOOL_CALL, call);
                 executed.set(actual);
-                if (progress.successfulCalls.contains(actual)) throw new AgentException("NO_PROGRESS", "Repeated successful tool call");
+                if (progress.successfulCalls.contains(new ToolCall(actual.name(),actual.arguments()))) throw new AgentException("NO_PROGRESS", "Repeated successful tool call");
                 ToolResult raw = tools.execute(actual, run);
                 ToolResult admitted = harness.transform(run, TransformPoint.TOOL_RESULT, raw);
                 progress.success(actual);

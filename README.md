@@ -111,7 +111,7 @@ Agent 是独立的 Spring Boot 服务，分为**前置处理**和 **Harness Loop
 
 ### 前置处理：从用户请求到执行任务
 
-请求先经过身份与访问校验。常见问答可以直接返回；其他请求加载会话历史、补全当前视频信息，再解析任务和检查条件。条件不足时向用户澄清，条件齐全时组装执行任务。
+请求先经过身份与访问校验。常见问答可以直接返回；其他请求加载会话历史、补全当前视频信息，再解析任务和检查条件。按配置也可以启用模型辅助的问题理解、意图识别和情绪识别。条件不足或存在冲突时向用户澄清，条件齐全时组装执行任务。
 
 ```mermaid
 flowchart TB
@@ -119,19 +119,25 @@ flowchart TB
     Access --> FAQ{"常见问答命中？"}
     FAQ -->|是| Answer["直接返回回答"]
     FAQ -->|否| Memory["准备上下文<br/>对话历史 / 视频信息 / 当前目标"]
-    Memory --> Understand["任务解析与条件检查<br/>规则优先，模型辅助按配置启用"]
+    Memory --> Understand["规则解析与条件检查"]
+    Memory -. 模型辅助模式 .-> Assist["问题理解 / 意图识别<br/>情绪识别：可选"]
+    Assist -. 候选结果回验 .-> Understand
     Understand --> Ready{"执行条件是否齐全？"}
-    Ready -->|需要补充| Clarify["向用户澄清"]
+    Ready -->|条件缺失或冲突| Clarify["返回澄清问题<br/>等待用户补充"]
+    Clarify --> Supplement["用户补充信息"]
+    Supplement -->|同一会话的新请求| Request
     Ready -->|可以执行| Task["组装 PreparedTask<br/>固定任务目标、范围与资源版本"]
     Task --> Enter["进入 Harness Loop"]
 
     classDef preparation fill:#e8f1ff,stroke:#4f7db8,color:#1c3555
     classDef decision fill:#fff4de,stroke:#b99340,color:#58451d
     classDef result fill:#e6f5ef,stroke:#55977d,color:#234b3d
-    class Request,Access,Memory,Understand preparation
+    class Request,Access,Memory,Understand,Assist preparation
     class FAQ,Ready decision
-    class Answer,Clarify,Task,Enter result
+    class Answer,Clarify,Supplement,Task,Enter result
 ```
+
+默认采用规则路由，跳过前置模型调用；情绪识别默认关闭。模型辅助准备的结果仍须经过条件校验，不会直接改变用户权限或任务范围。
 
 ### Harness Loop：模型决策与工具结果形成闭环
 
@@ -157,21 +163,24 @@ flowchart TB
         Observation -->|结果回流，开始下一轮| Context
     end
 
-    Decision -->|回答 / 澄清| Delivery["结果交付<br/>文本回答 / 澄清问题 / 报告链接"]
+    Decision -->|ANSWER| Delivery["结果交付<br/>文本回答 / 报告链接"]
+    Decision -->|CLARIFY| Clarify["返回澄清问题<br/>等待用户补充后重新准备"]
     Observation -->|工具已生成最终产物| Delivery
     Delivery --> Client["作者助手<br/>SSE 进度与结果展示"]
+    Clarify --> Client
 
     classDef core fill:#f0ecff,stroke:#8971bc,color:#382b59
     classDef tool fill:#e6f5ef,stroke:#55977d,color:#234b3d
     classDef result fill:#e8f1ff,stroke:#4f7db8,color:#1c3555
     class Context,Model,Decision core
     class Tools,Execute,Observation tool
-    class Task,Delivery,Client result
+    class Task,Delivery,Clarify,Client result
 ```
 
 | 组件 | 职责 |
 | --- | --- |
-| 前置处理 | 完成身份校验、FAQ 路由、上下文准备与任务条件检查 |
+| 前置处理 | 完成身份校验、FAQ 路由、上下文准备与任务条件检查；按配置启用意图、理解和情绪识别 |
+| 澄清 | 在准备阶段或模型决策中发现需要补充的信息，返回问题，待用户回复后继续处理 |
 | PreparedTask | 将准备结果固定为明确的执行目标、数据范围和资源版本 |
 | Harness | 组织每轮上下文、模型决策、工具调用与结果反馈，控制执行边界 |
 | 模型适配器 | 对接文本与视频模型，负责理解和决策 |

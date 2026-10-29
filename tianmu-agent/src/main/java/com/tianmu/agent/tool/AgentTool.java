@@ -11,6 +11,8 @@ public interface AgentTool {
     /** Business tools are hidden by default. Exposure never grants access to business data. */
     default Exposure exposure() { return Exposure.SKILL; }
     default boolean canActivateSkills() { return false; }
+    /** Independent reads may share one model turn. Workflow mutations remain strictly single-call. */
+    default boolean batchable() { return false; }
     default ToolDefinition describe(ToolDefinition declared, SkillCatalog skills) { return declared; }
     ToolResult execute(ToolCall call, ToolContext context);
 }

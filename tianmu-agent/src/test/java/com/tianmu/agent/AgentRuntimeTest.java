@@ -102,6 +102,20 @@ class AgentRuntimeTest {
         with(ctx -> new Decision(Kind.TOOL,new ToolCall("list_skills",Map.of(),java.util.UUID.randomUUID().toString()),null,null)).execute(run);
         assertEquals("NO_PROGRESS", run.snapshot().errorCode());
     }
+    @Test void unsafeNativeBatchIsRejectedBeforeActivatingAnySkill() {
+        RunState run=run("x");
+        with(ctx->new Decision(Kind.TOOL,new ToolCall("read_skill",Map.of("name","video-content"),"p1","g"),null,null,
+                List.of(new ToolCall("list_skills",Map.of(),"p2","g")))).execute(run);
+        assertEquals("INVALID_DECISION",run.snapshot().errorCode());assertTrue(run.execution().activeSkills().isEmpty());assertTrue(run.execution().observations().isEmpty());
+    }
+    @Test void independentNativeBatchExecutesBothReadsBeforeAnotherModelCall() {
+        var dispatcher=org.mockito.Mockito.mock(ToolDispatcher.class);var seen=new ArrayList<String>();
+        org.mockito.Mockito.when(dispatcher.definitions(org.mockito.ArgumentMatchers.any(RunState.class))).thenReturn(List.of(new ToolDefinition("read_a","",Map.of()),new ToolDefinition("read_b","",Map.of())));
+        org.mockito.Mockito.when(dispatcher.execute(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any())).thenAnswer(invocation->{ToolCall call=invocation.getArgument(0);seen.add(call.name());return new ToolResult(call.name(),Map.of(),null);});
+        var a=new ToolCall("read_a",Map.of(),"p1","g");var b=new ToolCall("read_b",Map.of(),"p2","g");RunState run=run("x");
+        new AgentRuntime(ctx->ctx.observations().isEmpty()?new Decision(Kind.TOOL,a,null,null,List.of(b)):Decision.clarify("已读取，请补充重点"),dispatcher,harness).execute(run);
+        assertEquals(List.of("read_a","read_b"),seen);assertEquals(2,run.execution().observations().size());assertEquals(2,run.snapshot().modelCalls());assertEquals(Status.NEEDS_INPUT,run.snapshot().status());
+    }
     @Test void unknownEvidenceIsRejected() {
         RunState run = run("x");
         with(ctx -> Decision.answer("unsupported", List.of("ev_forged"))).execute(run);

@@ -66,7 +66,7 @@ public final class DeepSeekClient {
             Map<String,Object> requestBody=new LinkedHashMap<>();
             requestBody.put("model",model);requestBody.put("messages",messages);requestBody.put("thinking",Map.of("type","disabled"));
             requestBody.put("temperature",0);requestBody.put("stream",false);requestBody.put("max_tokens",maxTokens);
-            if(nativeTools==null || nativeTools.isEmpty())requestBody.put("response_format",Map.of("type","json_object"));
+            if(nativeTools==null)requestBody.put("response_format",Map.of("type","json_object"));
             if(nativeTools!=null && !nativeTools.isEmpty()) {
                 requestBody.put("tools",nativeTools.stream().map(t->Map.of("type","function","function",Map.of("name",t.name(),"description",t.description(),"parameters",t.inputSchema()))).toList());
                 requestBody.put("tool_choice","auto");requestBody.put("parallel_tool_calls",false);
@@ -90,7 +90,8 @@ public final class DeepSeekClient {
             if (!"stop".equals(choice.path("finish_reason").asText())) throw unavailable();
             JsonNode content = choice.path("message").path("content");
             if (!content.isTextual() || content.textValue().isBlank()) throw unavailable();
-            JsonNode result = nativeTools==null ? responseObject(content.textValue()) : mapper.readTree(content.textValue());
+            if(nativeTools!=null)return choice.path("message");
+            JsonNode result = responseObject(content.textValue());
             if (result == null || !result.isObject()) throw unavailable();
             return result;
         } catch (AgentException e) { throw e; }

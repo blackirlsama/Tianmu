@@ -13,6 +13,7 @@ public final class QueryAudienceTool implements AgentTool {
     private final ObjectProvider<AudienceQueryPort> ports;
     public QueryAudienceTool(ObjectProvider<AudienceQueryPort> ports){this.ports=ports;}
     public String name(){return "query_audience";}
+    public boolean batchable(){return true;}
     public ToolResult execute(ToolCall call,ToolContext context){
         var query=new DanmakuTypes.Query(ToolArguments.integer(call,"video_id"),LocalDateTime.parse(ToolArguments.text(call,"start")),LocalDateTime.parse(ToolArguments.text(call,"end")));
         context.checkDanmakuQuery(query);var port=ports.getIfAvailable();

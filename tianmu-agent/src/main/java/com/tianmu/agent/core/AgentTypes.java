@@ -14,8 +14,9 @@ public final class AgentTypes {
         public AccessScope(String tenantId, String userId, Set<Long> videoIds) { this(tenantId, userId, videoIds, ""); }
         public AccessScope { videoIds = Set.copyOf(videoIds); authorizationRef = authorizationRef == null ? "" : authorizationRef; }
     }
-    public record ToolCall(String name, Map<String, Object> arguments, String providerCallId) {
-        public ToolCall(String name,Map<String,Object> arguments) { this(name,arguments,null); }
+    public record ToolCall(String name, Map<String, Object> arguments, String providerCallId,String providerGroupId) {
+        public ToolCall(String name,Map<String,Object> arguments) { this(name,arguments,null,null); }
+        public ToolCall(String name,Map<String,Object> arguments,String id) { this(name,arguments,id,null); }
         public ToolCall { arguments = ImmutablePayload.map(arguments); }
     }
     public record AnswerNote(String label, String text, Instant updatedAt, String timezone) {}
@@ -26,7 +27,9 @@ public final class AgentTypes {
             dataNotes = dataNotes == null ? List.of() : List.copyOf(dataNotes);
         }
     }
-    public record Decision(Kind kind, ToolCall call, Answer answer, String clarification) {
+    public record Decision(Kind kind, ToolCall call, Answer answer, String clarification,List<ToolCall> additionalCalls) {
+        public Decision(Kind kind,ToolCall call,Answer answer,String clarification) { this(kind,call,answer,clarification,List.of()); }
+        public Decision { additionalCalls=List.copyOf(additionalCalls); }
         public static Decision tool(String name, Map<String, Object> arguments) {
             return new Decision(Kind.TOOL, new ToolCall(name, arguments), null, null);
         }

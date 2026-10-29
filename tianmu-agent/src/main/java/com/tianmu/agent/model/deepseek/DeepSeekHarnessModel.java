@@ -29,13 +29,25 @@ final class DeepSeekHarnessModel implements ModelPort {
         try {
             if(result.path("tool_calls").isArray()) {
                 var calls=result.path("tool_calls");
-                if(calls.size()!=1)throw new IllegalArgumentException("Only one native call per step");
-                var nativeCall=calls.get(0);var call=nativeCall.path("function");String name=text(call,"name"),id=text(nativeCall,"id");
-                if(!"function".equals(text(nativeCall,"type")) || id.length()>160 || !id.matches("[A-Za-z0-9_.:-]+")
-                        || context.availableTools().stream().noneMatch(t->t.name().equals(name)))throw new IllegalArgumentException("Unknown native tool");
-                var args=client.toolArguments(text(call,"arguments"));
-                return new Decision(Kind.TOOL,new ToolCall(name,mapper.convertValue(args,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}),id),null,null);
+                if(calls.isEmpty() || calls.size()>4)throw new IllegalArgumentException("Native call batch too large");
+                var parsed=new ArrayList<ToolCall>();Set<String> ids=new HashSet<>();String group=calls.size()>1?text(calls.get(0),"id"):null;
+                for(var nativeCall:calls) {
+                    var call=nativeCall.path("function");String name=text(call,"name"),id=text(nativeCall,"id");
+                    if(!"function".equals(text(nativeCall,"type")) || id.length()>160 || !id.matches("[A-Za-z0-9_.:-]+") || !ids.add(id)
+                            || context.availableTools().stream().noneMatch(t->t.name().equals(name)))throw new IllegalArgumentException("Unknown native tool");
+                    var args=client.toolArguments(text(call,"arguments"));
+                    parsed.add(new ToolCall(name,mapper.convertValue(args,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}),id,group));
+                }
+                return new Decision(Kind.TOOL,parsed.get(0),null,null,parsed.subList(1,parsed.size()));
             }
+            String content=text(result,"content").strip();
+            if(content.contains("<｜｜DSML｜｜"))throw new IllegalArgumentException("Tool syntax in text response");
+            if(!content.startsWith("{") && !content.startsWith("[")) {
+                // The host attaches only evidence actually admitted in this run; the model need not copy opaque IDs.
+                var ids=context.observations().stream().map(ToolResult::evidenceId).filter(Objects::nonNull).distinct().toList();
+                return Decision.answer(content,ids);
+            }
+            result=client.toolArguments(content);
             return switch (text(result, "kind")) {
                 case "CLARIFY" -> { fields(result, "kind", "clarification"); yield Decision.clarify(text(result, "clarification")); }
                 case "ANSWER" -> {

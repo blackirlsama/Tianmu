@@ -39,6 +39,16 @@ public class ToolDispatcher {
         return registry.definitions(run.execution().activeSkills(), snapshotTools(run));
     }
     private Set<String> snapshotTools(RunState run) { return run.task() == null ? registry.names() : run.task().allowedTools(); }
+    public void checkBatch(List<ToolCall> calls,RunState run) {
+        if(calls.size()<2 || calls.size()>4)throw new AgentException("INVALID_DECISION","Native read batch must contain two to four calls");
+        Set<ToolCall> unique=new HashSet<>();
+        for(var call:calls) {
+            var tool=registry.admit(call.name(),run.execution().activeSkills(),snapshotTools(run));
+            if(!tool.batchable() || !unique.add(new ToolCall(call.name(),call.arguments())))
+                throw new AgentException("INVALID_DECISION","Only distinct independent reads can share a native tool batch");
+            ToolArguments.validate(call,registry.definition(call.name()));
+        }
+    }
     public ToolResult execute(ToolCall call, RunState run) {
         run.checkpoint();
         AgentTool tool = registry.admit(call.name(), run.execution().activeSkills(), snapshotTools(run));

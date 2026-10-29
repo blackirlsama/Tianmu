@@ -72,17 +72,24 @@ public final class HarnessContextBuilder {
         control.append(section("runtime",runtime)).append('\n');
         out.add(message("system",control.toString()));out.add(message("user",current));
         ArrayNode results=(ArrayNode)working.get("results");
-        for(int i=0;i<results.size();i++) {
-            ToolResult observed=context.observations().get(i);
-            ToolCall call=context.exchanges().stream().filter(e->e.result().equals(observed)).map(ToolExchange::call).findFirst()
-                    .orElse(new ToolCall(observed.tool(),Map.of()));
-            String id=call.providerCallId()==null ? "call_host_"+i:call.providerCallId();
-            out.add(Map.of("role","assistant","content","","tool_calls",List.of(Map.of("id",id,"type","function",
-                    "function",Map.of("name",call.name(),"arguments",encode(call.arguments()))))));
-            ObjectNode result=((ObjectNode)results.get(i)).deepCopy();result.remove("terminalAnswer");
-            out.add(Map.of("role","tool","tool_call_id",id,"content",encode(result)));
+        for(int i=0;i<results.size();) {
+            ToolCall first=call(context,i);int end=i+1;
+            if(first.providerGroupId()!=null)while(end<results.size() && first.providerGroupId().equals(call(context,end).providerGroupId()))end++;
+            List<Map<String,Object>> calls=new ArrayList<>();List<Map<String,Object>> replies=new ArrayList<>();
+            for(int j=i;j<end;j++) {
+                ToolCall call=call(context,j);String id=call.providerCallId()==null ? "call_host_"+j:call.providerCallId();
+                calls.add(Map.of("id",id,"type","function","function",Map.of("name",call.name(),"arguments",encode(call.arguments()))));
+                ObjectNode result=((ObjectNode)results.get(j)).deepCopy();result.remove("terminalAnswer");
+                replies.add(Map.of("role","tool","tool_call_id",id,"content",encode(result)));
+            }
+            out.add(Map.of("role","assistant","content","","tool_calls",calls));out.addAll(replies);i=end;
         }
         if(context.finalizing())out.add(message("system",context.systemDirective()));
         return out;
+    }
+    private ToolCall call(ModelContext context,int index) {
+        ToolResult observed=context.observations().get(index);
+        return context.exchanges().stream().filter(e->e.result().equals(observed)).map(ToolExchange::call).findFirst()
+                .orElse(new ToolCall(observed.tool(),Map.of()));
     }
 }

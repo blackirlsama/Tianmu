@@ -54,7 +54,7 @@ class DeepSeekAdapterTest {
     ModelContext context() { return new ModelContext(input().query(), input().businessDate(), input().scope(), Set.of(), List.of(), List.of(), 6); }
     ModelContext nativeContext(List<ToolResult> results,List<ToolExchange> exchanges) {
         return new ModelContext(input().query(),input().businessDate(),input().scope(),Set.of(),results,
-                List.of(new ToolDefinition("analyze_video_content","video",Map.of("type","object","properties",Map.of("video_id",Map.of("type","integer"))))),6,false,"",null,null,com.tianmu.agent.core.MemoryTypes.View.empty(),exchanges);
+                List.of(new ToolDefinition("analyze_video_content","video",Map.of("type","object","properties",Map.of("video_id",Map.of("type","integer")))),new ToolDefinition("query_audience","audience",Map.of("type","object"))),6,false,"",null,null,com.tianmu.agent.core.MemoryTypes.View.empty(),exchanges);
     }
     @Test void nativeToolDefinitionsAndActualProviderIdSurviveTheNextTurn() {
         nativeAnswer=request->Map.of("tool_calls",List.of(Map.of("id","provider-call-731","type","function","function",Map.of("name","analyze_video_content","arguments","{\"video_id\":2114367144786530304,\"focus\":\"观众反馈中提到的画面\"}"))));
@@ -64,9 +64,10 @@ class DeepSeekAdapterTest {
         assertEquals("provider-call-731",decision.call().providerCallId());
         assertEquals("analyze_video_content",requests.get(0).path("tools").get(0).path("function").path("name").asText());
         assertFalse(requests.get(0).has("response_format"));assertFalse(requests.get(0).path("parallel_tool_calls").asBoolean());
-        nativeAnswer=null;answer=request->"{\"kind\":\"ANSWER\",\"answer\":{\"text\":\"已读取\",\"evidenceIds\":[]}}";
+        nativeAnswer=null;answer=request->"已读取，这是基于画面的建议。";
         var result=new ToolResult(decision.call().name(),Map.of("summary","鸭子"),"ev_1");
-        model.decide(nativeContext(List.of(result),List.of(new ToolExchange(decision.call(),result))),control());
+        var finalDecision=model.decide(nativeContext(List.of(result),List.of(new ToolExchange(decision.call(),result))),control());
+        assertEquals("已读取，这是基于画面的建议。",finalDecision.answer().text());assertEquals(List.of("ev_1"),finalDecision.answer().evidenceIds());
         var messages=requests.get(1).path("messages");
         assertEquals("provider-call-731",messages.get(messages.size()-2).path("tool_calls").get(0).path("id").asText());
         assertEquals("provider-call-731",messages.get(messages.size()-1).path("tool_call_id").asText());
@@ -77,6 +78,19 @@ class DeepSeekAdapterTest {
         answer=request->"{\"kind\":\"CLARIFY\",\"clarification\":\"Date?\"}}}";
         assertEquals("Date?",client.complete(properties.preparationModel(),List.of(Map.of("role","user","content","JSON")),384,control()).path("clarification").asText());
         assertEquals(1,requests.size());
+    }
+    @Test void independentNativeCallsRemainOneAssistantMessageWithBothResults() {
+        nativeAnswer=request->Map.of("tool_calls",List.of(
+                Map.of("id","p1","type","function","function",Map.of("name","query_audience","arguments","{\"video_id\":1001}")),
+                Map.of("id","p2","type","function","function",Map.of("name","analyze_video_content","arguments","{\"video_id\":1001}"))));
+        var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());var d=model.decide(nativeContext(List.of(),List.of()),control());
+        assertEquals(1,d.additionalCalls().size());assertEquals("p1",d.call().providerGroupId());assertEquals("p1",d.additionalCalls().get(0).providerGroupId());
+        var first=new ToolResult("query_audience",Map.of("count",243),"ev_a");var second=new ToolResult("analyze_video_content",Map.of("summary","鸭子"),"ev_v");
+        nativeAnswer=null;answer=request->"结合画面的建议。";
+        var reply=model.decide(nativeContext(List.of(first,second),List.of(new ToolExchange(d.call(),first),new ToolExchange(d.additionalCalls().get(0),second))),control());
+        assertEquals(List.of("ev_a","ev_v"),reply.answer().evidenceIds());
+        var m=requests.get(1).path("messages");assertEquals(2,m.get(m.size()-3).path("tool_calls").size());
+        assertEquals("p1",m.get(m.size()-2).path("tool_call_id").asText());assertEquals("p2",m.get(m.size()-1).path("tool_call_id").asText());
     }
     @Test void jsonToolDecisionsAndDsmlBodiesAreNeverExecutedAsNativeCalls() {
         var model=new DeepSeekHarnessModel(client,properties,mapper,new PromptCatalog());
@@ -188,9 +202,10 @@ class DeepSeekAdapterTest {
         assertEquals(List.of("Bearer test-secret", "Bearer test-secret"), auth);
         assertEquals("deepseek-flash", requests.get(0).path("model").asText());
         assertEquals("deepseek-v4-pro", requests.get(1).path("model").asText());
+        assertEquals("json_object",requests.get(0).path("response_format").path("type").asText());
+        assertFalse(requests.get(1).has("response_format"));
         for (JsonNode request : requests) {
             assertEquals("disabled", request.path("thinking").path("type").asText());
-            assertEquals("json_object", request.path("response_format").path("type").asText());
             assertFalse(request.toString().contains("private-tenant")); assertFalse(request.toString().contains("private-user"));
         }
         assertFalse(properties.toString().contains("test-secret"));

@@ -132,7 +132,15 @@ public class AgentRuntime {
         Decision decision = decide(run, context);
         run.checkpoint();
         return switch (decision.kind()) {
-            case TOOL -> executeTool(run, context, decision.call(), progress);
+            case TOOL -> {
+                if(decision.additionalCalls().isEmpty())yield executeTool(run,context,decision.call(),progress);
+                var batch=new ArrayList<ToolCall>();batch.add(decision.call());batch.addAll(decision.additionalCalls());
+                tools.checkBatch(batch,run);
+                boolean done=false;
+                // Read batches share a model turn but execute serially under the existing deadline/budget controls.
+                for(var call:batch) { run.checkpoint();if(executeTool(run,context,call,progress)){done=true;break;} }
+                yield done;
+            }
             case CLARIFY -> { delivery.clarification(run, decision.clarification(), delivery.reserve(run)); yield true; }
             case ANSWER -> { delivery.answer(run, decision.answer(), delivery.reserve(run), StopReason.ANSWER); yield true; }
         };

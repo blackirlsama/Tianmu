@@ -25,7 +25,9 @@ export function createTraceClient({ getToken, fetchImpl = globalThis.fetch }) {
       const body = await response.json().catch(() => ({}))
       const messages = { 401: '登录态无效或已过期，请重新登录；本地 Demo 身份仅适用于默认 Demo 服务。',
         403: '当前账号没有查看该运行的权限。', 404: body.code === 'RUN_NOT_FOUND' ? '运行不存在、已过期或不属于当前账号。' : '后端尚未部署 Trace 查询接口，请更新并重启 Agent。',
-        503: '后端存储或业务服务暂不可用。', 429: '后端当前任务较多，请稍后重试。' }
+        503: body.code === 'MODEL_NOT_CONFIGURED' || /AI\s*模型尚未配置/.test(body.message || '')
+          ? '服务器尚未配置真实模型，Agent 服务未启用，请由部署管理员在服务端完成配置。'
+          : '后端存储或业务服务暂不可用。', 429: '后端当前任务较多，请稍后重试。' }
       const error = new Error(messages[response.status] || '后端请求失败，请检查运行参数和服务日志。')
       error.status = response.status
       throw error

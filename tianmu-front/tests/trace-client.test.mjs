@@ -31,3 +31,9 @@ test('reject cross-node references, traversal and unauthorized calls without gen
   const denied = createTraceClient({ getToken: () => 'session', fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({}) }) })
   await assert.rejects(denied.getTrace(runId), /没有查看/)
 })
+
+test('the deployed gateway model configuration gate is explained without a demo fallback', async () => {
+  const client = createTraceClient({ getToken: () => 'session', fetchImpl: async () => ({ ok: false, status: 503,
+    json: async () => ({ code: 503, message: 'AI 模型尚未配置，请联系部署管理员配置私有 API Key' }) }) })
+  await assert.rejects(client.getTrace(runId), /服务器尚未配置真实模型/)
+})

@@ -2,6 +2,8 @@
 
 打开 `/analysis`。文件只在当前标签页内存中解析，不上传、不保存至 localStorage。演示数据需要显式点击加载，且与非演示数据隔离。
 
+真实采集流程见 [`../../tianmu-agent/eval/real-collection.md`](../../tianmu-agent/eval/real-collection.md)。总览支持“读取后端已采集运行”（只读）及“保存评测 JSON”（可重新导入）；新的模型实验由 `scripts/collect_evaluation.py` 在私有配置和显式执行后采集。
+
 ## 推荐导入格式
 
 ```json

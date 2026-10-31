@@ -114,11 +114,13 @@ export function normalizeEvaluationRun(row, { source = '后端运行', demo = fa
   const input = { key: `${isDemo ? 'demo' : 'data'}:${runId}`, runId, taskId, taskName, model, modelVersion,
     modelLabel: modelVersion ? `${model} · ${modelVersion}` : model, conditionId,
     status, correct, basis: label(evaluation.basis || row.evaluationBasis, ''),
+    reviewerRef: label(evaluation.reviewerRef, ''), reviewedAt: label(evaluation.reviewedAt, ''),
     durationMs, totalTokens, usageComplete, toolCalls: number(row.toolCalls) ?? toolNodes?.length ?? null,
     errorType: label(row.errorType, errorNodes.find((n) => n.attributes['error.code'])?.attributes['error.code'] || (errorNodes.length ? '节点错误' : '')),
     hasError: typeof row.hasError === 'boolean' ? row.hasError : errorNodes.length > 0 || ['FAILED', 'TIMED_OUT'].includes(status),
     fixRounds: number(row.fixRounds), startMs: trace?.startMs ?? (typeof row.startedAt === 'string' && Number.isFinite(Date.parse(row.startedAt)) ? Date.parse(row.startedAt) : null),
-    demo: isDemo, source, trace, modelMode: row.modelMode || null, businessMode: row.businessMode || null }
+    demo: isDemo, source, trace, rawTrace: rawTrace || row.rawTrace || trace?.rawTrace || null,
+    modelMode: row.modelMode || null, businessMode: row.businessMode || null }
   if (trace) { trace.demo = isDemo; trace.runId = runId }
   return input
 }
@@ -166,6 +168,7 @@ export function datasetWarnings(runs) {
   const warnings = []
   if (!runs.length) return warnings
   if (runs.some((r) => r.demo)) warnings.push('当前为合成交互演示，所有数值仅用于预览，不能写入实验结论。')
+  if (new Set(runs.map((r) => r.modelLabel)).size < 2) warnings.push('当前范围只有一个模型；需要同任务下至少两个模型才能进行多模型比较。')
   if (runs.some((r) => r.taskId === '未标注任务')) warnings.push('部分运行未标注任务；补充 taskId 后才能比较同一任务。')
   if (runs.some((r) => r.conditionId === '条件未记录')) warnings.push('部分实验条件未记录，无法确认提示词、工具、预算和输入是否一致。')
   if (new Set(runs.map((r) => r.conditionId)).size > 1) warnings.push('当前包含多组实验条件；建议筛选同一条件后比较模型。')
@@ -203,4 +206,17 @@ export function exportSummaryCsv(runs) {
     return `"${text.replace(/"/g, '""')}"`
   }
   return '\uFEFF' + [columns.map(cell).join(','), ...runs.map((run) => columns.map((key) => cell(run[key])).join(','))].join('\r\n')
+}
+
+export function exportEvaluationDataset(runs, title = '多模型实验数据') {
+  if (!runs.length) throw new Error('没有可导出的运行。')
+  if (new Set(runs.map((run) => run.demo)).size > 1) throw new Error('演示与非演示数据不能混合导出。')
+  return JSON.stringify({ schemaVersion: 'tianmu-evaluation/1', title, demo: runs.every((run) => run.demo), runs: runs.map((run) => ({
+    runId: run.runId, taskId: run.taskId, taskName: run.taskName, model: run.model, modelVersion: run.modelVersion,
+    conditionId: run.conditionId, status: run.status, durationMs: run.durationMs, totalTokens: run.totalTokens,
+    usageComplete: run.usageComplete, toolCalls: run.toolCalls, errorType: run.errorType, hasError: run.hasError,
+    evaluation: { correct: run.correct, basis: run.basis, reviewerRef: run.reviewerRef || '', reviewedAt: run.reviewedAt || '' },
+    demo: run.demo, modelMode: run.modelMode, businessMode: run.businessMode,
+    trace: run.rawTrace || { spans: [], details: {} },
+  })) }, null, 2)
 }

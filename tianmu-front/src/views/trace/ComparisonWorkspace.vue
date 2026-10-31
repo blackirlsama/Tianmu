@@ -3,8 +3,9 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import TraceIcon from '@/components/trace/TraceIcon.vue'
 import EvaluationChart from '@/components/trace/EvaluationChart.vue'
+import EvaluationBackendImport from '@/components/trace/EvaluationBackendImport.vue'
 import { evaluationStore, setEvaluationDataset, resetEvaluationFilters } from '@/trace/evaluation-store'
-import { parseEvaluationFile, filterRuns, summarizeRuns, modelSummaries, datasetWarnings, findings, exportSummaryCsv } from '@/trace/evaluation-data.mjs'
+import { parseEvaluationFile, filterRuns, summarizeRuns, modelSummaries, datasetWarnings, findings, exportSummaryCsv, exportEvaluationDataset } from '@/trace/evaluation-data.mjs'
 import { createEvaluationDemo } from '@/trace/evaluation-demo.mjs'
 import { heatmapOption, boxplotOption, scatterOption, modelColor, TASK_SYMBOLS } from '@/trace/evaluation-charts.mjs'
 import { validTraceRunId } from '@/trace/trace-client.mjs'
@@ -84,6 +85,13 @@ function downloadTemplate() {
     toolCalls: null, evaluation: { correct: null, basis: '请填写人工标注或数据库对账规则' }, trace: { spans: [], details: {} },
   }] }, null, 2), 'tianmu-evaluation-template.json', 'application/json')
 }
+function saveDataset() {
+  try {
+    const content = exportEvaluationDataset(filtered.value, dataset.value?.title)
+    if (new Blob([content]).size > 30 * 1024 * 1024) throw new Error('数据包超过 30 MB，请筛选更小批次后导出。')
+    download(content, 'tianmu-evaluation-dataset.json', 'application/json')
+  } catch (failure) { error.value = failure.message }
+}
 </script>
 
 <template>
@@ -104,6 +112,7 @@ function downloadTemplate() {
         <span class="dataset-dot" /><strong>{{ dataset ? dataset.title : '尚未载入实验数据' }}</strong><span class="dataset-provenance">{{ dataset ? dataset.demo ? '合成演示 · 不作为实验结论' : '导入 / 会话数据 · 请核实采集来源' : '支持评测 JSON 与 Tianmu JSONL' }}</span>
         <div><button type="button" @click="loadDemo">{{ dataset?.demo ? '重新加载演示' : '查看交互演示' }}</button><button v-if="dataset" type="button" @click="setEvaluationDataset(null)">清空数据</button></div>
       </div>
+      <EvaluationBackendImport @loaded="setEvaluationDataset" />
 
       <section class="analysis-panel filter-panel" aria-label="实验筛选">
         <div class="filter-title"><TraceIcon name="filter" :size="16" /><h2>实验筛选</h2><span>{{ filtered.length }} / {{ allRuns.length }} 次运行</span><button type="button" @click="resetEvaluationFilters">重置筛选</button></div>
@@ -132,7 +141,7 @@ function downloadTemplate() {
 
         <section class="analysis-panel model-summary"><div class="section-heading"><h2>模型指标对照</h2><span>同一筛选范围 · 各指标标注实际样本量</span></div><div class="analysis-table-scroll"><table><thead><tr><th>模型</th><th>运行数</th><th>已评测正确率</th><th>耗时中位数 / s</th><th>平均完整 Token</th><th>平均工具次数</th><th>执行成功率</th></tr></thead><tbody><tr v-for="model in modelRows" :key="model.model"><td><button class="model-filter-button" type="button" @click="filters.models = [model.model]"><i :style="{ background: modelColor(model.model, models) }" />{{ model.model }}</button></td><td>{{ model.count }}</td><td>{{ ratio(model.accuracy) }}<small>n={{ model.evaluated }}</small></td><td>{{ model.medianMs == null ? '未提供' : (model.medianMs / 1000).toFixed(2) }}<small>n={{ model.durationCount }}</small></td><td>{{ model.meanTokens == null ? '未提供' : Math.round(model.meanTokens) }}<small>n={{ model.tokenCount }}</small></td><td>{{ model.meanTools?.toFixed(1) ?? '未提供' }}</td><td>{{ model.executionRate == null ? '未知' : ratio(model.executionRate) }}</td></tr></tbody></table></div><p class="chart-footnote">执行成功仅指程序终态；回答正确率仅使用明确评测标签，两者独立统计。</p></section>
 
-        <section class="analysis-panel run-section"><div class="section-heading"><div><h2>逐次运行记录 <span>{{ filtered.length }}</span></h2><p>选择一条运行核对评测依据，或打开调用图追踪执行过程。</p></div><div class="run-actions"><select v-model="sort" aria-label="运行排序"><option value="default">原始顺序</option><option value="slowest">耗时从高到低</option><option value="tokens">Token 从高到低</option><option value="errors">错误运行优先</option></select><button class="subtle-button" type="button" @click="download(exportSummaryCsv(filtered), 'tianmu-evaluation-filtered.csv', 'text/csv;charset=utf-8')"><TraceIcon name="download" :size="13" />导出筛选结果</button></div></div>
+        <section class="analysis-panel run-section"><div class="section-heading"><div><h2>逐次运行记录 <span>{{ filtered.length }}</span></h2><p>选择一条运行核对评测依据，或打开调用图追踪执行过程。</p></div><div class="run-actions"><button class="subtle-button" type="button" @click="saveDataset"><TraceIcon name="download" :size="13" />保存评测 JSON</button><select v-model="sort" aria-label="运行排序"><option value="default">原始顺序</option><option value="slowest">耗时从高到低</option><option value="tokens">Token 从高到低</option><option value="errors">错误运行优先</option></select><button class="subtle-button" type="button" @click="download(exportSummaryCsv(filtered), 'tianmu-evaluation-filtered.csv', 'text/csv;charset=utf-8')"><TraceIcon name="download" :size="13" />导出筛选结果</button></div></div>
           <div class="analysis-table-scroll"><table class="runs-table"><thead><tr><th>运行 ID / 任务</th><th>模型</th><th>运行状态</th><th>回答评测</th><th>耗时</th><th>Token</th><th>工具</th><th>联动</th></tr></thead><tbody><tr v-for="run in pageRows" :key="run.key" :class="{ selected: selectedKey === run.key }"><td><button type="button" class="run-id-button" @click="selectedKey = run.key">{{ run.runId }}<small>{{ run.taskName }}</small></button></td><td><span class="model-cell"><i :style="{ background: modelColor(run.modelLabel, models) }" />{{ run.modelLabel }}</span></td><td><span class="execution-badge" :class="run.status.toLowerCase()">{{ statusLabel(run.status) }}</span></td><td><span :class="{ 'verdict-correct': run.correct === true, 'verdict-wrong': run.correct === false }">{{ correctness(run) }}</span></td><td>{{ formatDuration(run.durationMs) }}</td><td>{{ formatValue(run.totalTokens) }}<small v-if="run.totalTokens != null && !run.usageComplete" class="partial-label">部分 / 未知</small></td><td>{{ run.toolCalls ?? '—' }}</td><td><button type="button" class="detail-link" :disabled="!run.trace && (!validTraceRunId(run.runId) || run.demo)" :aria-label="`查看运行 ${run.runId} 的调用详情`" @click="openRun(run)">{{ run.trace ? '调用详情' : validTraceRunId(run.runId) && !run.demo ? '后端追踪' : '无 Trace' }}<TraceIcon v-if="run.trace || validTraceRunId(run.runId)" name="arrow" :size="13" /></button></td></tr></tbody></table></div>
           <div class="pagination"><span>第 {{ page }} / {{ pages }} 页 · 每页 {{ pageSize }} 条</span><div><button type="button" :disabled="page <= 1" @click="page--">上一页</button><button type="button" :disabled="page >= pages" @click="page++">下一页</button></div></div>
           <div v-if="selected" class="selected-run-card"><div><span class="analysis-eyebrow">SELECTED RUN</span><h3>{{ selected.runId }}</h3><p>{{ selected.taskName }} · {{ selected.modelLabel }} · {{ selected.conditionId }}</p></div><div><span>评测依据</span><p>{{ selected.basis || '未记录；请在实验数据中补充 evaluation.basis。' }}</p><span>错误类型</span><p>{{ selected.errorType || '未标注错误类型' }}</p></div><button class="subtle-button" type="button" :disabled="!selected.trace && !validTraceRunId(selected.runId)" @click="openRun(selected)">打开运行详情<TraceIcon name="arrow" :size="14" /></button></div>

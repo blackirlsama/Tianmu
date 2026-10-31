@@ -169,6 +169,7 @@ async function loadBackend(create = false) {
             item.modelMode = data.modelMode
             item.businessMode = data.businessMode
             item.authMode = authMode.value
+            item.rawTrace = { spans: data.spans, details: {} }
             item.nodes.forEach((node) => {
               for (const direction of ['input', 'output']) {
                 const detail = detailCache.get(`${id}/${node[`${direction}Ref`]}`)

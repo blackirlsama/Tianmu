@@ -1,0 +1,17 @@
+{
+  "title": "场景 C 首轮真实模型试采集",
+  "conditionId": "same-prompts-tools-budget-data-v1",
+  "sourceRevision": "REPLACE_DEPLOYED_REVISION",
+  "repetitions": 3,
+  "maximumRuns": 18,
+  "runTimeoutSeconds": 180,
+  "targets": [
+    { "id": "model-a", "baseUrl": "http://127.0.0.1:18211/api/agent", "tokenEnv": "TIANMU_EVAL_TOKEN_A", "expectedModel": "REPLACE_MODEL_A", "modelVersion": "REPLACE_VERSION_A" },
+    { "id": "model-b", "baseUrl": "http://127.0.0.1:18212/api/agent", "tokenEnv": "TIANMU_EVAL_TOKEN_B", "expectedModel": "REPLACE_MODEL_B", "modelVersion": "REPLACE_VERSION_B" }
+  ],
+  "tasks": [
+    { "id": "metric-count-001", "name": "指标查询", "message": "查询视频 REPLACE_VIDEO_ID 在 REPLACE_DATE 的弹幕数。" },
+    { "id": "feedback-001", "name": "反馈分类", "message": "分析视频 REPLACE_VIDEO_ID 在 REPLACE_DATE 的弹幕反馈，按反馈类型分类并给出证据。" },
+    { "id": "report-001", "name": "报告生成", "message": "分析视频 REPLACE_VIDEO_ID 在 REPLACE_DATE 的弹幕并生成报告。" }
+  ]
+}

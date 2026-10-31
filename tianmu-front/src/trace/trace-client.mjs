@@ -11,7 +11,7 @@ export function tracePayloadPath(runId, spanId, direction, reference) {
 export function createTraceClient({ getToken, fetchImpl = globalThis.fetch }) {
   async function request(path, options = {}) {
     const token = getToken()?.trim()
-    if (!token) throw new Error('请先登录天幕网站，或明确选择本地 Demo 身份进行免 Key 联调。')
+    if (!token) throw Object.assign(new Error('请先登录天幕网站，或明确选择本地 Demo 身份进行免 Key 联调。'), { status: 401 })
     let response
     try {
       response = await fetchImpl(path, { ...options, credentials: 'same-origin', cache: 'no-store', headers: {

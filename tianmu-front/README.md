@@ -15,6 +15,8 @@ Vue 3 视频平台与天幕运营助手，与仓库根目录的业务后端、`t
 
 数据格式、缺失值口径及交互说明见 [`docs/evaluation-data.md`](docs/evaluation-data.md)。数据与私有节点内容仅留在当前标签页内存，不上传或存入 localStorage。
 
+真实数据接入：展开“读取后端已采集运行”，以网站登录态批量 GET 已有运行 ID（不创建模型请求）；“保存评测 JSON”可持久保存本次筛选结果及已有离线 Trace。新实验采集、已有 JSONL 打包和明确评分合并见 [`../tianmu-agent/eval/real-collection.md`](../tianmu-agent/eval/real-collection.md)。
+
 ## Trace Studio：后端运行接入
 
 安装依赖并运行 `npm run serve` 后，打开开发服务器的 `/trace`（默认 `http://localhost:8080/trace`）。页面默认等待后端连接，不会自动用演示数据替代读取失败的运行。

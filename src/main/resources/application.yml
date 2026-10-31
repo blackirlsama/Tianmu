@@ -41,6 +41,10 @@ minio:
   bucket-name: ${TIANMU_MINIO_BUCKET:tianmu-upload}
 netty:
   port: ${TIANMU_NETTY_PORT:9101}
+  danmaku-batch:
+    window-ms: ${TIANMU_DANMAKU_BATCH_WINDOW_MS:100}
+    max-items: ${TIANMU_DANMAKU_BATCH_MAX_ITEMS:50}
+    max-bytes: ${TIANMU_DANMAKU_BATCH_MAX_BYTES:16384}
 rocketmq:
   name-server: ${TIANMU_ROCKETMQ_NAMESERVER:127.0.0.1:9876}
   producer:

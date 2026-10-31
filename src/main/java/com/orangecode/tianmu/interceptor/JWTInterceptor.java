@@ -3,14 +3,12 @@ package com.orangecode.tianmu.interceptor;
 import java.util.Arrays;
 import java.util.List;
 
-import com.orangecode.tianmu.utils.JwtUtil;
 import com.orangecode.tianmu.application.CurrentUser;
+import com.orangecode.tianmu.application.SessionAuthentication;
 
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -18,7 +16,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class JWTInterceptor implements HandlerInterceptor {
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private SessionAuthentication sessionAuthentication;
 
 
     List<String> excludePaths = Arrays.asList(
@@ -47,7 +45,6 @@ public class JWTInterceptor implements HandlerInterceptor {
         request.removeAttribute(CurrentUser.ATTRIBUTE);
         // 从请求头中获取token
         String token = request.getHeader("Authorization");
-        if (token != null && token.startsWith("Bearer ")) token = token.substring(7);
 
         // Public image URLs are restricted by MediaController to registered image files.
         if (request.getRequestURI().startsWith("/api/media/")) return true;
@@ -57,22 +54,10 @@ public class JWTInterceptor implements HandlerInterceptor {
         }
 
         // 身份只在签名与在线会话均验证成功后写入请求上下文。
-        if (token != null && !token.isEmpty()) {
-            Claims claims = JwtUtil.parse(token);
-            if (claims != null && claims.getSubject() != null && claims.getSubject().matches("[1-9][0-9]{0,18}")) {
-                String id = claims.getSubject();
-                long userId;
-                try { userId = Long.parseLong(id); }
-                catch (NumberFormatException invalidSubject) {
-                    return unauthorized(response);
-                }
-                String userToken = redisTemplate.opsForValue().get(id);
-                boolean isToken = userToken != null && token.equals(userToken);
-                if (isToken) {
-                    request.setAttribute(CurrentUser.ATTRIBUTE, userId);
-                    return true;
-                }
-            }
+        Long userId = sessionAuthentication.authenticate(token);
+        if (userId != null) {
+            request.setAttribute(CurrentUser.ATTRIBUTE, userId);
+            return true;
         }
 
         return unauthorized(response);

@@ -12,4 +12,6 @@ public class WebSocketConstant {
     public static final Integer ONLINE_BULLET = 2;
 
     public static final Integer LOGIN_MESSAGE = 3;
+    public static final Integer ERROR_MESSAGE = 4;
+    public static final Integer ONLINE_BULLET_BATCH = 5;
 }

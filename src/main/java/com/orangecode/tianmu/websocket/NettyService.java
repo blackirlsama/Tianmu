@@ -17,13 +17,15 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.handler.traffic.ChannelTrafficShapingHandler;
 import io.netty.util.NettyRuntime;
+import io.netty.util.concurrent.*;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import com.orangecode.tianmu.application.SessionAuthentication;
+import com.orangecode.tianmu.application.VideoLookup;
 
 @Slf4j
 @Configuration
@@ -38,10 +40,15 @@ public class NettyService {
     private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
 
     private final EventLoopGroup workerGroup = new NioEventLoopGroup(NettyRuntime.availableProcessors() * 2);
+    // Redis, video lookups and MQ sends must not block socket IO threads.
+    private final EventExecutorGroup messageGroup = new DefaultEventExecutorGroup(4,
+            new DefaultThreadFactory("danmaku-business"), 1024, RejectedExecutionHandlers.reject());
 
     private final RocketMQProducer rocketMQProducer;
 
-    private final StringRedisTemplate stringRedisTemplate;
+    private final SessionAuthentication sessionAuthentication;
+    private final VideoLookup videoLookup;
+    private final RoomBatchBroadcaster roomBroadcasts;
 
     private Channel serverChannel;
 
@@ -75,12 +82,7 @@ public class NettyService {
                     @Override
                     protected void initChannel(SocketChannel socketChannel) {
                         ChannelPipeline pipeline = socketChannel.pipeline();
-                        pipeline.addLast(new IdleStateHandler(60, 0, 0, TimeUnit.SECONDS));
-                        pipeline.addLast(new HttpServerCodec());
-                        pipeline.addLast(new HttpObjectAggregator(65536));
-                        pipeline.addLast(new WebSocketServerProtocolHandler("/ws/bulletScreen", null, true, 65536, false, true));
-                        pipeline.addLast(new ChannelTrafficShapingHandler(1024 * 1024, 1024 * 1024));
-                        pipeline.addLast(new WebSocketHandler(rocketMQProducer, stringRedisTemplate));
+                        configurePipeline(pipeline, rocketMQProducer, sessionAuthentication, videoLookup, roomBroadcasts, messageGroup);
                     }
                 });
         serverChannel = serverBootstrap.bind(port).addListener(future -> {
@@ -93,15 +95,29 @@ public class NettyService {
     }
 
 
+    static void configurePipeline(ChannelPipeline pipeline, RocketMQProducer producer,
+                                  SessionAuthentication authentication, VideoLookup videos, RoomBatchBroadcaster broadcasts,
+                                  EventExecutorGroup executor) {
+        pipeline.addLast(new IdleStateHandler(60, 0, 0, TimeUnit.SECONDS));
+        pipeline.addLast(new HttpServerCodec());
+        pipeline.addLast(new HttpObjectAggregator(65536));
+        pipeline.addLast(new WebSocketServerProtocolHandler("/ws/bulletScreen", null, true, 65536, false, true));
+        pipeline.addLast(new ChannelTrafficShapingHandler(1024 * 1024, 1024 * 1024));
+        pipeline.addLast(executor, new WebSocketHandler(producer, authentication, videos, broadcasts));
+    }
+
     @PreDestroy
     public void destroy() {
 
         if (serverChannel != null) {
-            serverChannel.close();
+            serverChannel.close().syncUninterruptibly();
         }
 
-        workerGroup.shutdownGracefully();
-        bossGroup.shutdownGracefully();
+        roomBroadcasts.close();
+        // Pipeline removal may hop from business executors back to socket IO executors.
+        messageGroup.shutdownGracefully().syncUninterruptibly();
+        workerGroup.shutdownGracefully().syncUninterruptibly();
+        bossGroup.shutdownGracefully().syncUninterruptibly();
     }
 
 }

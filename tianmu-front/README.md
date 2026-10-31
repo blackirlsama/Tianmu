@@ -63,3 +63,9 @@ npm run build
 Vue 开发代理不进入生产产物。生产 Web 服务器需分别代理 `/api/agent/` 和 `/api/`，并为 `/agent` 配置 SPA 回退。可参考 [`deploy/nginx.frontend.conf`](../deploy/nginx.frontend.conf)：复制构建产物到 Nginx 静态目录，将 upstream 地址改成实际业务和 Agent 地址。
 
 SSE 代理需关闭缓存和缓冲，读取超时应大于服务端 60 秒的订阅周期。生产 WebSocket 默认使用网站同源的 `/ws/bulletScreen/`，跟随页面选择 `ws` 或 `wss`。连接独立 WebSocket 域名时，可在构建前设置 `VUE_APP_DANMU_WS_BASE_URL`。后端代理地址改变不需要重新编译；`VUE_APP_` 变量在构建时写入产物。
+
+弹幕连接允许游客接收，发送必须在私有 JSON 帧中带 `authorization`（当前网站 Token）、`videoId`、`content`、`playbackTime`，不在 URL 中携带凭据。后端逐条校验 JWT 与 Redis 当前会话，发送者从凭证取得，视频从连接房间取得；只向未删除、已发布的视频入队。消息 type=3 表示登录失效，type=4 表示参数或发送失败，不清除正常登录态。消息队列和广播不包含 Token。此协议需要前后端一起发布，旧页面需刷新后才能发送；不支持仅凭客户端 userId 发弹幕。浏览器自动响应标准 Ping/Pong 心跳。
+
+房间增量广播使用 `type=5, data=[...]` 批次，每条记录保留原 `bulletId`、`userId`、`text` 和 `playbackTime`。前端一次追加批次中的列表数据，将他人弹幕交给播放器批量追加；同批包含自己的弹幕时继续使用现有发送回显标记。前端仍可接收旧 `type=2` 单条消息。历史弹幕获取、去重合并及一秒等待的发送确认机制在本次房间合批中没有重做。
+
+默认窗口 100 ms、最多 50 条、最多 16384 字节（整个 JSON 帧的 UTF-8 大小），任一条件达到即发送；字节上限不足以放入下一条时先发出当前批次。第一条启动计时，后续消息不会不断延长等待。在线人数、登录失效和错误通知不等待合批。对应业务后端环境变量为 `TIANMU_DANMAKU_BATCH_WINDOW_MS`（1–500）、`TIANMU_DANMAKU_BATCH_MAX_ITEMS`（1–1000）、`TIANMU_DANMAKU_BATCH_MAX_BYTES`（4096–65536），无效配置拒绝启动。新前端兼容旧后端；旧前端不认识批次协议，因此发布时先更新前端，再更新业务后端，并提示已打开旧页面的用户刷新。

@@ -15,4 +15,10 @@ public final class VideoLookup {
     public void requireExists(Long id) {
         ThrowUtils.throwIf(!videos.exists(new LambdaQueryWrapper<Video>().eq(Video::getVideoId, id)), ErrorCode.VIDEO_NOT_FOUND_ERROR);
     }
+
+    /** Public danmaku writes must not target deleted, unpublished or withdrawn videos. */
+    public void requirePublished(Long id) {
+        ThrowUtils.throwIf(!videos.exists(new LambdaQueryWrapper<Video>().eq(Video::getVideoId, id)
+                .eq(Video::getIsDelete, 0).eq(Video::getStatus, 2)), ErrorCode.VIDEO_NOT_FOUND_ERROR);
+    }
 }

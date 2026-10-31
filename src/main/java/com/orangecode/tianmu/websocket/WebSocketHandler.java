@@ -1,230 +1,120 @@
 package com.orangecode.tianmu.websocket;
 
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.stream.Collectors;
-
-import com.alibaba.fastjson.JSON;
+import com.fasterxml.jackson.databind.*;
+import com.orangecode.tianmu.application.SessionAuthentication;
+import com.orangecode.tianmu.application.VideoLookup;
 import com.orangecode.tianmu.constants.SnowflakeConstant;
 import com.orangecode.tianmu.constants.WebSocketConstant;
+import com.orangecode.tianmu.exception.BusinessException;
 import com.orangecode.tianmu.model.dto.bullet.SendBulletRequest;
-import com.orangecode.tianmu.model.vo.bullet.BulletScreenResponse;
-import com.orangecode.tianmu.model.vo.bullet.OnlineBulletResponse;
+import com.orangecode.tianmu.model.vo.bullet.*;
 import com.orangecode.tianmu.producer.RocketMQProducer;
-
-import cn.hutool.core.lang.Snowflake;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.json.JSONUtil;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.channel.group.ChannelGroup;
-import io.netty.channel.group.DefaultChannelGroup;
-import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
-import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
-import io.netty.handler.timeout.IdleState;
-import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.channel.*;
+import io.netty.handler.codec.http.websocketx.*;
+import io.netty.handler.timeout.*;
 import io.netty.util.AttributeKey;
-import io.netty.util.concurrent.GlobalEventExecutor;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
-
+import java.util.*;
 
 @Slf4j
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class WebSocketHandler extends SimpleChannelInboundHandler<TextWebSocketFrame> {
-
-
     private final RocketMQProducer producer;
-
-    private final StringRedisTemplate stringRedisTemplate;
-
-    private static final Logger logger = LoggerFactory.getLogger(WebSocketHandler.class);
-
-
-    private static final ConcurrentMap<String, ChannelGroup> videoMap = new ConcurrentHashMap<>();
-
-    private static final AttributeKey<String> VIDEOID = AttributeKey.valueOf("videoId");
-
-
+    private final SessionAuthentication authentication;
+    private final VideoLookup videos;
+    private final RoomBatchBroadcaster broadcasts;
+    private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .enable(DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY);
+    private static final AttributeKey<Long> ROOM = AttributeKey.valueOf(WebSocketHandler.class, "videoId");
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, TextWebSocketFrame msg) throws Exception {
-        String videoId = ctx.channel().attr(VIDEOID).get();
-        if (videoId != null) {
-            boolean login = checkOnline(msg.text());
-            System.out.println(login);
-            if (login) {
-                System.out.println("消息发送成功：" + msg.text());
-                broadcastMessage(videoId, onlineMessage(msg.text()));
-            } else {
-                needLoginMessage(videoId, ctx.channel());
+    protected void channelRead0(ChannelHandlerContext ctx, TextWebSocketFrame frame) {
+        Long room = ctx.channel().attr(ROOM).get();
+        if (room == null) { error(ctx, "无效的视频房间"); return; }
+        if (frame.content().readableBytes() > 16384) { error(ctx, "弹幕消息过大"); return; }
+        JsonNode input;
+        try {
+            input = JSON.readTree(frame.text());
+            if (input == null || !input.isObject()) throw new IllegalArgumentException();
+        } catch (Exception malformed) { error(ctx, "弹幕格式错误"); return; }
+        try {
+            // Browsers cannot set WebSocket Authorization headers. Credentials belong only
+            // in the private send frame, never in URLs, broadcasts or persisted events.
+            JsonNode credential = input.path("authorization");
+            Long userId = authentication.authenticate(credential.isTextual() ? credential.textValue() : null);
+            if (userId == null) { reply(ctx, WebSocketConstant.LOGIN_MESSAGE, "登录已失效，请重新登录"); return; }
+            if (!matches(input.get("userId"), userId) || !matches(input.get("videoId"), room)) {
+                error(ctx, "弹幕身份或视频房间不一致"); return;
             }
-        }
-
-    }
-
-    private void broadcastMessage(String videoId, String message) {
-        if (message == null || message.isEmpty()) {
-            return;
-        }
-        ChannelGroup group = videoMap.get(videoId);
-        if (group != null && !group.isEmpty()) {
-            group.writeAndFlush(new TextWebSocketFrame(message)).addListener(future -> {
-                if (!future.isSuccess()) {
-                    logger.error("消息失败到房间：{}，原因：{}", videoId, future.cause().getMessage());
-                    cleanupInvalidChannels(group);
-                }
-            });
-        }
-    }
-
-    public String onlineMessage(String text) {
-        BulletScreenResponse bulletScreenResponse = new BulletScreenResponse();
-        bulletScreenResponse.setType(WebSocketConstant.ONLINE_BULLET);
-        SendBulletRequest sendBulletRequest = JSONUtil.toBean(text, SendBulletRequest.class);
-        Snowflake snowflake = IdUtil.getSnowflake(SnowflakeConstant.WORKER_ID, SnowflakeConstant.DATA_CENTER_ID);
-        sendBulletRequest.setBulletId(snowflake.nextId());
-        sendBulletRequest.setCreateTime(new java.util.Date());
-        String messageMQ = JSONUtil.parse(sendBulletRequest).toString();
-
-        // 生产
-        producer.sendMessage("tianmu-topic", messageMQ);
-
-
-        System.out.println("发送到consumer: " + messageMQ);
-        OnlineBulletResponse onlineBulletResponse = new OnlineBulletResponse();
-        onlineBulletResponse.setPlaybackTime(sendBulletRequest.getPlaybackTime());
-        onlineBulletResponse.setText(sendBulletRequest.getContent());
-        onlineBulletResponse.setUserId(sendBulletRequest.getUserId().toString());
-        onlineBulletResponse.setBulletId(sendBulletRequest.getBulletId().toString());
-        bulletScreenResponse.setData(onlineBulletResponse);
-        return JSONUtil.parse(bulletScreenResponse).toString();
-    }
-
-
-    private void cleanupInvalidChannels(ChannelGroup group) {
-        List<Channel> invalidChannels = group.stream().filter(ch -> !ch.isActive() || !ch.isOpen()).collect(Collectors.toList());
-        invalidChannels.forEach(group::remove);
-    }
-
-
-    @Override
-    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
-
-        if (evt instanceof IdleStateEvent) {
-            IdleStateEvent event = (IdleStateEvent) evt;
-            if (event.state() == IdleState.READER_IDLE) {
-                log.info("30 秒没有读取到数据，发送心跳保持连接: {}", ctx.channel());
-                ctx.channel().writeAndFlush(new TextWebSocketFrame(JSON.toJSONString("ping"))).addListener(future -> {
-                    if (!future.isSuccess()) {
-                        log.error("发送心跳失败: {}", future.cause());
-                    }
-                });
+            JsonNode content = input.path("content"), position = input.path("playbackTime"), color = input.get("color");
+            if (!content.isTextual() || content.textValue().isBlank() || content.textValue().length() > 255
+                    || !position.isNumber() || !Double.isFinite(position.doubleValue()) || position.doubleValue() < 0
+                    || (color != null && (!color.isTextual() || !color.textValue().matches("#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})")))) {
+                error(ctx, "请检查弹幕内容、播放时间和颜色"); return;
             }
-        } else {
-            super.userEventTriggered(ctx, evt);
+            videos.requirePublished(room);
+            // Explicit projection prevents credentials and client timestamps leaking to MQ.
+            var event = new SendBulletRequest();
+            event.setUserId(userId); event.setVideoId(room); event.setContent(content.textValue());
+            event.setPlaybackTime(position.doubleValue()); event.setColor(color == null ? "#ffffff" : color.textValue());
+            event.setBulletId(IdUtil.getSnowflake(SnowflakeConstant.WORKER_ID, SnowflakeConstant.DATA_CENTER_ID).nextId());
+            event.setCreateTime(new Date());
+            producer.sendMessage("tianmu-topic", JSONUtil.toJsonStr(event));
+            var output = new OnlineBulletResponse();
+            output.setUserId(userId.toString()); output.setBulletId(event.getBulletId().toString());
+            output.setPlaybackTime(event.getPlaybackTime()); output.setText(event.getContent());
+            broadcasts.append(room, output);
+        } catch (BusinessException unavailableVideo) {
+            error(ctx, "视频不存在或不可发送弹幕");
+        } catch (Exception unavailable) {
+            log.warn("Danmaku send failed, cause={}", unavailable.getClass().getSimpleName());
+            error(ctx, "弹幕服务暂不可用，请稍后重试");
         }
+    }
 
-        // 处理 WebSocket 握手完成事件
-        if (evt instanceof WebSocketServerProtocolHandler.HandshakeComplete) {
-            WebSocketServerProtocolHandler.HandshakeComplete handshake = (WebSocketServerProtocolHandler.HandshakeComplete) evt;
-            String uri = handshake.requestUri();
-            String videoId = extractRoomId(uri);
-            if (videoId != null) {
-                ctx.channel().attr(VIDEOID).set(videoId);
-                joinRoom(videoId, ctx.channel());
-                broadcastOnlineCount(videoId);
+    private boolean matches(JsonNode supplied, long trusted) {
+        return supplied == null || ((supplied.isTextual() || supplied.isIntegralNumber())
+                && Long.toString(trusted).equals(supplied.asText()));
+    }
+    private static String message(int type, Object data) {
+        var response = new BulletScreenResponse(); response.setType(type); response.setData(data);
+        return JSONUtil.toJsonStr(response);
+    }
+    private void error(ChannelHandlerContext ctx, String text) { reply(ctx, WebSocketConstant.ERROR_MESSAGE, text); }
+    private void reply(ChannelHandlerContext ctx, int type, Object data) {
+        ctx.writeAndFlush(new TextWebSocketFrame(message(type, data)));
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object event) throws Exception {
+        if (event instanceof WebSocketServerProtocolHandler.HandshakeComplete handshake) {
+            try {
+                String path = handshake.requestUri();
+                if (!path.matches("/ws/bulletScreen/[1-9][0-9]{0,18}")) throw new IllegalArgumentException();
+                long room = Long.parseLong(path.substring(path.lastIndexOf('/') + 1));
+                ctx.channel().attr(ROOM).set(room);
+                // Guests may receive public danmaku; each send revalidates a current token.
+                broadcasts.join(room, ctx.channel());
+            } catch (IllegalArgumentException invalidRoom) {
+                ctx.writeAndFlush(new CloseWebSocketFrame(1008, "Invalid video room")).addListener(ChannelFutureListener.CLOSE);
             }
-        }
-    }
-
-
-    private String extractRoomId(String uri) {
-        String[] pathSegments = uri.split("/");
-        return pathSegments[pathSegments.length - 1];
-    }
-
-    private void joinRoom(String videoId, Channel channel) {
-        videoMap.computeIfAbsent(videoId, k -> new DefaultChannelGroup(GlobalEventExecutor.INSTANCE)).add(channel);
-    }
-
-    private void broadcastOnlineCount(String videoId) {
-        ChannelGroup group = videoMap.get(videoId);
-        if (group != null) {
-            BulletScreenResponse bulletScreenResponse = new BulletScreenResponse();
-            bulletScreenResponse.setType(WebSocketConstant.ONLINE_NUMBER);
-            bulletScreenResponse.setData(group.size());
-            String message = JSONUtil.parse(bulletScreenResponse).toString();
-            group.writeAndFlush(new TextWebSocketFrame(message));
-        }
-    }
-
-
-    @Override
-    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
-        super.handlerAdded(ctx);
-        System.out.println("handlerAdded");
+        } else if (event instanceof IdleStateEvent idle && idle.state() == IdleState.READER_IDLE) {
+            ctx.writeAndFlush(new PingWebSocketFrame());
+        } else super.userEventTriggered(ctx, event);
     }
 
     @Override
-    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
-        super.handlerRemoved(ctx);
-        String videoId = ctx.channel().attr(VIDEOID).get();
-        if (videoId != null) {
-            ChannelGroup group = videoMap.get(videoId);
-            if (group != null) {
-                group.remove(ctx.channel());
-                broadcastOnlineCount(videoId);
-            }
-        }
-        System.out.println("handler removed");
+    public void handlerRemoved(ChannelHandlerContext ctx) {
+        Long room = ctx.channel().attr(ROOM).getAndSet(null);
+        if (room == null) return;
+        broadcasts.leave(room, ctx.channel());
     }
-
-
-
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        super.exceptionCaught(ctx, cause);
-        System.out.println("exceptionCaught");
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        log.warn("Danmaku connection failed, cause={}", cause.getClass().getSimpleName());
+        ctx.close();
     }
-
-
-    @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        super.channelActive(ctx);
-        System.out.println("channelActive");
-    }
-
-
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        super.channelInactive(ctx);
-        System.out.println("channelInactive");
-    }
-
-    public boolean checkOnline(String text) {
-        SendBulletRequest request = JSONUtil.toBean(text, SendBulletRequest.class);
-        String userId = request.getUserId().toString();
-        String token = stringRedisTemplate.opsForValue().get(userId);
-        return token != null;
-    }
-
-    private void needLoginMessage(String videoId, Channel channel) {
-        BulletScreenResponse bulletScreenResponse = new BulletScreenResponse();
-        bulletScreenResponse.setType(WebSocketConstant.LOGIN_MESSAGE);
-        bulletScreenResponse.setData("请先登录");
-        String message = JSON.toJSONString(bulletScreenResponse);
-        channel.writeAndFlush(new TextWebSocketFrame(message)).addListener(future -> {
-            if (!future.isSuccess()) {
-                logger.error("消息失败到房间：{}，原因：{}", videoId, future.cause().getMessage());
-                cleanupInvalidChannels(videoMap.get(videoId));
-            }
-        });
-    }
-
 }

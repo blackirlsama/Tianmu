@@ -23,7 +23,8 @@ class JWTInterceptorTest {
         System.setProperty("tianmu.jwt.secret-base64", Base64.getEncoder().encodeToString(key));
         var redis = mock(StringRedisTemplate.class); values = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
-        interceptor = new JWTInterceptor(); ReflectionTestUtils.setField(interceptor, "redisTemplate", redis);
+        interceptor = new JWTInterceptor(); ReflectionTestUtils.setField(interceptor, "sessionAuthentication",
+                new com.orangecode.tianmu.application.SessionAuthentication(redis));
     }
 
     @AfterEach void restore() {

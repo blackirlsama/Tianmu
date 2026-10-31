@@ -280,6 +280,8 @@ import {
 } from "@/lib/utils.js";
 import { ElMessage } from "element-plus";
 import { getDanmuWSUrl } from "@/lib/config";
+import { danmakuMessage } from "@/lib/danmaku-message.mjs";
+import { danmakuItems, splitDanmaku } from "@/lib/danmaku-batch.mjs";
 import { fetchUserInfo } from "@/api/user";
 
 import {
@@ -507,46 +509,32 @@ export default {
       this.$nextTick(() => {
         const msgData = JSON.parse(event.data);
         console.log("收到消息:", msgData);
-        let danmu = {};
-        if (msgData.type === 2) {
-          danmu = {
-            bulletId: msgData.data.bulletId,
-            text: msgData.data.text,
-            time: msgData.data.playbackTime,
-            userId: msgData.data.userId,
-          };
-        }
-
         switch (msgData.type) {
           // websocket消息类型为1时，表示是实时在线人数
           case 1:
             this.onlineUserCount = msgData.data;
             break;
           case 2:
-            // websocket消息类型为2时，表示是弹幕消息
-            this.danmuList.push(danmu);
-            // 如果是自己发的弹幕消息，就使用artplayer的弹幕自动滚动功能，自动emit，根据判断发送弹幕是否成功
-            if (
-              msgData.data.userId &&
-              msgData.data.userId === this.user.userId
-            ) {
-              // 标记是自己发的弹幕消息
-              this.isSelfDanmu = true;
-              return;
+          case 5: {
+            const items = danmakuItems(msgData);
+            this.danmuList.push(...items);
+            const { own, others } = splitDanmaku(items, this.user.userId);
+            // Keep the current self-send mechanism; mixed batches must also load others.
+            if (own.length) this.isSelfDanmu = true;
+            const player = this.$refs.artplayerRef?.instance;
+            if (others.length && player?.isReady) {
+              toRaw(player).plugins.artplayerPluginDanmuku.load(others);
             }
-
-            toRaw(
-              this.$refs.artplayerRef.instance
-            ).plugins.artplayerPluginDanmuku.emit(danmu);
-            // 标记不是自己发的弹幕消息
-            this.isSelfDanmu = false;
-
             break;
+          }
           case 3:
             // websocket消息类型为3时，表示是未登录发送弹幕
             ElMessage.warning("请先登录再发送弹幕");
             // 退出登录，清除登录信息
             this.logout();
+            break;
+          case 4:
+            ElMessage.warning(msgData.data || '弹幕发送失败，请稍后重试');
             break;
         }
       });
@@ -560,8 +548,16 @@ export default {
     },
     // 发弹幕
     sendDanmu(danmu) {
-      this.socket.send(JSON.stringify(danmu));
-      // console.log("发送弹幕:", JSON.stringify(danmu),this.socket,WebSocket.OPEN);
+      this.isSelfDanmu = false;
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        ElMessage.warning('弹幕连接尚未就绪，请稍后重试');
+        return;
+      }
+      try {
+        this.socket.send(danmakuMessage(danmu, this.user.token));
+      } catch (error) {
+        ElMessage.warning(error.message);
+      }
     },
     // 删除弹幕
     async delDanmu(danmu) {

@@ -20,6 +20,8 @@ class BusinessAdapterTest {
     ObjectMapper mapper=new ObjectMapper().findAndRegisterModules();
     List<String> headers=new CopyOnWriteArrayList<>(); Set<Long> allowed=Set.of(1001L); volatile int metricStatus=200;
     volatile boolean oversized;
+    final List<String> paths=new CopyOnWriteArrayList<>();
+    volatile boolean completeAudience;
     volatile List<?> authorizationOverride;
     volatile boolean rawAnalysisSamples;
     volatile Object commentPayload = Map.of("code", "FULL_ANALYSIS_TOO_LARGE");
@@ -29,7 +31,7 @@ class BusinessAdapterTest {
         server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         server.createContext("/internal/agent/", exchange -> {
             headers.add(exchange.getRequestHeaders().getFirst("Authorization"));
-            String path=exchange.getRequestURI().getPath(); Object value; int status=200;
+            String path=exchange.getRequestURI().getPath(); paths.add(path); Object value; int status=200;
             if(path.endsWith("principal")) value=Map.of("tenantId","tianmu","userId","881");
             else if(path.endsWith("authorize")) {
                 JsonNode body=mapper.readTree(exchange.getRequestBody()); Set<Long> result=new HashSet<>();
@@ -45,6 +47,8 @@ class BusinessAdapterTest {
                 var q=new com.tianmu.agent.core.DanmakuTypes.Query(Long.parseLong(params.get("videoId")),LocalDateTime.parse(params.get("start")),LocalDateTime.parse(params.get("end")));
                 var bins=new ArrayList<com.tianmu.agent.core.DanmakuTypes.Bucket>();for(int i=0;i<12;i++)bins.add(new com.tianmu.agent.core.DanmakuTypes.Bucket(i,0));
                 value=new com.tianmu.agent.core.DanmakuTypes.Dataset(q,0,0,bins,List.of(),Instant.now(),"fixture",false);
+                if(completeAudience)value=new com.tianmu.agent.core.DanmakuTypes.Dataset(q,0,0,bins,List.of(),Instant.now(),"fixture",false,
+                        new com.tianmu.agent.core.AudienceData.Overview(List.of(),List.of(),0,List.of(),0,0));
                 if (rawAnalysisSamples) {
                     List<Map<String,Object>> wireBins=new ArrayList<>();
                     for(int i=0;i<12;i++) wireBins.add(Map.of("index",i,"count",i==0?"1":"0"));
@@ -65,6 +69,30 @@ class BusinessAdapterTest {
         adapter=new RemoteBusinessAdapter(new BusinessProperties(URI.create("http://127.0.0.1:"+server.getAddress().getPort()),5000),mapper,provider);
     }
     @AfterEach void stop(){server.stop(0);}
+    @Test void selectiveAudienceRequestsOnlyChosenBridgeAndMarksUnqueriedSources() {
+        var end=LocalDateTime.now(com.tianmu.agent.core.DanmakuTypes.ZONE).minusHours(1).withNano(0);
+        var q=new com.tianmu.agent.core.DanmakuTypes.Query(1001,end.minusDays(7),end);
+        var row=new com.tianmu.agent.core.VideoComments.Comment("123",null,"882","观众","原文",q.start().plusHours(1).atZone(com.tianmu.agent.core.DanmakuTypes.ZONE).toInstant(),true,false,false);
+        commentPayload=new com.tianmu.agent.core.VideoComments.Dataset("video-comments-v1",q,1,1,1,List.of(row),Instant.now(),"fixture");
+        var scope=adapter.forCreate("token","分析视频1001的评论报告",null);
+        paths.clear();
+        var comments=adapter.audience(q,scope,new CallControl(Instant.now().plusSeconds(5),new CancellationToken()),Set.of(com.tianmu.agent.core.AnalysisContract.Source.COMMENT));
+        assertEquals(List.of("/internal/agent/comments-analysis"),paths);
+        assertEquals(Set.of(com.tianmu.agent.core.AnalysisContract.Source.COMMENT),comments.sources().selectedSources());
+        assertEquals(1,comments.sources().comments());assertEquals(0,comments.sources().danmaku());
+        paths.clear();completeAudience=true;
+        var danmaku=adapter.audience(q,scope,new CallControl(Instant.now().plusSeconds(5),new CancellationToken()),Set.of(com.tianmu.agent.core.AnalysisContract.Source.DANMAKU));
+        assertEquals(List.of("/internal/agent/danmaku-analysis"),paths);
+        assertEquals(Set.of(com.tianmu.agent.core.AnalysisContract.Source.DANMAKU),danmaku.sources().selectedSources());
+        paths.clear();
+        assertThrows(AgentException.class,()->adapter.audience(q,scope,new CallControl(Instant.now().plusSeconds(5),new CancellationToken()),Set.of(com.tianmu.agent.core.AnalysisContract.Source.VIDEO)));
+        assertTrue(paths.isEmpty());
+    }
+    @Test void sourceFollowupReauthorizesSessionResourcesBeforeGrantingThem() {
+        UUID session=UUID.randomUUID();when(repository.resourcesForSession(eq(session),any(),eq(Long.MAX_VALUE))).thenReturn(Set.of(1001L,1002L));
+        // Use the public overload with context/session rather than trusting historical permission.
+        assertEquals(Set.of(1001L),adapter.forCreate("token","这次只看评论",null,null,session).videoIds());
+    }
     @Test void completeCommentWireDataPreservesLongIdsAndIncompleteDataIsRejected() {
         var end = LocalDateTime.now(com.tianmu.agent.core.DanmakuTypes.ZONE).minusHours(1).withNano(0);
         var q = new com.tianmu.agent.core.DanmakuTypes.Query(1001,end.minusDays(7),end);

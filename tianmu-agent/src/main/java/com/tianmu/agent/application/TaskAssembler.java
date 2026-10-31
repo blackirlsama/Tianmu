@@ -32,14 +32,14 @@ public class TaskAssembler {
     public PreparedTask assemble(RunState run) {
         run.checkpoint();
         var preparation = Objects.requireNonNull(run.preparedRequest());
-        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate, run.createdAt,run.memory().environment()) : preparation.specification();
+        var specification = preparation.specification() == null ? meaning.resolve(run.query(), run.businessDate, run.createdAt,run.memory()) : preparation.specification();
         boolean conversation = "unclassified".equals(specification.type())
                 && Set.of(com.tianmu.agent.core.PreparationTypes.Intent.KNOWLEDGE, com.tianmu.agent.core.PreparationTypes.Intent.OTHER).contains(preparation.intent());
         if (conversation) specification = new Specification("conversation", Map.of(), Map.of());
         if (!run.query().equals(run.message)) {
             Map<String, String> provenance = new HashMap<>();
             specification.provenance().keySet().forEach(key -> provenance.put(key, "server_validated_input"));
-            specification = new Specification(specification.type(), specification.conditions(), provenance);
+            specification = new Specification(specification.type(), specification.conditions(), provenance, specification.analysis());
         }
         return new PreparedTask(run.id, run.message, preparation.query(), run.businessDate, "Asia/Shanghai", run.owner,
                 preparation, specification, versions, registrySnapshot, run.deadline(), run.modelCallLimit());

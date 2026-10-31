@@ -5,6 +5,10 @@ import com.tianmu.agent.core.*;
 import com.tianmu.agent.core.AgentTypes.*;
 import com.tianmu.agent.core.PreparationTypes.*;
 import com.tianmu.agent.runtime.RunState;
+import com.tianmu.agent.runtime.RunService;
+import com.tianmu.agent.runtime.RequestOrchestrator;
+import com.tianmu.agent.harness.RuntimeHarness;
+import com.tianmu.agent.runtime.control.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.*;
 import org.flywaydb.core.Flyway;
@@ -16,6 +20,7 @@ import java.nio.file.Path;
 import java.time.*;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /** Opt-in real MySQL/Redis integration. Refuses URLs outside a database ending in _it. */
 @EnabledIfEnvironmentVariable(named="AGENT_STORAGE_IT", matches="true")
@@ -78,6 +83,27 @@ class MysqlStorageIntegrationTest {
         faq(run); repository.deleteSession(run.sessionId,owner); repository.garbageCollect();
         assertNull(store.get(run.id));
     }
+    @Test void frozenAnalysisFocusAndVideoOnlyArtifactSurviveDurableReload() {
+        var run=create("生成视频1001的视频内容报告，只看视频内容");run.start();
+        run.prepared(new Result(Route.HARNESS,new PreparedRequest(run.message,run.query(),Emotion.UNKNOWN,Set.of()),null,null));
+        run.task(new com.tianmu.agent.application.TaskAssembler(new com.tianmu.agent.skill.SkillCatalog(),new com.tianmu.agent.prompt.PromptCatalog(),new com.tianmu.agent.tool.ToolCatalog()).assemble(run));
+        var specification=run.task().specification();
+        repository.focus(run,new MemoryTypes.Focus(run.message,run.id,"1001",specification));
+        var facts=new VideoContent.Facts("video-content-v1",1001,"fixture",0,1000,"画面",List.of(new VideoContent.Moment(500,"场景")),"","SAMPLED_FRAMES",List.of(500L),"fixture",Instant.now());
+        var evidence=new com.tianmu.agent.application.BusinessEvidencePolicy().registerVideoEvidence(run,facts);
+        byte[] html="<!doctype html><html>video-only</html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var ref=new com.tianmu.agent.application.ReportArtifacts(repository).save(run,evidence.id(),html);
+        assertTrue(run.execution().hasReport(evidence.id()));
+        assertTrue(run.succeed(run.reserveFinalResponse(),new Answer("report",List.of(evidence.id())),StopReason.TOOL_DELIVERY));
+        var loaded=repository.load(run.id,owner);
+        assertEquals(specification.analysis(),loaded.task().specification().analysis());
+        assertEquals(specification.typed(),loaded.task().specification().typed());
+        assertArrayEquals(html,repository.report(run.id,owner,ref.artifactId()));
+        var next=repository.create("再加上评论",owner,run.sessionId,UUID.randomUUID().toString(),null,new RequestContext("1001")).run();
+        var focus=repository.memory(next).focus();assertNotNull(focus.task());
+        assertEquals(specification.analysis(),focus.task().analysis());assertEquals(specification.typed(),focus.task().typed());
+        next.cancel();
+    }
     @Test void retryIsIdempotentAndOwnershipIsCheckedOnRead() {
         String key = UUID.randomUUID().toString(); var first = repository.create("question", owner, null, key, null); sessions.add(first.run().sessionId);
         assertTrue(first.fresh()); assertEquals(first.run().id, repository.create("question", owner, null, key, null).run().id);
@@ -96,6 +122,120 @@ class MysqlStorageIntegrationTest {
             assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM agent_audit_event WHERE run_id=? AND action='RUN_COMMITTED'", Integer.class, run.id.toString()));
         } finally { db.execute("DROP TRIGGER " + trigger); }
         run.cancel(); assertEquals(Status.CANCELLED, repository.load(run.id, owner).snapshot().status());
+    }
+    String rejectDone(RunState run) {
+        String trigger = "it_done_" + UUID.randomUUID().toString().replace("-", "");
+        db.execute("CREATE TRIGGER " + trigger + " BEFORE INSERT ON agent_run_event FOR EACH ROW BEGIN IF NEW.run_id='" + run.id + "' AND NEW.event_type='DONE' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='integration terminal fault'; END IF; END");
+        return trigger;
+    }
+    void maintainUntil(RunService service, java.util.function.BooleanSupplier completed) throws Exception {
+        long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (!completed.getAsBoolean() && System.nanoTime() < until) { service.maintain(); Thread.sleep(25); }
+        assertTrue(completed.getAsBoolean(), "Storage recovery must converge without another client request");
+    }
+    @Test void maintenanceRetriesOnlyTerminalTransactionAfterSqlOutageCrossesDeadline() throws Exception {
+        repository.close();
+        repository = new MysqlRunRepository(source, mapper, cache, new FileObjectStore(directory), Duration.ofMillis(600), 16);
+        var orchestrator = mock(RequestOrchestrator.class);
+        var service = new RunService(orchestrator, mock(RuntimeHarness.class), repository);
+        var failed = new java.util.concurrent.CountDownLatch(1);
+        var trigger = new java.util.concurrent.atomic.AtomicReference<String>();
+        try (var control = new LoopControl(LoopPolicy.defaults())) {
+            doAnswer(invocation -> {
+                RunState run = invocation.getArgument(0);
+                try {
+                    run.start(); run.modelCallStarted(); control.arm(run);
+                    trigger.set(rejectDone(run)); run.fail("MODEL_ERROR");
+                } catch (AgentException expected) { assertEquals("STORAGE_UNAVAILABLE", expected.code()); }
+                finally { failed.countDown(); }
+                return null;
+            }).when(orchestrator).execute(any());
+            RunState run = service.create("recovery", owner); sessions.add(run.sessionId);
+            assertTrue(failed.await(3, java.util.concurrent.TimeUnit.SECONDS)); assertNotNull(trigger.get());
+            Thread.sleep(Math.max(1, Duration.between(Instant.now(), run.deadline()).toMillis() + 100));
+            assertEquals(Status.RUNNING, repository.load(run.id, owner).snapshot().status());
+            assertEquals(1, service.pendingTerminals());
+            assertEquals(StopReason.ERROR, run.cancellation().reason());
+            assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM agent_run_event WHERE run_id=? AND event_type='DONE'", Integer.class, run.id.toString()));
+            db.execute("DROP TRIGGER " + trigger.getAndSet(null));
+            maintainUntil(service, () -> AgentTypes.terminal(run.snapshot().status()));
+            assertEquals(Status.FAILED, repository.load(run.id, owner).snapshot().status());
+            assertEquals("MODEL_ERROR", run.snapshot().errorCode()); assertEquals(1, run.snapshot().modelCalls());
+            assertEquals(0, service.pendingTerminals()); verify(orchestrator, times(1)).execute(run);
+            service.maintain();
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM agent_run_event WHERE run_id=? AND event_type='DONE'", Integer.class, run.id.toString()));
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM agent_audit_event WHERE run_id=? AND action='RUN_COMMITTED'", Integer.class, run.id.toString()));
+        } finally {
+            if (trigger.get() != null) db.execute("DROP TRIGGER " + trigger.get());
+            service.shutdown();
+        }
+    }
+    @Test void mysqlRowLockOnOneTerminationDoesNotDelayAnotherWatchdogOrPublishAnEarlyDone() throws Exception {
+        repository.close();
+        repository = new MysqlRunRepository(source, mapper, cache, new FileObjectStore(directory), Duration.ofSeconds(1), 16);
+        RunState first = create("locked termination"), second = create("independent termination"); first.start(); second.start();
+        var firstStopped = new java.util.concurrent.CountDownLatch(1); var firstEnded = new java.util.concurrent.CountDownLatch(1);
+        var secondEnded = new java.util.concurrent.CountDownLatch(1);
+        first.cancellation().onCancel(firstStopped::countDown); first.onTerminal(s -> firstEnded.countDown());
+        second.onTerminal(s -> secondEnded.countDown());
+        try (var lock = source.getConnection(); var control = new LoopControl(LoopPolicy.defaults())) {
+            lock.setAutoCommit(false);
+            try (var statement = lock.prepareStatement("SELECT run_id FROM agent_run WHERE tenant_id=? AND run_id=? FOR UPDATE")) {
+                statement.setString(1, owner.tenantId()); statement.setString(2, first.id.toString());
+                try (var rows = statement.executeQuery()) { assertTrue(rows.next()); }
+            }
+            try {
+                control.arm(first); control.arm(second);
+                assertTrue(firstStopped.await(2, java.util.concurrent.TimeUnit.SECONDS));
+                assertTrue(secondEnded.await(2, java.util.concurrent.TimeUnit.SECONDS), "The other run must finish while the first row lock is still held");
+                assertEquals(1, firstEnded.getCount());
+                assertEquals(Status.RUNNING, repository.load(first.id, owner).snapshot().status());
+                assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM agent_run_event WHERE run_id=? AND event_type='DONE'", Integer.class, first.id.toString()));
+                assertEquals(Status.FAILED, repository.load(second.id, owner).snapshot().status());
+                assertEquals("DEADLINE_EXCEEDED", second.snapshot().errorCode());
+                assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM agent_run_event WHERE run_id=? AND event_type='DONE'", Integer.class, second.id.toString()));
+            } finally { lock.rollback(); }
+            assertTrue(firstEnded.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("DEADLINE_EXCEEDED", repository.load(first.id, owner).snapshot().errorCode());
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM agent_run_event WHERE run_id=? AND event_type='DONE'", Integer.class, first.id.toString()));
+        }
+    }
+    @Test void pendingFailureAdoptsSupersededTerminalWithoutOverwritingNextTurn() {
+        RunState old = create("first"); old.start();
+        String trigger = rejectDone(old);
+        try { assertThrows(AgentException.class, () -> old.fail("MODEL_ERROR")); }
+        finally { db.execute("DROP TRIGGER " + trigger); }
+        RunState next = repository.create("next", owner, old.sessionId, UUID.randomUUID().toString(), null).run();
+        repository.refresh(old); old.reconcileTerminal(old.terminalReconciliationAt());
+        assertEquals(Status.CANCELLED, old.snapshot().status());
+        assertEquals(StopReason.SUPERSEDED, old.snapshot().stopReason()); assertFalse(old.terminalPending());
+        assertEquals(Status.QUEUED, repository.load(next.id, owner).snapshot().status());
+        assertEquals(next.id.toString(), db.queryForObject("SELECT current_run_id FROM agent_session WHERE tenant_id=? AND session_id=?", String.class, owner.tenantId(), old.sessionId.toString()));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM agent_run_event WHERE run_id=? AND event_type='DONE'", Integer.class, old.id.toString()));
+    }
+    @Test void pendingFailureCanObserveCommittedCancellationAfterSessionDeletion() {
+        RunState run = create("delete pending"); run.start();
+        String trigger = rejectDone(run);
+        try { assertThrows(AgentException.class, () -> run.fail("MODEL_ERROR")); }
+        finally { db.execute("DROP TRIGGER " + trigger); }
+        repository.deleteSession(run.sessionId, owner);
+        repository.refresh(run);
+        assertEquals(Status.CANCELLED, run.snapshot().status()); assertFalse(run.terminalPending());
+        assertEquals("SESSION_NOT_FOUND", assertThrows(AgentException.class, () -> repository.load(run.id, owner)).code());
+    }
+    @Test void purgedPendingRunIsRetiredInsteadOfRetryingForever() throws Exception {
+        var service = new RunService(mock(RequestOrchestrator.class), mock(RuntimeHarness.class), repository);
+        try {
+            RunState run = service.create("purged pending", owner); sessions.add(run.sessionId); run.start();
+            String trigger = rejectDone(run);
+            try { assertThrows(AgentException.class, () -> run.fail("MODEL_ERROR")); }
+            finally { db.execute("DROP TRIGGER " + trigger); }
+            repository.deleteSession(run.sessionId, owner); repository.garbageCollect();
+            maintainUntil(service, () -> service.pendingTerminals() == 0);
+            assertTrue(run.cancellation().cancelled());
+            assertEquals(Instant.MAX, run.terminalReconciliationAt());
+            assertEquals("RUN_NOT_FOUND", assertThrows(AgentException.class, () -> repository.load(run.id, owner)).code());
+        } finally { service.shutdown(); }
     }
     @Test void pageContextAndOriginalWordsSurviveReloadAndIdempotency() {
         String key = "context-" + UUID.randomUUID();

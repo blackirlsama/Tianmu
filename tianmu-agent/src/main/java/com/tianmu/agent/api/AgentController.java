@@ -54,9 +54,7 @@ public class AgentController {
     }
     @PostMapping("/{id}/cancel")
     public Snapshot cancel(@PathVariable UUID id, @RequestHeader(value = "Authorization", required = false) String auth) {
-        RunState run = runs.owned(id, identity.forRun(credential(auth), id));
-        run.cancel();
-        return run.snapshot();
+        return runs.cancel(id, identity.forRun(credential(auth), id));
     }
     @GetMapping("/{id}/evidence/{evidenceId}")
     public Evidence evidence(@PathVariable UUID id, @PathVariable String evidenceId,

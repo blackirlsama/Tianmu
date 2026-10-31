@@ -40,4 +40,13 @@ class DeploymentHealthTest {
     @Test void memoryModeDoesNotRequireAnExternalObjectStore() {
         assertEquals(Status.UP, indicator(mock(RunRepository.class), null).health().getStatus());
     }
+    @Test void unresolvedTerminationKeepsReadinessDownEvenAfterDatabaseRecovers() {
+        var runs = mock(com.tianmu.agent.runtime.RunService.class);
+        var beans = new DefaultListableBeanFactory();
+        var health = new AgentStorageHealthIndicator(mock(RunRepository.class), beans.getBeanProvider(ObjectStore.class), runs);
+        when(runs.pendingTerminals()).thenReturn(1L);
+        assertEquals(Status.DOWN, health.health().getStatus()); assertTrue(health.health().getDetails().isEmpty());
+        when(runs.pendingTerminals()).thenReturn(0L);
+        assertEquals(Status.UP, health.health().getStatus());
+    }
 }

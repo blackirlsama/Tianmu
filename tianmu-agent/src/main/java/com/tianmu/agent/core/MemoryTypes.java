@@ -6,7 +6,8 @@ import java.util.*;
 public final class MemoryTypes {
     private MemoryTypes() {}
     public record Message(UUID id, UUID runId, long sequence, String role, String text, Instant at) {}
-    public record Focus(String request, UUID sourceRunId, String referenceVideoId) {
+    public record Focus(String request, UUID sourceRunId, String referenceVideoId,TaskTypes.Specification task) {
+        public Focus(String request,UUID sourceRunId,String referenceVideoId){this(request,sourceRunId,referenceVideoId,null);}
         public Focus {
             if (request == null || request.isBlank() || request.length() > 500 || sourceRunId == null)
                 throw new IllegalArgumentException("Invalid conversation focus");

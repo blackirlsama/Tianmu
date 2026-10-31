@@ -99,7 +99,7 @@ public final class MemoryRunRepository implements RunRepository, ReportStore, Co
     @Override public synchronized com.tianmu.agent.core.DanmakuTypes.ReportRef saveReport(UUID runId, AccessScope owner, String evidenceId, byte[] html) {
         RunState run = load(runId, owner); run.checkpoint();
         Evidence evidence = run.execution().evidence().get(evidenceId);
-        if (evidence == null || evidence.analysis() == null || !evidence.owner().equals(owner) || !evidence.runId().equals(runId) || html.length > 262144)
+        if (evidence == null || evidence.analysis() == null && evidence.videoContent() == null || !evidence.owner().equals(owner) || !evidence.runId().equals(runId) || html.length > 262144)
             throw new AgentException("INVALID_EVIDENCE", "Invalid report");
         if (AgentTypes.terminal(run.snapshot().status())) throw new AgentException("RUN_TERMINATED", "Task is terminal");
         if (reports.values().stream().filter(r -> r.runId().equals(runId)).count() >= 2) throw new AgentException("CAPACITY_EXCEEDED", "Report limit reached");

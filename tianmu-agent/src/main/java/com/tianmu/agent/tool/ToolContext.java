@@ -25,6 +25,7 @@ public interface ToolContext {
     List<ToolDefinition> definitionsForSkill(String name);
     Evidence evidence(String id);
     default boolean reportRequiresVideo(){return true;}
+    default com.tianmu.agent.core.AnalysisContract analysisContract(){return null;}
     default String reportCacheVariant(){return "";}
     default Integer remainingModelCalls(){return null;}
     default void checkCommentQuery(com.tianmu.agent.core.DanmakuTypes.Query query) { throw new com.tianmu.agent.core.AgentException("TOOL_CAPABILITY_DENIED", "Comment query unavailable"); }

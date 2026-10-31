@@ -134,6 +134,9 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
         AccessScope current = forCreate(credential,message,reply);
         Set<Long> required = new HashSet<>(current.videoIds());
         if (page!=null) required.add(Long.parseLong(page.videoId()));
+        if(page==null && required.isEmpty() && session!=null && com.tianmu.agent.application.ConversationFocus.continuation(message)
+                && com.tianmu.agent.preparation.AnalysisSourceSelection.mentions(message))
+            required.addAll(allowed(current,repositories.getObject().resourcesForSession(session,current,Long.MAX_VALUE),false));
         Set<Long> granted = new HashSet<>(allowed(current,required,true));
         return new AccessScope(current.tenantId(),current.userId(),granted,current.authorizationRef());
     }
@@ -205,6 +208,21 @@ final class RemoteBusinessAdapter implements IdentityPort, BusinessQueryPort, co
             return com.tianmu.agent.core.AudienceReportData.combine(snapshot,scope.userId());
         }catch(AgentException e){throw e;}
         catch(Exception e){throw new AgentException("INVALID_EVIDENCE","Combined feedback snapshot is inconsistent");}
+    }
+    @Override public DanmakuTypes.Dataset audience(DanmakuTypes.Query query,AccessScope scope,CallControl control,Set<com.tianmu.agent.core.AnalysisContract.Source> selected) {
+        if(selected.equals(Set.of(com.tianmu.agent.core.AnalysisContract.Source.COMMENT,com.tianmu.agent.core.AnalysisContract.Source.DANMAKU)))
+            return audience(query,scope,control);
+        if(selected.equals(Set.of(com.tianmu.agent.core.AnalysisContract.Source.COMMENT))) {
+            var comments=comments(query,scope,control);
+            return com.tianmu.agent.core.AudienceReportData.combine(new com.tianmu.agent.core.AudienceReportData.Snapshot(null,comments,comments.uniqueAudience()),scope.userId(),selected);
+        }
+        if(selected.equals(Set.of(com.tianmu.agent.core.AnalysisContract.Source.DANMAKU))) {
+            var data=query(query,scope,control);
+            if(data.audience()==null)throw new AgentException("INVALID_EVIDENCE","Full selected danmaku snapshot is required");
+            long authors=data.audience().corpus().stream().filter(com.tianmu.agent.core.AudienceData.TextGroup::author).mapToLong(com.tianmu.agent.core.AudienceData.TextGroup::count).sum();
+            return com.tianmu.agent.core.AudienceReportData.combine(new com.tianmu.agent.core.AudienceReportData.Snapshot(data,null,data.uniqueSenders()-(authors>0?1:0)),scope.userId(),selected);
+        }
+        throw new AgentException("SOURCE_NOT_SELECTED","Choose at least one supported feedback source");
     }
     @Override public com.tianmu.agent.core.VideoContent.Media media(long videoId, String version, long startMs, long endMs, AccessScope scope, CallControl control) {
         if (!scope.videoIds().contains(videoId) || !version.matches("[a-f0-9]{64}")) throw new AgentException("FORBIDDEN", "Video outside scope");

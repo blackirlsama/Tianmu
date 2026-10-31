@@ -72,6 +72,7 @@ public class RuntimeHarness implements AutoCloseable {
         return (name, value) -> TraceAttributes.apply(span, Map.of(name, value));
     }
     public void forget(UUID id) { sessions.remove(id); }
+    public void discard(UUID id) { HarnessSession session = sessions.remove(id); if (session != null) session.discard(); }
     @Override public void close() { if (ownsLoopControl) loopControl.close(); sessions.clear(); }
     public <T> T stage(RunState run, String name, HookPoint before, HookPoint after,
                        Map<String, Object> attributes, Supplier<T> operation) {

@@ -10,6 +10,7 @@ import java.util.*;
 /** Business admission and evidence rules, independent of tool discovery and dispatch. */
 public final class BusinessEvidencePolicy {
         public void checkCommentQuery(EvidenceContext run, com.tianmu.agent.core.DanmakuTypes.Query query) {
+            AnalysisExecutionPolicy.requireSource(run.task() == null ? null : run.task().specification(), com.tianmu.agent.core.AnalysisContract.Source.COMMENT);
             run.checkpoint(); query.checkTime(Instant.now());
             if (!run.scope().videoIds().contains(query.videoId())) throw new AgentException("FORBIDDEN", "Video outside scope");
             if (run.task() == null || !"comments.analysis".equals(run.task().specification().type())
@@ -17,6 +18,7 @@ public final class BusinessEvidencePolicy {
                 throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Comments differ from prepared task");
         }
         public void checkQuery(EvidenceContext run, MetricQuery query) {
+            AnalysisExecutionPolicy.requireSource(run.task() == null ? null : run.task().specification(), com.tianmu.agent.core.AnalysisContract.Source.DANMAKU);
             run.checkpoint();
             if (run.task() != null && run.task().specification().type().equals("danmaku.report"))
                 throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Use the prepared danmaku analysis query for report tasks");
@@ -42,6 +44,7 @@ public final class BusinessEvidencePolicy {
             checkVideoQuery(run, videoId, null, null);
         }
         public void checkVideoQuery(EvidenceContext run, long videoId, Long startMs, Long endMs) {
+            AnalysisExecutionPolicy.requireSource(run.task() == null ? null : run.task().specification(), com.tianmu.agent.core.AnalysisContract.Source.VIDEO);
             run.checkpoint();
             if (!run.scope().videoIds().contains(videoId)) throw new AgentException("FORBIDDEN", "Video outside scope");
             checkPinnedVideo(run, videoId);
@@ -49,6 +52,9 @@ public final class BusinessEvidencePolicy {
             var expected = run.task().specification().typed();
             if (expected instanceof TaskConditions.Interaction interaction) interaction.video().check(videoId, startMs, endMs);
             if (expected instanceof TaskConditions.Video video) video.check(videoId, startMs, endMs);
+            var contract=run.task().specification().analysis();
+            if(contract!=null && contract.videoStartMs()!=null)
+                new TaskConditions.Video(videoId,contract.videoStartMs(),contract.videoEndMs()).check(videoId,startMs,endMs);
             if (expected instanceof TaskConditions.Report report) {
                 if (report.query().videoId() != videoId)
                     throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Video differs from prepared report");
@@ -81,6 +87,9 @@ public final class BusinessEvidencePolicy {
             checkDanmakuQuery(run, data.query());
             if("audience.report".equals(run.task().specification().type()) != (data.sources()!=null))
                 throw new AgentException("INVALID_EVIDENCE","Report sources differ from the prepared task");
+            var contract = run.task().specification().analysis();
+            if (contract != null && data.sources() != null && !contract.textSources().equals(data.sources().selectedSources()))
+                throw new AgentException("INVALID_EVIDENCE", "Snapshot includes unselected or missing sources");
             Evidence evidence = new Evidence("ev_" + UUID.randomUUID(), run.runId(), run.scope(), null, data);
             run.evidenceStore().put(evidence); return evidence;
         }

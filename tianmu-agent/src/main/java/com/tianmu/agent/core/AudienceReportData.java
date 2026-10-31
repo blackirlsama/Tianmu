@@ -10,8 +10,16 @@ public final class AudienceReportData {
     private AudienceReportData() {}
     public record Snapshot(Dataset danmaku, VideoComments.Dataset comments,long uniqueAudience) {}
     public record Sources(long danmaku,long danmakuAuthors,long danmakuViewers,long comments,long commentAuthors,
-                          long commentViewers,long contextComments,long uniqueViewers,Instant snapshotAt) {
+                          long commentViewers,long contextComments,long uniqueViewers,Instant snapshotAt,Set<AnalysisContract.Source> selectedSources) {
+        public Sources(long d,long da,long dv,long c,long ca,long cv,long context,long unique,Instant at) {
+            this(d,da,dv,c,ca,cv,context,unique,at,Set.of(AnalysisContract.Source.DANMAKU,AnalysisContract.Source.COMMENT));
+        }
         public Sources {
+            selectedSources = selectedSources == null ? Set.of(AnalysisContract.Source.DANMAKU,AnalysisContract.Source.COMMENT) : Set.copyOf(selectedSources);
+            if(selectedSources.isEmpty() || selectedSources.contains(AnalysisContract.Source.VIDEO)
+                    || !selectedSources.contains(AnalysisContract.Source.DANMAKU) && danmaku!=0
+                    || !selectedSources.contains(AnalysisContract.Source.COMMENT) && (comments!=0 || contextComments!=0))
+                throw new IllegalArgumentException("Unselected feedback source has records");
             if(danmaku<0 || danmakuAuthors<0 || danmakuAuthors>danmaku || danmakuViewers<0 || danmakuViewers>danmaku-danmakuAuthors
                     || comments<0 || commentAuthors<0 || commentAuthors>comments || commentViewers<0 || commentViewers>comments-commentAuthors
                     || contextComments<0 || uniqueViewers<Math.max(danmakuViewers,commentViewers) || uniqueViewers>Math.addExact(danmakuViewers,commentViewers)
@@ -19,7 +27,25 @@ public final class AudienceReportData {
         }
     }
     public static Dataset combine(Snapshot snapshot,String owner) {
-        Dataset d=Objects.requireNonNull(snapshot.danmaku());VideoComments.Dataset c=Objects.requireNonNull(snapshot.comments());
+        return combine(snapshot,owner,Set.of(AnalysisContract.Source.DANMAKU,AnalysisContract.Source.COMMENT));
+    }
+    public static Dataset combine(Snapshot snapshot,String owner,Set<AnalysisContract.Source> selected) {
+        if(selected.isEmpty() || selected.contains(AnalysisContract.Source.VIDEO)
+                || selected.contains(AnalysisContract.Source.DANMAKU)!=(snapshot.danmaku()!=null)
+                || selected.contains(AnalysisContract.Source.COMMENT)!=(snapshot.comments()!=null))
+            throw new AgentException("INVALID_EVIDENCE","Snapshot selection differs from requested sources");
+        Dataset d=snapshot.danmaku();VideoComments.Dataset c=snapshot.comments();
+        if(d==null) {
+            var q=c.query();var at=c.dataAsOf();
+            var activity=q.allTime()?c.comments().stream().filter(VideoComments.Comment::inPeriod).map(VideoComments.Comment::createdAt)
+                    .min(Comparator.naturalOrder()).map(t->t.atZone(DanmakuTypes.ZONE).toLocalDateTime()).orElse(q.end().minusSeconds(1)):null;
+            List<Bucket> empty=new ArrayList<>();for(int i=0;i<12;i++)empty.add(new Bucket(i,0));
+            d=new Dataset(q,0,0,empty,List.of(),at,"selected:comments",false,new Overview(List.of(),List.of(),0,List.of(),0,0,activity));
+        }
+        if(c==null)c=new VideoComments.Dataset("video-comments-v1",d.query(),0,0,0,List.of(),d.dataAsOf(),"unselected");
+        return combineSelected(d,c,snapshot.uniqueAudience(),owner,selected);
+    }
+    private static Dataset combineSelected(Dataset d,VideoComments.Dataset c,long uniqueAudience,String owner,Set<AnalysisContract.Source> selected) {
         if(!d.query().equals(c.query()) || d.audience()==null || d.audience().corpusMessages()!=d.totalMessages() || d.sources()!=null
                 || d.dataAsOf().isAfter(Instant.now().plusSeconds(5)) || c.dataAsOf().isAfter(Instant.now().plusSeconds(5))
                 || d.audience().corpus().stream().anyMatch(g->!g.source().equals("DANMAKU"))
@@ -41,7 +67,7 @@ public final class AudienceReportData {
         long authorDanmaku=d.audience().corpus().stream().filter(TextGroup::author).mapToLong(TextGroup::count).sum();
         long total=Math.addExact(d.totalMessages(),c.totalComments());
         Sources sources=new Sources(d.totalMessages(),authorDanmaku,d.uniqueSenders()-(authorDanmaku>0?1:0),c.totalComments(),c.totalComments()-c.audienceComments(),
-                c.uniqueAudience(),c.comments().size()-c.totalComments(),snapshot.uniqueAudience(),d.dataAsOf().isBefore(c.dataAsOf())?d.dataAsOf():c.dataAsOf());
+                c.uniqueAudience(),c.comments().size()-c.totalComments(),uniqueAudience,d.dataAsOf().isBefore(c.dataAsOf())?d.dataAsOf():c.dataAsOf(),selected);
         List<Bucket> buckets=new ArrayList<>();for(int i=0;i<12;i++)buckets.add(new Bucket(i,bins[i]));
         var audience=new Overview(d.audience().interactions().stream().filter(f->!f.userId().equals(owner)).toList(),d.audience().playback(),
                 Math.addExact(d.audience().unknownPlayback(),c.totalComments()),groups,total,total,d.audience().activityStart());

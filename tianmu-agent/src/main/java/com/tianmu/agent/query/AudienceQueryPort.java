@@ -4,4 +4,9 @@ import com.tianmu.agent.core.AgentTypes.AccessScope;
 import com.tianmu.agent.runtime.control.CallControl;
 public interface AudienceQueryPort {
     DanmakuTypes.Dataset audience(DanmakuTypes.Query query,AccessScope scope,CallControl control);
+    default DanmakuTypes.Dataset audience(DanmakuTypes.Query query,AccessScope scope,CallControl control,java.util.Set<AnalysisContract.Source> selected) {
+        if(!selected.equals(java.util.Set.of(AnalysisContract.Source.COMMENT,AnalysisContract.Source.DANMAKU)))
+            throw new AgentException("AUDIENCE_UNAVAILABLE","Adapter does not support selective feedback reads");
+        return audience(query,scope,control);
+    }
 }

@@ -41,6 +41,11 @@ public final class HarnessSession {
     }
     public String traceId() { return root.getSpanContext().getTraceId(); }
     public Context context() { return context; }
+    void discard() {
+        if (!ended.compareAndSet(false, true)) return;
+        TraceAttributes.apply(root, Map.of("run.discarded", true));
+        root.end();
+    }
     void begin() {
         if (!begun.compareAndSet(false, true)) return;
         try (Scope scope = context.makeCurrent(); TraceLogScope mdc = new TraceLogScope(root, run.id.toString())) {

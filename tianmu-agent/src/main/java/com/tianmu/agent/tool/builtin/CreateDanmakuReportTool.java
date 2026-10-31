@@ -27,12 +27,14 @@ public final class CreateDanmakuReportTool implements AgentTool {
     public String name() { return "create_danmaku_report"; }
     public ToolResult execute(ToolCall call, ToolContext context) {
         Evidence evidence = context.evidence(ToolArguments.text(call, "evidence_id"));
+        if (evidence.videoContent()!=null) return videoReport(evidence,context);
         Dataset data = evidence.analysis();
         if (data == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
         context.checkDanmakuQuery(data.query());
         var prepared=context.reportClassification(evidence.id());
         boolean hasAudience=data.sources()!=null && data.totalMessages()>data.sources().danmakuAuthors()+data.sources().commentAuthors();
-        if(hasAudience && context.reportRequiresVideo() && !call.arguments().containsKey("video_evidence_id") && prepared.videoEvidenceId()==null)
+        boolean requiresVideo = context.analysisContract()!=null ? context.reportRequiresVideo() : hasAudience && context.reportRequiresVideo();
+        if(requiresVideo && !call.arguments().containsKey("video_evidence_id") && prepared.videoEvidenceId()==null)
             throw new AgentException("INVALID_REPORT","请先读取同一视频并提供 video_evidence_id，再提交联合反馈分类。只有用户明确不读取视频时可省略。");
 
         if(data.audience()!=null && call.arguments().containsKey("topics_json")){
@@ -50,8 +52,9 @@ public final class CreateDanmakuReportTool implements AgentTool {
         if (videoEvidence!=null) {
             video = context.evidence(videoEvidence).videoContent();
             if (video == null || video.videoId()!=data.query().videoId()) throw new AgentException("INVALID_EVIDENCE","Video evidence must match report video");
+            context.checkVideoQuery(video.videoId(),video.startMs(),video.endMs());
         }
-        if(hasAudience && video==null && context.reportRequiresVideo())
+        if(requiresVideo && video==null)
             throw new AgentException("INVALID_REPORT","联合报告需要同一视频的内容证据；请先读取视频并提供 video_evidence_id。仅用户明确要求不读取视频时可省略。");
         String document;Map<String,Object> reportDocument=null;
         if(data.audience()!=null){
@@ -82,8 +85,23 @@ public final class CreateDanmakuReportTool implements AgentTool {
                     "已完整分析本时段全部 "+data.totalMessages()+" 条弹幕，报告包含主要话题、相关画面、观众原话、改进建议和互动排行。\n")
                 + "[查看 HTML 报告](" + report.url() + ")（需登录鉴权）";
         Map<String,Object> result=new LinkedHashMap<>();result.put("artifact_id",report.artifactId());result.put("url",report.url());result.put("status","READY");
+        if(data.sources()!=null && data.sources().selectedSources().size()==1) {
+            boolean comments=data.sources().selectedSources().contains(AnalysisContract.Source.COMMENT);
+            text="视频"+data.query().videoId()+"的反馈报告已生成。\n统计区间："+data.query().start()+" 至 "+data.query().end()+"（北京时间）。\n已完整分析所选来源 "+data.totalMessages()+" 条"+(comments?"评论及回复；本次未读取弹幕。":"弹幕；本次未读取评论及回复。")+"\n[查看 HTML 报告]("+report.url()+")（需登录鉴权）";
+        }
         if(reportDocument!=null)result.put("report_document",reportDocument);
         return new ToolResult(name(),result,evidence.id(),new Answer(text,videoEvidence==null?List.of(evidence.id()):List.of(evidence.id(),videoEvidence)));
+    }
+    private ToolResult videoReport(Evidence evidence,ToolContext context) {
+        var contract=context.analysisContract();var video=evidence.videoContent();
+        if(contract==null || !contract.reportRequired() || !contract.sources().equals(Set.of(AnalysisContract.Source.VIDEO)))
+            throw new AgentException("INVALID_EVIDENCE","A video-only report must match the frozen task");
+        context.checkVideoQuery(video.videoId(),video.startMs(),video.endMs());
+        String html="<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><title>视频内容报告</title><main><h1>视频内容报告</h1>"
+                +renderVideo(video,evidence.id())+"<p>本报告只分析视频内容，未读取评论和弹幕；采样画面不代表连续动作或因果。</p></main></html>";
+        var report=context.saveReport(evidence.id(),html.getBytes(StandardCharsets.UTF_8));
+        return new ToolResult(name(),Map.of("artifact_id",report.artifactId(),"url",report.url(),"status","READY"),evidence.id(),
+                new Answer("视频内容报告已生成：[查看 HTML 报告]("+report.url()+")（需登录鉴权）。本次未读取评论和弹幕。",List.of(evidence.id())));
     }
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> sections(String source, Dataset data) {

@@ -12,12 +12,13 @@ import java.util.function.*;
 public final class LoopControl implements AutoCloseable {
     private final LoopPolicy policy;
     private final org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler timer;
-    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor calls, tools, video;
+    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor calls, tools, video, termination;
     private final boolean owns;
     public LoopControl(LoopPolicy policy) {
         this(policy, scheduler(), com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-model", 2, 4, 16),
                 com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-tools", 2, 4, 16),
-                com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-video", 2, 4, 8), true);
+                com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-video", 2, 4, 8),
+                com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-termination", 2, 4, 32), true);
     }
     private static org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler scheduler() {
         var scheduler = new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler(); scheduler.setDaemon(true);
@@ -25,16 +26,31 @@ public final class LoopControl implements AutoCloseable {
     }
     public LoopControl(LoopPolicy policy, org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler timer,
             org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor calls, org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor tools,
-            org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor video, boolean owns) {
-        this.policy = policy; this.timer = timer; this.calls = calls; this.tools = tools; this.video = video; this.owns = owns;
+            org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor video,
+            org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor termination, boolean owns) {
+        this.policy = policy; this.timer = timer; this.calls = calls; this.tools = tools; this.video = video; this.termination = termination; this.owns = owns;
     }
     public LoopPolicy policy() { return policy; }
     public void arm(RunState run) {
         run.configureBudget(policy);
         if (!run.bindControl(policy.requestTimeout(), policy.maxModelCalls())) return;
-        long millis = Math.max(0, Duration.between(Instant.now(), run.deadline()).toMillis());
-        ScheduledFuture<?> deadline = timer.schedule(run::timeout, Instant.now().plusMillis(millis));
+        ScheduledFuture<?> deadline = timer.schedule(() -> expire(run), run.deadline());
         run.onTerminal(snapshot -> deadline.cancel(false));
+    }
+    private void expire(RunState run) {
+        // Cancellation callbacks are the host's quick adapter/future cancellation registrations, never AgentHooks.
+        if (!run.signalTimeout()) return;
+        try {
+            termination.execute(() -> {
+                try { run.timeout(); }
+                catch (RuntimeException error) {
+                    org.slf4j.LoggerFactory.getLogger(LoopControl.class).warn("deadline_termination_pending run_id={} type={}", run.id, error.getClass().getSimpleName());
+                }
+            });
+        } catch (RejectedExecutionException error) {
+            // Never CallerRuns. RunService sees the expired/local-stopped run and reconciles it later.
+            // The managed executor records rejection metrics; do not add synchronous logging I/O to this path.
+        }
     }
     public <T> T call(RunState run, Duration timeout, String timeoutCode, String failureCode,
                        Function<Runnable, Runnable> contextual, Function<CallControl, T> operation) {
@@ -102,5 +118,5 @@ public final class LoopControl implements AutoCloseable {
         try { timing.accept(name, value); }
         catch (RuntimeException ignored) { /* Telemetry failure must not change execution control. */ }
     }
-    @Override public void close() { if (owns) { timer.shutdown(); calls.shutdown(); tools.shutdown(); video.shutdown(); } }
+    @Override public void close() { if (owns) { timer.shutdown(); calls.shutdown(); tools.shutdown(); video.shutdown(); termination.shutdown(); } }
 }

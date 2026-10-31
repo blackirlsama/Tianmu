@@ -17,6 +17,13 @@ public final class CreatorAudienceReport {
         Metrics metrics=report.metrics();
         if(report.sources()!=null) {
             var s=report.sources();
+            if(s.selectedSources().size()==1) {
+                boolean comments=s.selectedSources().contains(com.tianmu.agent.core.AnalysisContract.Source.COMMENT);
+                h.append("<p class=\"context\">本次只分析").append(comments?"评论及回复；未读取弹幕。":"弹幕；未读取评论及回复。")
+                        .append("</p><div class=\"metrics\"><div><b>").append(comments?s.comments():s.danmaku()).append("</b><span>")
+                        .append(comments?"条评论及回复":"条弹幕").append("</span></div><div><b>").append(s.uniqueViewers()).append("</b><span>位参与观众</span></div></div>")
+                        .append("<p class=\"muted\">已分析所选来源全部 ").append(metrics.analyzedMessages()).append(" 条互动；作者发言单独标记。</p>");
+            } else {
             if(s.danmaku()==0)h.append("<p class=\"context\">").append(report.allTime()?"截至统计时点，当前视频没有已保留的弹幕记录。":"本统计时段内没有弹幕，不代表视频没有弹幕；其他日期的弹幕未计入本报告。可选择全量或自定义区间查看。").append("</p>");
             if(s.comments()==0)h.append("<p class=\"context\">").append(report.allTime()?"截至统计时点，当前视频没有已保留的评论及回复。":"本统计时段内没有评论及回复，其他日期的评论未计入本报告。").append("</p>");
             h.append("<div class=\"metrics\"><div><b>").append(s.danmaku()).append("</b><span>条弹幕</span></div><div><b>").append(s.comments())
@@ -24,6 +31,7 @@ public final class CreatorAudienceReport {
                     .append("<p class=\"muted\">弹幕参与观众 ").append(s.danmakuViewers()).append(" 位，评论参与观众 ").append(s.commentViewers())
                     .append(" 位；两个来源可能有同一人，不相加。跨来源去重后共 ").append(s.uniqueViewers()).append(" 位观众。作者发言：").append(s.danmakuAuthors()).append(" 条弹幕、").append(s.commentAuthors())
                     .append(" 条评论，单独标记，不作为观众需求证据。已分析本时段全部 ").append(metrics.analyzedMessages()).append(" 条互动，分析未抽样。</p>");
+            }
         } else h.append("<div class=\"metrics\"><div><b>").append(metrics.messages()).append("</b><span>条弹幕</span></div><div><b>").append(metrics.viewers())
                 .append("</b><span>位参与观众</span></div><div><b>").append(metrics.topics()).append("</b><span>个讨论话题</span></div></div><p class=\"muted\">已分析本时段全部 ")
                 .append(metrics.analyzedMessages()).append(" 条弹幕。正文引用为阅读示例，分析未抽样。</p>");
@@ -39,7 +47,12 @@ public final class CreatorAudienceReport {
             if(index==6)h.append("<details class=\"more-topics\"><summary>查看其他讨论（").append(report.topics().size()-6).append(" 个话题）</summary>");
             h.append("<article><div class=\"topic-head\"><span class=\"number\">").append(String.format(Locale.ROOT,"%02d",++index)).append("</span><h3>").append(esc(topic.title()))
                     .append("</h3><span class=\"badge\">").append(topic.messages()).append(report.sources()==null?" 条相关弹幕":" 条观众反馈").append("</span></div>");
-            if(report.sources()!=null)h.append("<p class=\"muted\">弹幕 ").append(topic.danmaku()).append(" 条 · 评论及回复 ").append(topic.comments()).append(" 条</p>");
+            if(report.sources()!=null) {
+                h.append("<p class=\"muted\">");
+                if(report.sources().selectedSources().contains(com.tianmu.agent.core.AnalysisContract.Source.DANMAKU))h.append("弹幕 ").append(topic.danmaku()).append(" 条 ");
+                if(report.sources().selectedSources().contains(com.tianmu.agent.core.AnalysisContract.Source.COMMENT))h.append("评论及回复 ").append(topic.comments()).append(" 条");
+                h.append("</p>");
+            }
             h.append("<p>").append(esc(topic.observation())).append("</p>");
             if(!topic.videoContext().isBlank()){
                 h.append("<p class=\"context\"><strong>结合画面看：</strong>").append(esc(topic.videoContext())).append(" ");for(Link moment:topic.videoMoments())link(h,moment);h.append("</p>");

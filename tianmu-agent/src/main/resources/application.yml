@@ -44,6 +44,7 @@ agent:
     tools: {core: 2, max: 4, queue: 16}
     video: {core: 2, max: 4, queue: 8}
     sse: {core: 4, max: 4, queue: 128}
+    termination: {core: 2, max: 4, queue: 32}
   context:
     max-input-bytes: ${AGENT_CONTEXT_MAX_INPUT_BYTES:98304}
     max-history-bytes: ${AGENT_CONTEXT_MAX_HISTORY_BYTES:16384}

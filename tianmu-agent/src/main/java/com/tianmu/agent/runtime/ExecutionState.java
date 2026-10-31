@@ -11,6 +11,9 @@ public final class ExecutionState {
     private final List<com.tianmu.agent.core.AgentTypes.ToolExchange> exchanges = new ArrayList<>();
     private final EvidenceStore evidence;
     private final Map<String, Integer> commentOffsets = new HashMap<>();
+    private final Set<String> readyReports = new HashSet<>();
+    public synchronized void reportReady(String evidenceId) { readyReports.add(evidenceId); }
+    public synchronized boolean hasReport(String evidenceId) { return readyReports.contains(evidenceId); }
     public synchronized int commentOffset(String id) { return commentOffsets.getOrDefault(id, 0); }
     public synchronized void advanceComments(String id, int expected, int next) {
         if (commentOffset(id) != expected || next < expected) throw new com.tianmu.agent.core.AgentException("INVALID_COMMENT_OFFSET", "Read comment pages in order");

@@ -104,8 +104,7 @@ public class AgentRuntime {
         finalizeWithoutTools(run, message);
     }
     private int maxTurns(RunState run){
-        return run.task()!=null && Set.of("danmaku.report", "audience.report", "comments.analysis").contains(run.task().specification().type())
-                ?Math.max(harness.policy().maxTurns(),Math.min(32,run.modelCallLimit()-1)):harness.policy().maxTurns();
+        return com.tianmu.agent.application.AnalysisExecutionPolicy.maxTurns(run.task()==null?null:run.task().specification(), harness.policy().maxTurns(), run.modelCallLimit());
     }
     private ModelContext context(RunState run, String message, int remaining, boolean finalizing) {
         return harness.stage(run, "agent.context", null, null, Map.of("context.observation_count", run.execution().observations().size()),

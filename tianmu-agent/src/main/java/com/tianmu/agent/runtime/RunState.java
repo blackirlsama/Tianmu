@@ -29,7 +29,7 @@ public class RunState implements EvidenceContext {
     public final LocalDate businessDate;
     private final ExecutionState execution;
     private final RunEventStore events;
-    private Status status = Status.QUEUED;
+    private volatile Status status = Status.QUEUED;
     private int steps, modelCalls, preparationCalls, externalModelCalls, modelCallLimit = 16;
     private StopReason stopReason;
     private Result prepared;
@@ -44,6 +44,12 @@ public class RunState implements EvidenceContext {
     private Answer answer;
     private String clarification, errorCode;
     private final List<Consumer<Snapshot>> terminalObservers = new ArrayList<>();
+    // Process-local stop intent. Durable status/events remain unchanged until commit succeeds.
+    private record PendingTerminal(Snapshot snapshot, String event, Object data, Object done) {}
+    private PendingTerminal pendingTerminal;
+    private Instant terminalRetryAt = Instant.MIN;
+    private int terminalCommitFailures;
+    private volatile boolean discarded;
 
     public RunState(AccessScope owner, String message) { this(owner, message, Clock.systemUTC()); }
     public RunState(AccessScope owner, String message, Clock clock) {
@@ -79,7 +85,7 @@ public class RunState implements EvidenceContext {
         List<Consumer<Snapshot>> observers;
         synchronized (this) {
             if (com.tianmu.agent.core.AgentTypes.terminal(status)) return;
-            restore(value); turnControl.interrupt(value.stopReason()); observers = List.copyOf(terminalObservers); terminalObservers.clear();
+            restore(value); pendingTerminal = null; turnControl.interrupt(value.stopReason()); observers = List.copyOf(terminalObservers); terminalObservers.clear();
         }
         cancellation.cancel(value.stopReason()); observers.forEach(observer -> notifyObserver(observer, value));
     }
@@ -130,6 +136,9 @@ public class RunState implements EvidenceContext {
     public void preparationCallStarted() { checkpoint(); synchronized (this) { reserveModelCall(); preparationCalls++; backend.save(this); } }
     public void externalModelCallStarted() { checkpoint(); synchronized (this) { reserveModelCall(); externalModelCalls++; backend.save(this); } }
     private void reserveModelCall() {
+        cancellation.checkpoint();
+        if (pendingTerminal != null || discarded || com.tianmu.agent.core.AgentTypes.terminal(status))
+            throw new AgentException("RUN_TERMINATED", "Execution has already stopped");
         if (modelCalls + preparationCalls + externalModelCalls >= modelCallLimit) throw new AgentException("MODEL_CALL_BUDGET_EXCEEDED", "Request model-call budget exhausted");
     }
     public TurnControl.Reservation reserveFinalResponse() { return turnControl.reserve(); }
@@ -142,7 +151,7 @@ public class RunState implements EvidenceContext {
         notifyObserver(observer, completed);
     }
     public synchronized boolean start() {
-        if (status != Status.QUEUED) return false;
+        if (status != Status.QUEUED || pendingTerminal != null || discarded || turnControl.state().phase() == TurnControl.Phase.COMMITTED) return false;
         status = Status.RUNNING; restored = null; backend.save(this); emit("PROGRESS", Map.of("stage", "running")); return true;
     }
     public void checkpoint() {
@@ -176,6 +185,13 @@ public class RunState implements EvidenceContext {
         publish(null, Status.FAILED, null, null, code, reason);
     }
     public void timeout() { fail("DEADLINE_EXCEEDED"); }
+    /** Watchdog-only fast path: no aggregate monitor, storage, terminal observers or public DONE. */
+    public boolean signalTimeout() {
+        if (com.tianmu.agent.core.AgentTypes.terminal(status) || discarded
+                || !turnControl.interrupt(StopReason.DEADLINE_EXCEEDED)) return false;
+        cancellation.cancel(StopReason.DEADLINE_EXCEEDED);
+        return true;
+    }
     public void cancel() { cancel(StopReason.USER_CANCELLED); }
     public void cancel(StopReason reason) {
         if (!Set.of(StopReason.USER_CANCELLED, StopReason.SUPERSEDED, StopReason.SHUTDOWN).contains(reason))
@@ -183,6 +199,7 @@ public class RunState implements EvidenceContext {
         publish(null, Status.CANCELLED, null, null, null, reason);
     }
     private boolean publish(TurnControl.Reservation reservation, Status target, Answer value, String text, String code, StopReason reason) {
+        if (target == Status.FAILED || target == Status.CANCELLED) return stop(target, code, reason);
         List<Consumer<Snapshot>> observers; Snapshot completed; boolean won;
         synchronized (this) {
             if (com.tianmu.agent.core.AgentTypes.terminal(status)) return false;
@@ -204,11 +221,91 @@ public class RunState implements EvidenceContext {
             Snapshot base = snapshot();
             Snapshot proposed = new Snapshot(id, target, createdAt, steps, value, text, code, base.traceId(), reason, modelCalls,
                     base.route(), base.faqId(), base.faqVersion(), base.preparation(), task, preparationCalls, modelCalls + preparationCalls + externalModelCalls, sessionId, turnSeq);
-            // No terminal status, cancellation or DONE is exposed before this durable transaction succeeds.
+            // No terminal status or DONE is exposed before this durable transaction succeeds.
             completed = backend.commit(this, proposed, event, data,
                     Map.of("status", target.name(), "run_id", id.toString(), "stop_reason", reason.name()));
             won = completed.equals(proposed);
             restore(completed); turnControl.interrupt(completed.stopReason());
+            observers = List.copyOf(terminalObservers); terminalObservers.clear();
+        }
+        if (completed.status() == Status.FAILED || completed.status() == Status.CANCELLED) cancellation.cancel(completed.stopReason());
+        observers.forEach(observer -> notifyObserver(observer, completed));
+        return won;
+    }
+    private boolean stop(Status target, String code, StopReason reason) {
+        if (!requestStop(target, code, reason)) return false;
+        return commitPendingTerminal(Instant.now());
+    }
+    private boolean requestStop(Status target, String code, StopReason reason) {
+        synchronized (this) {
+            if (com.tianmu.agent.core.AgentTypes.terminal(status) || pendingTerminal != null || discarded) return false;
+            // A worker woken by watchdog cancellation must not replace the timeout with CANCELLED/SHUTDOWN.
+            if (turnControl.state().reason() == StopReason.DEADLINE_EXCEEDED) {
+                target = Status.FAILED; code = "DEADLINE_EXCEEDED"; reason = StopReason.DEADLINE_EXCEEDED;
+            }
+            Snapshot base = snapshot();
+            Snapshot proposed = new Snapshot(id, target, createdAt, steps, null, null, code, base.traceId(), reason, modelCalls,
+                    base.route(), base.faqId(), base.faqVersion(), base.preparation(), task, preparationCalls,
+                    modelCalls + preparationCalls + externalModelCalls, sessionId, turnSeq);
+            pendingTerminal = new PendingTerminal(proposed, target == Status.FAILED ? "ERROR" : "ABORT",
+                    target == Status.FAILED ? Map.of("code", code) : Map.of("reason", reason.name().toLowerCase(Locale.ROOT)),
+                    Map.of("status", target.name(), "run_id", id.toString(), "stop_reason", reason.name()));
+            turnControl.interrupt(reason);
+        }
+        // Stop adapters before potentially slow/failing storage I/O. This is not a published terminal.
+        cancellation.cancel(reason);
+        return true;
+    }
+    public synchronized boolean terminalPending() {
+        return !discarded && !com.tianmu.agent.core.AgentTypes.terminal(status)
+                && (pendingTerminal != null || turnControl.state().reason() == StopReason.DEADLINE_EXCEEDED);
+    }
+    /** Due time also covers tasks whose worker/watchdog exited without committing any terminal. */
+    public synchronized Instant terminalReconciliationAt() {
+        return discarded || com.tianmu.agent.core.AgentTypes.terminal(status) ? Instant.MAX
+                : pendingTerminal == null ? deadline : terminalRetryAt;
+    }
+    /** The authority has purged this run. Release local execution without inventing a durable terminal/event. */
+    void discard() {
+        synchronized (this) {
+            discarded = true; pendingTerminal = null; terminalObservers.clear();
+            turnControl.interrupt(StopReason.USER_CANCELLED);
+        }
+        cancellation.cancel(StopReason.USER_CANCELLED);
+    }
+    public void reconcileTerminal(Instant now) {
+        prepareTerminalReconciliation(now);
+        commitPendingTerminal(now);
+    }
+    void prepareTerminalReconciliation(Instant now) {
+        boolean expired;
+        synchronized (this) {
+            if (now.isBefore(terminalReconciliationAt())) return;
+            expired = pendingTerminal == null;
+        }
+        if (expired) requestStop(Status.FAILED, "DEADLINE_EXCEEDED", StopReason.DEADLINE_EXCEEDED);
+    }
+    synchronized void deferTerminalReconciliation(Instant now) {
+        if (pendingTerminal == null || now.isBefore(terminalRetryAt)) return;
+        terminalCommitFailures = Math.min(6, terminalCommitFailures + 1);
+        Instant failedAt = Instant.now();
+        terminalRetryAt = (now.isAfter(failedAt) ? now : failedAt)
+                .plusSeconds(Math.min(30, 1L << (terminalCommitFailures - 1)));
+    }
+    private boolean commitPendingTerminal(Instant now) {
+        Snapshot completed; List<Consumer<Snapshot>> observers; boolean won;
+        synchronized (this) {
+            if (pendingTerminal == null || com.tianmu.agent.core.AgentTypes.terminal(status) || now.isBefore(terminalRetryAt)) return false;
+            PendingTerminal intent = pendingTerminal;
+            try {
+                completed = backend.commit(this, intent.snapshot(), intent.event(), intent.data(), intent.done());
+            } catch (RuntimeException error) {
+                // At most one intent per admitted run, no background replay of model/tool operations.
+                deferTerminalReconciliation(now);
+                throw error;
+            }
+            won = completed.equals(intent.snapshot());
+            restore(completed); pendingTerminal = null; turnControl.interrupt(completed.stopReason());
             observers = List.copyOf(terminalObservers); terminalObservers.clear();
         }
         if (completed.status() == Status.FAILED || completed.status() == Status.CANCELLED) cancellation.cancel(completed.stopReason());

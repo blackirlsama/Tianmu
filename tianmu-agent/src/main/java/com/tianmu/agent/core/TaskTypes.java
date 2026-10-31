@@ -7,12 +7,14 @@ import java.util.*;
 
 public final class TaskTypes {
     private TaskTypes() {}
-    public record Specification(String type, Map<String, Object> conditions, Map<String, String> provenance) {
+    public record Specification(String type, Map<String, Object> conditions, Map<String, String> provenance, AnalysisContract analysis) {
+        public Specification(String type, Map<String,Object> conditions, Map<String,String> provenance) { this(type, conditions, provenance, null); }
         public Specification {
             conditions = ImmutablePayload.map(conditions); provenance = Map.copyOf(provenance);
             TaskConditions.read(type, conditions);
         }
         public TaskConditions typed() { return TaskConditions.read(type, conditions); }
+        public AnalysisContract reading() { return analysis == null ? AnalysisContract.legacy(type) : analysis; }
     }
     public record PreparedTask(UUID runId, String originalQuery, String query, LocalDate businessDate,
             String timezone, AccessScope scope, PreparedRequest preparation, Specification specification,

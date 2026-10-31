@@ -88,6 +88,7 @@ public final class ReportAnalysisCache implements com.tianmu.agent.runtime.RunCo
     }
     private AgentException busy(){return new AgentException("REPORT_IN_PROGRESS","The same authorized snapshot is already being analyzed; use the existing task instead of restarting it");}
     public void completed(com.tianmu.agent.runtime.RunState run,com.tianmu.agent.core.AgentTypes.Snapshot snapshot){release(run.id);}
+    public void discarded(com.tianmu.agent.runtime.RunState run){release(run.id);}
     public void release(UUID runId){
         if(!activeRuns.remove(runId))return;
         leases.asMap().entrySet().removeIf(e->e.getValue().runId().equals(runId));if(store!=null)store.release(runId);
@@ -98,6 +99,7 @@ public final class ReportAnalysisCache implements com.tianmu.agent.runtime.RunCo
             ObjectNode input=json.createObjectNode();input.put("revision",revision);input.put("tenant",owner.tenantId());
             input.put("actor",owner.userId());input.put("videoId",data.query().videoId());
             input.put("source",data.source());input.put("demo",data.demo());
+            if(data.sources()!=null)input.set("selected_sources",json.valueToTree(new java.util.TreeSet<>(data.sources().selectedSources())));
             input.put("request",Objects.toString(variant,""));
             input.set("range",data.query().allTime()?json.valueToTree(Map.of("mode","ALL_RETAINED")):json.valueToTree(data.query()));
             com.fasterxml.jackson.databind.node.ArrayNode corpus=json.valueToTree(data.audience().corpus());

@@ -36,6 +36,7 @@ public class ExecutionConfiguration {
     @Bean("toolExecutor") ThreadPoolTaskExecutor tools(ExecutionProperties p, MeterRegistry m) { return managed("agent-tools", p.tools(), m); }
     @Bean("videoExecutor") ThreadPoolTaskExecutor video(ExecutionProperties p, MeterRegistry m) { return managed("agent-video", p.video(), m); }
     @Bean("sseExecutor") ThreadPoolTaskExecutor sse(ExecutionProperties p, MeterRegistry m) { return managed("agent-sse", p.sse(), m); }
+    @Bean("terminationExecutor") ThreadPoolTaskExecutor termination(ExecutionProperties p, MeterRegistry m) { return managed("agent-termination", p.termination(), m); }
     @Bean("deadlineScheduler") ThreadPoolTaskScheduler scheduler() {
         var scheduler = new ThreadPoolTaskScheduler(); scheduler.setPoolSize(1);
         scheduler.setThreadNamePrefix("agent-deadline-"); scheduler.setRemoveOnCancelPolicy(true); return scheduler;

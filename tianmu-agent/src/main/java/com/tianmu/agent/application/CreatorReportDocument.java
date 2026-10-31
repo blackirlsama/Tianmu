@@ -80,7 +80,9 @@ public record CreatorReportDocument(String schemaVersion,String title,String per
         long analyzed=audience.corpus().stream().filter(g->classified.contains(g.id())).mapToLong(TextGroup::count).sum();
         long memberships=topics.stream().mapToLong(t->t.sampleIds().size()).sum();
         var coverage=new Coverage(data.totalMessages(),analyzed,audience.corpus().size(),classified.size(),analyzed==data.totalMessages() && classified.size()==memberships && classified.equals(groups.keySet()));
-        return new CreatorReportDocument("2.2","观众都在聊什么",(data.query().allTime()?"全量弹幕与评论 · 截至 "+DATE.format(data.query().end()):DATE.format(data.query().start())+" — "+DATE.format(data.query().end()))+" · 北京时间",
+        String sourceLabel=data.sources()==null?"弹幕":data.sources().selectedSources().size()==2?"弹幕与评论":data.sources().selectedSources().contains(AnalysisContract.Source.COMMENT)?"评论及回复":"弹幕";
+        peakText=peakText.replace("弹幕、评论及回复",sourceLabel);
+        return new CreatorReportDocument("2.3","观众都在聊什么",(data.query().allTime()?"全量"+sourceLabel+" · 截至 "+DATE.format(data.query().end()):DATE.format(data.query().start())+" — "+DATE.format(data.query().end()))+" · 北京时间",
                 data.demo() || audience.interactions().stream().anyMatch(f->f.nickname().startsWith("模拟")),new Metrics(data.totalMessages(),data.uniqueSenders(),cards.size(),analyzed),
                 conclusions,video==null?null:new VideoSummary(video.summary(),video.sampledAtMs().size(),video.sourceVersion(),!video.transcript().isBlank()),cards,viewers,playback,activity,peakText,audience.unknownPlayback()-(data.sources()==null?0:data.sources().comments()),
                 DATE.format(LocalDateTime.ofInstant(data.dataAsOf(),DanmakuTypes.ZONE)),"/video/"+data.query().videoId(),data.sources(),coverage,data.query().allTime());

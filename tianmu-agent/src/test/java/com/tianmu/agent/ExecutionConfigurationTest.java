@@ -29,4 +29,24 @@ class ExecutionConfigurationTest {
                     } finally { release.countDown(); }
                 });
     }
+    @Test void terminationPoolIsBoundedObservableAndNeverRunsRejectedWorkOnTheCaller() {
+        new ApplicationContextRunner().withUserConfiguration(ExecutionConfiguration.class)
+                .withBean(MeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues("agent.execution.termination.core=1", "agent.execution.termination.max=1", "agent.execution.termination.queue=1")
+                .run(context -> {
+                    assertNull(context.getStartupFailure());
+                    var termination = context.getBean("terminationExecutor", ThreadPoolTaskExecutor.class);
+                    var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+                    var callerRan = new java.util.concurrent.atomic.AtomicBoolean();
+                    try {
+                        termination.execute(() -> { entered.countDown(); try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } });
+                        assertTrue(entered.await(1, TimeUnit.SECONDS)); termination.execute(() -> {});
+                        assertThrows(RejectedExecutionException.class, () -> termination.execute(() -> callerRan.set(true)));
+                        assertFalse(callerRan.get());
+                        assertEquals(1.0, context.getBean(MeterRegistry.class).get("agent.executor.rejected").tag("pool", "agent-termination").counter().count());
+                        assertEquals(1.0, context.getBean(MeterRegistry.class).get("executor.queued").tag("name", "terminationExecutor").gauge().value());
+                        assertEquals("ready", context.getBean("modelExecutor", ThreadPoolTaskExecutor.class).submit(() -> "ready").get(1, TimeUnit.SECONDS));
+                    } finally { release.countDown(); }
+                });
+    }
 }

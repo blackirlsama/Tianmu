@@ -15,7 +15,7 @@ public final class VideoContentTask {
     public static boolean requested(String text) {
         if (CreatorInteractionTask.requested(text)) return false;
         return !AudienceReportTask.requested(text) && !DanmakuReportTask.requested(text) && !CommentAnalysisTask.requested(text) && !text.contains("弹幕") && !ConversationTopics.general(text)
-                && text.matches("(?s).*(内容|画面|剧情|镜头|对白|讲了什么|发生了什么).*");
+                && (text.matches("(?s).*(内容|画面|剧情|镜头|对白|讲了什么|发生了什么).*") || ConversationTopics.videoContent(text));
     }
     public static Specification parse(String text) {
         var ids = DanmakuTarget.matcher(text).results().toList();
@@ -46,6 +46,16 @@ public final class VideoContentTask {
     private static long millis(String value) {
         try { return new BigDecimal(value).movePointRight(3).longValueExact(); }
         catch (ArithmeticException e) { throw new IllegalArgumentException("播放时间须为毫秒精度的有效数字。"); }
+    }
+    /** Extract only playback syntax; report collection dates remain a separate constraint. */
+    static Optional<TaskConditions.Video> playbackBounds(String text, long videoId) {
+        var seconds = SECONDS.matcher(text).results().toList();
+        var clocks = CLOCK.matcher(text).results().toList();
+        if (!text.contains("秒") && !text.matches("(?s).*播放\\s*\\d.*") && clocks.isEmpty()) return Optional.empty();
+        if (seconds.size() + clocks.size() != 1)
+            throw new IllegalArgumentException("请指定一个完整播放区间，例如第2秒到第6秒（最多120秒）。");
+        String range = seconds.isEmpty() ? clocks.get(0).group() : seconds.get(0).group();
+        return Optional.of((TaskConditions.Video) parse("视频" + videoId + " " + range).typed());
     }
     private static long clock(String value) {
         String[] parts = value.split(":");

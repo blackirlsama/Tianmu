@@ -1,6 +1,6 @@
 {
   "name": "comment-analysis",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "读取作者本人视频在指定区间的完整评论和回复，默认全量、明确指定时间时按区间，结合视频内容理解观众反馈；作者发言单独统计。",
   "tools": [
     "query_video_comments",

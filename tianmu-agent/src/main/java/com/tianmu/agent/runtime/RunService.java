@@ -22,6 +22,10 @@ public class RunService {
     private List<RunCompletionListener> completionListeners=List.of();
     @org.springframework.beans.factory.annotation.Autowired
     void completionListeners(List<RunCompletionListener> listeners){completionListeners=List.copyOf(listeners);}
+    @org.springframework.beans.factory.annotation.Autowired
+    void recoveryMetrics(io.micrometer.core.instrument.MeterRegistry metrics) {
+        io.micrometer.core.instrument.Gauge.builder("agent.run.terminal.pending", this, RunService::pendingTerminals).register(metrics);
+    }
     public RunService(RequestOrchestrator orchestrator, RuntimeHarness harness, com.tianmu.agent.runtime.store.RunRepository repository) {
         this(orchestrator, harness, repository, com.tianmu.agent.config.ExecutionConfiguration.standalone("agent-runs", 2, 4, 32), true);
     }
@@ -86,16 +90,57 @@ public class RunService {
             throw new AgentException("RUN_NOT_FOUND", "Run not found");
         if (!caller.videoIds().containsAll(run.owner.videoIds()))
             throw new AgentException("FORBIDDEN", "Access scope changed; old results cannot be read");
+        // HTTP cancellation must stop the actual worker, not a newly materialized storage projection.
+        RunState local = runs.get(id);
+        if (local != null) {
+            local.adoptTerminal(run.snapshot());
+            run = local;
+        }
         io.opentelemetry.api.trace.Span.current().setAttribute("run.id", id.toString());
         return run;
     }
+    public Snapshot cancel(UUID id, AccessScope caller) {
+        RunState run = owned(id, caller);
+        if (!com.tianmu.agent.core.AgentTypes.terminal(run.snapshot().status())) {
+            // Also retain a queued run cancelled before the startup recovery scan claims it.
+            RunState existing = runs.putIfAbsent(id, run);
+            if (existing != null) run = existing;
+        }
+        run.cancel();
+        if (run.terminalPending()) throw new AgentException("STORAGE_UNAVAILABLE", "Execution stopped; durable termination is pending");
+        return run.snapshot();
+    }
+    public long pendingTerminals() { return runs.values().stream().filter(RunState::terminalPending).count(); }
     public java.util.List<com.tianmu.agent.core.MemoryTypes.Message> messages(UUID session, AccessScope owner, long before) { return conversations.messages(session, owner, before); }
     @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000)
     public void maintain() {
+        Instant now = Instant.now();
+        // Retry only durable outcomes, oldest due first. Bound work per tick and isolate each failure.
+        runs.values().stream().map(run -> Map.entry(run, run.terminalReconciliationAt()))
+                .filter(entry -> !now.isBefore(entry.getValue())).sorted(Map.Entry.comparingByValue()).limit(8).forEach(entry -> {
+                    RunState run = entry.getKey();
+                    try { run.prepareTerminalReconciliation(now); repository.refresh(run); run.reconcileTerminal(now); }
+                    catch (AgentException e) {
+                        if ("RUN_NOT_FOUND".equals(e.code())) {
+                            run.discard(); runs.remove(run.id, run); harness.discard(run.id);
+                            completionListeners.forEach(listener -> {
+                                try { listener.discarded(run); }
+                                catch (RuntimeException error) { org.slf4j.LoggerFactory.getLogger(RunService.class).warn("discard_listener_failed run_id={} type={}", run.id, error.getClass().getSimpleName()); }
+                            });
+                        } else {
+                            run.deferTerminalReconciliation(now);
+                            org.slf4j.LoggerFactory.getLogger(RunService.class).warn("terminal_reconciliation_failed run_id={} code={}", run.id, e.code());
+                        }
+                    }
+                    catch (Exception e) {
+                        run.deferTerminalReconciliation(now);
+                        org.slf4j.LoggerFactory.getLogger(RunService.class).warn("terminal_reconciliation_failed run_id={} type={}", run.id, e.getClass().getSimpleName());
+                    }
+                });
         try {
-            runs.values().stream().filter(r -> !com.tianmu.agent.core.AgentTypes.terminal(r.snapshot().status())).forEach(repository::refresh);
             for (RunState run : repository.recoverQueued()) if (runs.putIfAbsent(run.id, run) == null) {
                 try { submit(run); }
+                catch (AgentException e) { run.fail(e.code()); }
                 catch (RejectedExecutionException e) { run.fail("QUEUE_FULL"); }
             }
         } catch (Exception e) { org.slf4j.LoggerFactory.getLogger(RunService.class).warn("storage_maintenance_failed type={}", e.getClass().getSimpleName()); }

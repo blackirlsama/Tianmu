@@ -36,13 +36,16 @@ public class ToolDispatcher {
     public ToolDispatcher(SkillCatalog skills, RuntimeHarness harness, ToolRegistry registry) { this(skills, harness, registry, null); }
     public List<ToolDefinition> definitions(Set<String> activeSkills) { return registry.definitions(activeSkills); }
     public List<ToolDefinition> definitions(RunState run) {
-        return registry.definitions(run.execution().activeSkills(), snapshotTools(run));
+        return registry.definitions(run.execution().activeSkills(), snapshotTools(run)).stream()
+                .filter(t -> permitted(t.name(), run)).toList();
     }
+    private boolean permitted(String name, RunState run) { return com.tianmu.agent.application.AnalysisExecutionPolicy.permits(name, run.task() == null ? null : run.task().specification()); }
     private Set<String> snapshotTools(RunState run) { return run.task() == null ? registry.names() : run.task().allowedTools(); }
     public void checkBatch(List<ToolCall> calls,RunState run) {
         if(calls.size()<2 || calls.size()>4)throw new AgentException("INVALID_DECISION","Native read batch must contain two to four calls");
         Set<ToolCall> unique=new HashSet<>();
         for(var call:calls) {
+            if (!permitted(call.name(), run)) throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Tool is outside the frozen source selection");
             var tool=registry.admit(call.name(),run.execution().activeSkills(),snapshotTools(run));
             if(!tool.batchable() || !unique.add(new ToolCall(call.name(),call.arguments())))
                 throw new AgentException("INVALID_DECISION","Only distinct independent reads can share a native tool batch");
@@ -51,6 +54,7 @@ public class ToolDispatcher {
     }
     public ToolResult execute(ToolCall call, RunState run) {
         run.checkpoint();
+        if (!permitted(call.name(), run)) throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Tool is outside the frozen source selection");
         AgentTool tool = registry.admit(call.name(), run.execution().activeSkills(), snapshotTools(run));
         try {
             var span = io.opentelemetry.api.trace.Span.current();
@@ -90,7 +94,8 @@ public class ToolDispatcher {
             long next=remainingMatches ? matched.get(matched.size()-limit).sequence() : loaded.isEmpty()?0:loaded.get(0).sequence();
             return Map.of("messages",records,"next_before",next,"more_available",remainingMatches || loaded.size()==50);
         }
-        public boolean reportRequiresVideo(){return !run.query().matches("(?s).*(?:不要|不需要|无需|不)(?:读取|分析|看|结合|读)?(?:视频|画面).*");}
+        public com.tianmu.agent.core.AnalysisContract analysisContract(){return run.task()==null?null:run.task().specification().analysis();}
+        public boolean reportRequiresVideo(){return run.task()!=null && run.task().specification().reading()!=null && run.task().specification().reading().includes(com.tianmu.agent.core.AnalysisContract.Source.VIDEO);}
         public List<Map<String, String>> listSkills() { return skills.list(); }
         public Skill activateSkill(String name) {
             if (!tool.canActivateSkills()) throw new AgentException("TOOL_CAPABILITY_DENIED", "Tool cannot activate skills");

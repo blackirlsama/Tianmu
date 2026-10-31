@@ -7,8 +7,8 @@ import java.util.*;
 /** Retains the user's own request, never an LLM-generated assertion or permission grant. */
 public final class ConversationFocus {
     private ConversationFocus() {}
-    private static boolean continuation(String text) {
-        return text.length() <= 80 && text.matches("(?s)(?:就是|就|对[，,]?|是[的，,]?|继续|再|更|按|基于|针对).*");
+    public static boolean continuation(String text) {
+        return text.length() <= 80 && !ConversationTopics.general(text) && text.matches("(?s)(?:就是|就|对[，,]?|是[的，,]?|继续|再|更|按|基于|针对|只看|只分析|仅|不看|不要|不用|这次|加上|也看|改为|换成).*");
     }
     /** Existing sessions can recover a goal from user words without generating a summary. */
     public static Focus recover(List<MemoryTypes.Message> recent, RequestContext page) {
@@ -24,6 +24,7 @@ public final class ConversationFocus {
         String video = page == null ? null : page.videoId();
         var explicit = DanmakuTarget.matcher(current);
         if (explicit.find()) video = explicit.group(1);
+        else if(page==null && prior!=null && continuation(current))video=prior.referenceVideoId();
         if (continuation(current) && prior != null && Objects.equals(video, prior.referenceVideoId())) return prior;
         if (current.length() > 500) current = current.substring(0, Character.isHighSurrogate(current.charAt(479)) ? 479 : 480)+" [已截断，仅供指代]";
         return new Focus(current, runId, video);

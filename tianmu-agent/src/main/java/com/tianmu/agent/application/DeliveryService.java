@@ -45,19 +45,24 @@ public class DeliveryService {
         });
     }
     public void answer(RunState run, Answer raw, TurnControl.Reservation reservation, StopReason reason) {
+        if (run.task() != null && run.task().specification().reading() != null && run.task().specification().reading().reportRequired() && reason != StopReason.TOOL_DELIVERY)
+            throw new AgentException("REPORT_REQUIRED", "Generate the requested report artifact before delivery");
         if (run.task() != null && "creator.draft".equals(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
             throw new AgentException("DRAFT_REQUIRED", "请先生成可确认的互动草稿。");
-        if (run.task() != null && Set.of("danmaku.report","audience.report").contains(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
+        if (run.task() != null && run.task().specification().analysis()==null && Set.of("danmaku.report","audience.report").contains(run.task().specification().type()) && reason != StopReason.TOOL_DELIVERY)
             throw new AgentException("REPORT_REQUIRED", "Create the requested report before delivering an answer");
         harness.stage(run, "agent.deliver", HookPoint.PRE_DELIVER, HookPoint.POST_DELIVER,
                 Map.of("answer.evidence_count", raw == null ? 0 : raw.evidenceIds().size()), () -> {
             com.tianmu.agent.harness.trace.TraceDetails.input(raw);
             Answer answer = harness.transform(run, TransformPoint.ANSWER, raw);
+            if (run.task()!=null && run.task().specification().analysis()!=null && run.task().specification().analysis().reportRequired()
+                    && (answer==null || answer.evidenceIds().stream().noneMatch(run.execution()::hasReport)))
+                throw new AgentException("REPORT_REQUIRED", "No persisted report artifact exists for the delivered evidence");
             if (reason == StopReason.FINALIZED_ANSWER) answer = new Answer("【轮次已达上限，仅基于已获取证据收尾】\n" + answer.text(), answer.evidenceIds());
             validateAnswer(answer, run);
             // Notes are derived from validated, owned evidence rather than model-generated metadata.
             List<Evidence> evidence = answer.evidenceIds().stream().distinct().map(id -> run.execution().evidence().get(id)).toList();
-            if (run.task() != null) EvidencePresentation.requireKind(run.task().specification(), evidence);
+            if (run.task() != null) AnalysisExecutionPolicy.requireComplete(run.task().specification(), evidence);
             for (Evidence value : evidence) if (value.comments() != null
                     && run.execution().commentOffset(value.id()) != value.comments().totalComments())
                 throw new AgentException("FULL_ANALYSIS_INCOMPLETE", "尚未阅读全部评论，不能交付完整评论分析。");

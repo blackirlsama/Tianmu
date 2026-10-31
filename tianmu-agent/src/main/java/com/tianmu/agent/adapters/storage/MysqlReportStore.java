@@ -27,7 +27,7 @@ final class MysqlReportStore implements ReportStore {
     @Override public ReportRef saveReport(UUID runId, AccessScope owner, String evidenceId, byte[] html) {
         if (html.length > 262144) throw new AgentException("ARTIFACT_TOO_LARGE", "Report exceeds 256 KiB");
         var evidence = access.load(runId, owner).execution().evidence().get(evidenceId);
-        if (evidence == null || evidence.analysis() == null) throw new AgentException("INVALID_EVIDENCE", "Danmaku analysis evidence required");
+        if (evidence == null || evidence.analysis() == null && evidence.videoContent() == null) throw new AgentException("INVALID_EVIDENCE", "Report evidence required");
         String id = "rp_" + UUID.randomUUID(), object = id + ".html", digest = FileObjectStore.hash(html);
         access.write(() -> {
             var run = access.lockActive(runId, owner);

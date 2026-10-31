@@ -88,11 +88,23 @@ public class PreparationService implements AutoCloseable {
         if (repository != null) repository.focus(run,focus);
         Input contextInput = new Input(query, run.businessDate, run.owner, run.memory(), run.createdAt);
         run.emit("PROGRESS", Map.of("stage", "preparing"));
-        var specification = meaning.resolve(run.query(), run.businessDate, run.createdAt,run.memory().environment());
-        if (!specification.equals(meaning.resolve(query, run.businessDate, run.createdAt,run.memory().environment())))
+        com.tianmu.agent.core.TaskTypes.Specification specification;
+        try { specification = meaning.resolve(run.query(), run.businessDate, run.createdAt,run.memory()); }
+        catch (AgentException error) {
+            if (!"AMBIGUOUS_ANALYSIS_SOURCES".equals(error.code())) throw error;
+            skipped.addAll(Set.of("intent", "understanding", "emotion", "rewrite"));
+            return new Result(Route.CLARIFY, new PreparedRequest(run.message, query, Emotion.UNKNOWN, degraded, skipped), null, error.getMessage());
+        }
+        if (!specification.equals(meaning.resolve(query, run.businessDate, run.createdAt,run.memory())))
             throw new AgentException("TASK_CONSTRAINT_VIOLATION", "Input transformation changed the task conditions");
+        String validationQuery=query;
+        var currentFocus=run.memory().focus();
+        if(currentFocus!=null && !currentFocus.request().equals(query) && AnalysisSourceSelection.mentions(query)
+                && com.tianmu.agent.application.ConversationFocus.continuation(query))
+            validationQuery=currentFocus.request()+"，"+com.tianmu.agent.core.DanmakuTarget.matcher(query).replaceAll("");
+        var validationInput=new Input(validationQuery,run.businessDate,run.owner,run.memory(),run.createdAt);
         Optional<Clarification> required = harness.stage(run, "agent.prepare.validate", null, null, Map.of(),
-                () -> validators.stream().map(v -> v.validate(contextInput)).flatMap(Optional::stream).filter(Clarification::required).findFirst());
+                () -> validators.stream().map(v -> v.validate(validationInput)).flatMap(Optional::stream).filter(Clarification::required).findFirst());
         if (policy.deterministicRouting()) {
             if (required.isPresent()) {
                 skipped.addAll(Set.of("intent", "understanding", "emotion", "rewrite"));
@@ -109,6 +121,7 @@ public class PreparationService implements AutoCloseable {
             };
             if (known != Intent.UNKNOWN) {
                 skipped.addAll(Set.of("intent", "understanding", "emotion", "rewrite"));
+                bindFocus(run,specification);
                 return new Result(Route.HARNESS, new PreparedRequest(run.message, query, Emotion.UNKNOWN, degraded, skipped, known, specification), null, null);
             }
         }
@@ -146,11 +159,12 @@ public class PreparationService implements AutoCloseable {
             }
             String rewritten = result.rewrittenQuery();
             if (!safeRewrite(query, rewritten)
-                    || !specification.equals(meaning.resolve(rewritten, run.businessDate, run.createdAt,run.memory().environment()))) {
+                    || !specification.equals(meaning.resolve(rewritten, run.businessDate, run.createdAt,run.memory()))) {
                 degraded.add("rewrite"); rewritten = query;
             }
             Emotion feeling = readyEmotion(run, emotion, emotionEnd, degraded, skipped);
             run.checkpoint();
+            bindFocus(run,specification);
             return new Result(Route.HARNESS, new PreparedRequest(run.message, rewritten, feeling, degraded, skipped, recognized, specification), null, null);
         } finally { dispose(understanding); dispose(intent); dispose(emotion); }
     }
@@ -160,6 +174,13 @@ public class PreparationService implements AutoCloseable {
             case "video.metric" -> intent == Intent.VIDEO_METRIC;
             default -> intent != Intent.VIDEO_METRIC && intent != Intent.DANMAKU_REPORT;
         };
+    }
+    private void bindFocus(RunState run,com.tianmu.agent.core.TaskTypes.Specification specification) {
+        var focus=run.memory().focus();
+        if(focus==null || specification.analysis()==null)return;
+        var updated=new com.tianmu.agent.core.MemoryTypes.Focus(focus.request(),focus.sourceRunId(),focus.referenceVideoId(),specification);
+        run.memory(run.memory().withContext(run.memory().environment(),updated));
+        if(repository!=null)repository.focus(run,updated);
     }
     /** Model candidates never grant scope or supply missing server-side task conditions. */
     private boolean validConditions(Map<String, Object> expected, Map<String, Object> proposed) {

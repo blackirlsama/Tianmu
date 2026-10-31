@@ -202,6 +202,13 @@ public final class MysqlRunRepository implements RunRepository, ReportStore, Con
     @Override public RunState load(UUID id, AccessScope owner) {
         return read(() -> { var row = row(id, owner, false); session(UUID.fromString(row.get("session_id").toString()), owner, false); return materialize(row, true); });
     }
+    /** Internal reconciliation may observe a committed terminal after its session was closed/deleted. */
+    @Override public void refresh(RunState run) {
+        var rows = read(() -> db.queryForList("SELECT snapshot_json FROM agent_run WHERE tenant_id=? AND owner_user_id=? AND run_id=?",
+                run.owner.tenantId(), run.owner.userId(), run.id.toString()));
+        if (rows.isEmpty()) throw new AgentException("RUN_NOT_FOUND", "Run is no longer retained");
+        run.adoptTerminal(snapshot(rows.get(0)));
+    }
     private RunState materialize(Map<String, Object> row, boolean restored) {
         Meta m = meta(row);
         RunState run = new RunState(m.id(), m.session(), m.turn(), m.owner(), m.message(), m.query(), m.created(), m.deadline(), new Backend(m), new Events(m), new EvidenceRecords(m), restored);

@@ -5,6 +5,7 @@ import { createPinia } from 'pinia'
 import { useUserStore } from './store/user'
 import { TIANMU_USER } from "@/lib/config"
 import { readStoredUser } from "@/lib/auth"
+import { bindEvaluationIdentity } from '@/trace/evaluation-store'
 
 import ElementPlus from 'element-plus'
 import 'element-plus/theme-chalk/index.css'
@@ -28,6 +29,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 const pinia = createPinia()
 
 app.use(pinia)
+bindEvaluationIdentity(useUserStore())
 app.use(router)
 app.mount('#app')
 

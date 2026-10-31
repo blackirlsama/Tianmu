@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import TraceGraph from '@/components/trace/TraceGraph.vue'
 import TraceIcon from '@/components/trace/TraceIcon.vue'
 import TraceCode from '@/components/trace/TraceCode.vue'
@@ -7,6 +8,12 @@ import { demoFiles } from '@/trace/demo-trace.mjs'
 import { parseTraceFile, formatDuration, formatValue, statusLabel } from '@/trace/trace-data.mjs'
 import { createTraceClient, validTraceRunId } from '@/trace/trace-client.mjs'
 import { readStoredUser } from '@/lib/auth'
+import { useUserStore } from '@/store/user'
+import { evaluationStore, addEvaluationRun, setEvaluationDataset } from '@/trace/evaluation-store'
+import { normalizeEvaluationRun, parseEvaluationFile } from '@/trace/evaluation-data.mjs'
+
+const route = useRoute(), router = useRouter()
+const compareTask = ref(''), compareModel = ref(''), compareCondition = ref(''), compareVerdict = ref(''), compareBasis = ref(''), compareNote = ref('')
 
 const examples = demoFiles.flatMap((data) => parseTraceFile(JSON.stringify(data), '内置演示日志'))
 const traces = ref([])
@@ -64,12 +71,65 @@ function identityChanged() {
   if (sourceMode.value !== 'backend') return
   stopBackend()
   traces.value = []
+  setEvaluationDataset(null)
   backendMode.value = ''
   backendNote.value = '身份已变化，请重新加载运行。'
 }
 window.addEventListener('storage', identityChanged)
 watch(authMode, identityChanged)
-onMounted(() => { if (validTraceRunId(runIdInput.value) && readStoredUser().token) loadBackend() })
+watch(() => useUserStore().user?.token, () => {
+  stopBackend()
+  traces.value = []
+  sourceMode.value = 'backend'
+  backendMode.value = ''
+  backendNote.value = '网站身份已变化，请重新加载已授权运行。'
+})
+function showEvaluationRun() {
+  const key = route.query.evaluationRun
+  if (!key) return false
+  const run = evaluationStore.dataset?.runs.find((item) => item.key === key)
+  if (!run?.trace) {
+    backendError.value = '这次运行的数据已不在当前标签页内存中，请返回模型对比页重新导入。'
+    return true
+  }
+  compareTask.value = run.taskId
+  compareModel.value = run.model
+  compareCondition.value = run.conditionId === '条件未记录' ? '' : run.conditionId
+  compareVerdict.value = run.correct == null ? '' : run.correct ? 'true' : 'false'
+  compareBasis.value = run.basis
+  if (run.trace.live) {
+    sourceMode.value = 'file'
+    runIdInput.value = run.runId
+    authMode.value = run.trace.authMode || 'website'
+    nextTick(() => loadBackend())
+    return true
+  }
+  stopBackend()
+  sourceMode.value = run.demo ? 'demo' : 'file'
+  traces.value = [run.trace]
+  activeId.value = run.trace.id
+  backendMode.value = ''
+  backendNote.value = `来自模型对比：${run.modelLabel} / ${run.taskName}`
+  changeTrace()
+  return true
+}
+onMounted(() => { if (!showEvaluationRun() && validTraceRunId(runIdInput.value) && readStoredUser().token) loadBackend() })
+watch(() => route.query.evaluationRun, showEvaluationRun)
+function addToComparison() {
+  compareNote.value = ''
+  if (!trace.value) return
+  if (compareVerdict.value && !compareBasis.value.trim()) { compareNote.value = '设置正确性标签时，请填写评测依据。'; return }
+  const previous = evaluationStore.dataset?.runs.find((row) => row.runId === trace.value.runId)
+  const run = normalizeEvaluationRun({ runId: trace.value.runId, normalizedTrace: trace.value, taskId: compareTask.value,
+    taskName: previous?.taskId === compareTask.value ? previous.taskName : compareTask.value,
+    modelVersion: previous?.model === compareModel.value ? previous.modelVersion : undefined,
+    model: compareModel.value || undefined, conditionId: compareCondition.value,
+    evaluation: { correct: compareVerdict.value === '' ? null : compareVerdict.value === 'true', basis: compareBasis.value },
+    demo: trace.value.demo, modelMode: trace.value.modelMode, businessMode: trace.value.businessMode,
+  }, { source: trace.value.source, demo: trace.value.demo })
+  addEvaluationRun(run)
+  router.push('/analysis')
+}
 
 async function loadBackend(create = false) {
   stopBackend()
@@ -106,6 +166,9 @@ async function loadBackend(create = false) {
             item.live = true
             item.runId = id
             item.status = data.run.status
+            item.modelMode = data.modelMode
+            item.businessMode = data.businessMode
+            item.authMode = authMode.value
             item.nodes.forEach((node) => {
               for (const direction of ['input', 'output']) {
                 const detail = detailCache.get(`${id}/${node[`${direction}Ref`]}`)
@@ -116,6 +179,7 @@ async function loadBackend(create = false) {
           const previousNode = selectedId.value
           const previousTrace = activeId.value
           traces.value = normalized
+          if (!compareTask.value) compareTask.value = data.run.task?.specification?.type || ''
           activeId.value = normalized.some((item) => item.id === previousTrace) ? previousTrace : normalized.find((item) => item.id === data.run.traceId)?.id || normalized[0].id
           if (!trace.value.nodes.some((node) => node.id === previousNode)) changeTrace()
         }
@@ -186,7 +250,10 @@ async function importFile(event) {
   importError.value = ''
   try {
     if (file.size > 10 * 1024 * 1024) throw new Error('文件超过 10 MB，请按运行拆分后导入。')
-    const imported = parseTraceFile(await file.text(), file.name)
+    const dataset = parseEvaluationFile(await file.text(), file.name)
+    const imported = dataset.runs.map((run) => run.trace).filter(Boolean)
+    if (!imported.length) { setEvaluationDataset(dataset); router.push('/analysis'); return }
+    setEvaluationDataset(dataset)
     stopBackend()
     sourceMode.value = 'file'
     backendMode.value = ''
@@ -224,7 +291,7 @@ function downloadExample() {
       <a class="studio-brand" href="/trace" aria-label="天幕 Trace Studio"><span class="brand-symbol"><TraceIcon name="trace" :size="22" /></span><strong>天幕<span>TIANMU</span></strong></a>
       <span class="topbar-separator" />
       <span class="studio-product">Trace Studio</span><span class="version-tag">BETA</span>
-      <div class="topbar-right"><span class="local-status"><i />本地工作区</span><span class="avatar">T</span></div>
+      <div class="topbar-right"><router-link to="/analysis" class="comparison-nav-link"><TraceIcon name="compare" :size="15" />模型对比总览</router-link><span class="local-status"><i />当前工作区</span><span class="avatar">T</span></div>
     </header>
 
     <main class="studio-main">
@@ -244,6 +311,7 @@ function downloadExample() {
       </section>
 
       <template v-if="trace">
+      <section class="trace-comparison-controls studio-panel"><div class="comparison-controls-title"><h2><TraceIcon name="compare" :size="15" />将这次运行加入模型对比</h2><span>仅在当前标签页保存评测标签</span></div><div class="comparison-controls-fields"><label>任务编号<input v-model="compareTask" placeholder="同一任务使用相同编号" aria-label="对比任务编号" maxlength="160" /></label><label>对比模型<input v-model="compareModel" :placeholder="trace.model" aria-label="对比模型名称" maxlength="160" /></label><label>统一条件编号<input v-model="compareCondition" placeholder="相同提示、工具、预算" aria-label="对比条件编号" maxlength="160" /></label><label>回答评测<select v-model="compareVerdict" aria-label="添加运行的评测标签"><option value="">未评测</option><option value="true">正确</option><option value="false">不正确</option></select></label><button class="import-button" type="button" @click="addToComparison">加入对比<TraceIcon name="arrow" :size="14" /></button></div><label v-if="compareVerdict" class="comparison-basis-label">评测依据<input v-model="compareBasis" placeholder="例如：与数据库对账一致，或人工标注规则 v1" aria-label="评测依据" maxlength="160" /></label><p v-if="compareNote" class="connection-error" role="alert">{{ compareNote }}</p></section>
       <div class="trace-toolbar">
         <div class="trace-breadcrumb"><TraceIcon name="trace" :size="15" /><span>Traces</span><TraceIcon name="chevron" :size="12" /><strong>{{ trace.runId }}</strong><span class="status-pill" :class="trace.status.toLowerCase()"><i />{{ statusLabel(trace.status) }}</span></div>
         <div class="toolbar-metrics"><span><TraceIcon name="clock" :size="14" /><em>总耗时</em><b>{{ formatDuration(trace.durationMs) }}</b></span><span><TraceIcon name="token" :size="14" /><em>Tokens</em><b>{{ formatValue(trace.totalTokens) }}</b><small v-if="!trace.usageComplete">部分 / 缺失</small></span></div>
@@ -305,6 +373,7 @@ html.trace-workspace-page #app { max-width:none;background:#0b1018; }
 </style>
 
 <style scoped>
+.comparison-nav-link{display:flex;align-items:center;gap:7px;text-decoration:none;color:#8fb5e9;font-size:11px;white-space:nowrap}.comparison-nav-link:hover{color:#7ed8d2}.trace-comparison-controls{padding:16px 20px;margin-bottom:18px}.comparison-controls-title{display:flex;align-items:center;gap:15px;margin-bottom:13px}.comparison-controls-title h2{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:450;color:#9ebee7;margin:0}.comparison-controls-title span{color:#4e7198;font-size:9px}.comparison-controls-fields{display:flex;gap:12px;align-items:flex-end}.comparison-controls-fields label{display:flex;flex-direction:column;gap:6px;font-size:9px;color:#6888ad;flex:1;min-width:0}.comparison-controls-fields input,.comparison-controls-fields select,.comparison-basis-label input{width:100%;min-width:0;background:#0d1929;border:1px solid #2e4667;border-radius:5px;padding:8px 9px;font:10px inherit;color:#abc6e8}.comparison-basis-label{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:9px;color:#6585ab}.comparison-basis-label input{flex:1}.comparison-controls-fields input::placeholder{color:#4a6c94}@media(max-width:700px){.trace-comparison-controls{padding:15px}.comparison-controls-fields{flex-wrap:wrap}.comparison-controls-fields label{flex:auto;width:calc(50% - 10px)}.comparison-controls-fields button{margin-left:auto}.comparison-controls-title{flex-wrap:wrap;gap:4px}.comparison-controls-title span{font-size:8px}.comparison-nav-link{font-size:9px}.comparison-nav-link svg{width:13px}}
 .backend-connection { padding:18px 20px;margin-bottom:20px; }
 .connection-title { display:flex;align-items:center;gap:12px;margin-bottom:16px; }
 .connection-title h2 { margin:0;display:flex;align-items:center;gap:8px;color:#bcd0ec;font-size:13px;font-weight:500; }

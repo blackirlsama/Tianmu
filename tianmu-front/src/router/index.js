@@ -4,6 +4,7 @@ import { hasAuthToken } from '@/lib/auth'
 import { checkCreatorAccess } from '@/api/agent'
 
 const routes = [
+  { path: '/analysis', name: 'ComparisonWorkspace', component: () => import('@/views/trace/ComparisonWorkspace.vue'), meta: { requestAuth: false } },
   { path: '/trace', name: 'TraceWorkspace', component: () => import('@/views/trace/TraceWorkspace.vue'), meta: { requestAuth: false } },
   { path: '/agent', name: 'AgentWorkspace', component: () => import('@/views/agent/AgentWorkspace.vue'), meta: { requestAuth: true } },
   { path: '/', redirect: '' },
@@ -75,5 +76,6 @@ router.beforeEach(async (to, from, next) => {
 router.afterEach((to) => {
   document.documentElement.classList.toggle('agent-workspace-page', to.name === 'AgentWorkspace')
   document.documentElement.classList.toggle('trace-workspace-page', to.name === 'TraceWorkspace')
+  document.documentElement.classList.toggle('analysis-workspace-page', to.name === 'ComparisonWorkspace')
 })
 export default router

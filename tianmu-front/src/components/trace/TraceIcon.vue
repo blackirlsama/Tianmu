@@ -2,6 +2,8 @@
 /* global defineProps */
 defineProps({ name: { type: String, default: 'trace' }, size: { type: [Number, String], default: 18 } })
 const paths = {
+  compare: 'M4 20V10h4v10 M10 20V4h4v16 M16 20V7h4v13 M2 20h20',
+  filter: 'M3 5h18l-7 8v6l-4 2v-8z',
   trace: 'M5 5h4v4H5z M15 15h4v4h-4z M7 9v6h8 M15 5h4v4h-4z M9 7h6',
   model: 'M9 3h6l4 4v10l-4 4H9l-4-4V7z M9 9h6v6H9z M12 1v2 M12 21v2 M1 12h4 M19 12h4',
   tool: 'm14 6 4-4 4 4-4 4 M3 21l12-12 M4 3l5 5 M3 4l2-2 4 4-2 2',

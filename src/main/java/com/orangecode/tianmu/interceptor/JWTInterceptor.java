@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import com.orangecode.tianmu.utils.JwtUtil;
+import com.orangecode.tianmu.application.CurrentUser;
 
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
@@ -43,6 +44,7 @@ public class JWTInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        request.removeAttribute(CurrentUser.ATTRIBUTE);
         // 从请求头中获取token
         String token = request.getHeader("Authorization");
         if (token != null && token.startsWith("Bearer ")) token = token.substring(7);
@@ -54,26 +56,29 @@ public class JWTInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        // 如果请求带有token，则过滤掉（直接放行）
+        // 身份只在签名与在线会话均验证成功后写入请求上下文。
         if (token != null && !token.isEmpty()) {
             Claims claims = JwtUtil.parse(token);
-            if (claims != null) {
+            if (claims != null && claims.getSubject() != null && claims.getSubject().matches("[1-9][0-9]{0,18}")) {
                 String id = claims.getSubject();
+                long userId;
+                try { userId = Long.parseLong(id); }
+                catch (NumberFormatException invalidSubject) {
+                    return unauthorized(response);
+                }
                 String userToken = redisTemplate.opsForValue().get(id);
                 boolean isToken = userToken != null && token.equals(userToken);
                 if (isToken) {
+                    request.setAttribute(CurrentUser.ATTRIBUTE, userId);
                     return true;
-                } else {
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.getWriter().write("{\"code\": 401, \"message\": \"未授权的访问，请提供有效的Token\"}");
-                    return false;
                 }
             }
         }
 
-        // 如果没有token，可以根据需求进行处理
-        // 例如返回错误响应
+        return unauthorized(response);
+    }
+
+    private boolean unauthorized(HttpServletResponse response) throws java.io.IOException {
         response.setContentType("application/json;charset=UTF-8");
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.getWriter().write("{\"code\": 401, \"message\": \"未授权的访问，请提供有效的Token\"}");

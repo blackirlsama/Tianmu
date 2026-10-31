@@ -1,5 +1,9 @@
 import request from "@/lib/request"
 
+export const fetchOnlineReward = (signal) => request({
+    url: "/user/online", method: "POST", signal, timeout: 15000,
+})
+
 // 获取手机/邮箱验证码
 export const fetchSmsCode = (account) => {
     return request({

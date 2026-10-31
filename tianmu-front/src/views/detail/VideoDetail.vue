@@ -698,9 +698,6 @@ export default {
     // 一键三连视频
     async handleTriple() {
       try {
-        if (this.user.coinCount < 1) {
-          return ElMessage.warning("硬币不足");
-        }
         if (this.isLogin) {
           const res = await fetchTripleVideo(
             this.user.userId,

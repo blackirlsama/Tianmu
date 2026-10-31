@@ -56,6 +56,11 @@ export const useUserStore = defineStore("user", {
       localStorage.setItem(TIANMU_USER, JSON.stringify(this.user));
 
     },
+    syncCoinCount(count) {
+      if (this.user.coinCount === count) return;
+      this.user.coinCount = count;
+      localStorage.setItem(TIANMU_USER, JSON.stringify(this.user));
+    },
     updateVideoCount() {
       this.user.videoCount++
       localStorage.setItem(TIANMU_USER, JSON.stringify(this.user))

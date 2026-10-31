@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.orangecode.tianmu.common.ErrorCode;
+import com.orangecode.tianmu.application.CurrentUser;
 import com.orangecode.tianmu.constants.SnowflakeConstant;
 import com.orangecode.tianmu.constants.VideoConstant;
 import com.orangecode.tianmu.exception.BusinessException;
@@ -47,6 +48,9 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video>
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private CurrentUser currentUser;
 
     @Resource
     private CategoryService categoryService;
@@ -331,9 +335,11 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video>
     @Override
     @Transactional(rollbackFor = Exception.class)
     public TripleActionResponse tripleAction(VideoActionRequest videoActionRequest) {
+        ThrowUtils.throwIf(videoActionRequest == null || videoActionRequest.getVideoId() == null
+                || videoActionRequest.getVideoId() <= 0, ErrorCode.PARAMS_ERROR);
         // 1. 校验用户和视频
         Long vid = videoActionRequest.getVideoId();
-        Long uid = videoActionRequest.getUserId();
+        Long uid = currentUser.requireMatchingUser(videoActionRequest.getUserId());
 
         boolean videoExists = this.lambdaQuery().eq(Video::getVideoId, vid).exists();
         ThrowUtils.throwIf(!videoExists, ErrorCode.VIDEO_NOT_FOUND_ERROR);
@@ -344,12 +350,12 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video>
 
         ThrowUtils.throwIf(user == null, ErrorCode.USER_NOT_EXISTS);
 
-        ThrowUtils.throwIf(userStats.getCoinCount() < 1, ErrorCode.USER_COIN_ERROR);
-
-        // 2. 查询是否已三连（1次查询优化）
-        boolean hasLiked = likeService.lambdaQuery().eq(Like::getVideoId, videoActionRequest.getVideoId()).eq(Like::getUserId, videoActionRequest.getUserId()).exists();
-        boolean hasFavorite = favoriteService.lambdaQuery().eq(Favorite::getVideoId, videoActionRequest.getVideoId()).eq(Favorite::getUserId, videoActionRequest.getUserId()).exists();
-        boolean hasCoined = coinService.lambdaQuery().eq(Coin::getVideoId, videoActionRequest.getVideoId()).eq(Coin::getUserId, videoActionRequest.getUserId()).exists();
+        // 2. 分别检查已有互动；仅新增投币时检查余额。
+        boolean hasLiked = likeService.lambdaQuery().eq(Like::getVideoId, vid).eq(Like::getUserId, uid).exists();
+        boolean hasFavorite = favoriteService.lambdaQuery().eq(Favorite::getVideoId, vid).eq(Favorite::getUserId, uid).exists();
+        boolean hasCoined = coinService.lambdaQuery().eq(Coin::getVideoId, vid).eq(Coin::getUserId, uid).exists();
+        ThrowUtils.throwIf(!hasCoined && (userStats == null || userStats.getCoinCount() == null
+                || userStats.getCoinCount() < 1), ErrorCode.USER_COIN_ERROR);
 
         // 3. 执行三连操作
         TripleActionResponse response = new TripleActionResponse();
@@ -386,7 +392,8 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video>
             coin.setCoinId(snowflake.nextId());
             ThrowUtils.throwIf(!coinService.save(coin), ErrorCode.SYSTEM_ERROR);
 
-            boolean coinDeducted = userStatsService.lambdaUpdate().setSql("coin_count = coin_count - 1").eq(UserStats::getUserId, uid).update();
+            boolean coinDeducted = userStatsService.lambdaUpdate().setSql("coin_count = coin_count - 1")
+                    .eq(UserStats::getUserId, uid).gt(UserStats::getCoinCount, 0).update();
             ThrowUtils.throwIf(!coinDeducted, ErrorCode.USER_COIN_ERROR, "投币失败，硬币不足");
 
             response.setCoin(true);

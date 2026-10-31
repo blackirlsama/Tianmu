@@ -31,6 +31,14 @@ docker compose --env-file /opt/tianmu-site/config/release.env -f deploy/site/com
 
 业务与 Agent 分别使用 `tianmu_site`、`tianmu_site_agent`；网站登录使用 Redis database 1。业务文件与 Agent 报告共用同一 MinIO 实例，报告和 Trace 明细放在私有 `tianmu-agent-artifacts` 桶。
 
+### 每日上线硬币与既有数据库升级
+
+已登录用户在可见页面上线时，每个北京时间自然日首次获得 1 枚硬币。打开网站、登录后进入页面、回到前台和每分钟可见页面检查均可触发，不要求重新登录；访客不发放，隐藏的后台页面不主动领取，不补发离线日期。余额与领取日期由服务端在同一条数据库更新中写入，同日刷新、多开页面或多实例请求不会重复发放。奖励到账后网站同步硬币余额；无需手动签到。
+
+新库的 `business-schema.sql` 已包含 `user_stats.last_online_reward_date`。既有库须在发布应用前，由部署人员对业务库执行一次 [20261031_daily_online_coin.sql](migrations/20261031_daily_online_coin.sql)，先检查列是否已存在，不要重复执行，也不要使用新库初始化代替升级。历史用户领取日期初始为空，下次上线可领取；升级不会重置已有余额。回滚旧应用可保留该列，避免丢失当日领取记录。
+
+`POST /api/user/online` 无需传用户 ID，只接受当前有效登录凭证，返回北京时间日期、余额及本次是否新发放。后台失败时页面稍后重试；数据库事务保证奖励日期和余额共同提交或回滚。独立数据库验证可设置 `ONLINE_REWARD_IT=true`，配合 `BUSINESS_JDBC_URL`（仅本机独立 `_it` 库）、`BUSINESS_DB_USER`、`BUSINESS_DB_PASSWORD` 执行 `mvn -B -ntp -Dtest=DailyOnlineRewardIntegrationTest test`。该测试不需要 Redis 或模型。
+
 Agent 与业务容器共享网络命名空间，使鉴权桥接保持 `http://127.0.0.1:8101/api`，满足桥接仅允许 loopback HTTP 或外部 HTTPS 的规则。**更换或重建业务容器时，要同时重建 Agent：**
 
 ```sh
